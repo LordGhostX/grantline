@@ -1,0 +1,30 @@
+{
+  "network": "xlayer-testnet",
+  "chainId": 1952,
+  "vault": {
+    "address": "0xb0e58be3324d703b3c041859b2dCE027D31012Fd",
+    "owner": "0x64fe1aD6C591615dd3F0Fc640C92ef75365a023D",
+    "authority": "0x0c214b54E32394e85864e4C6fEbbEA3681fAE14E",
+    "codeHash": "0x67f96b2efe62bd0717c5bbb3e03a29e59a27b539488c0e6ed7f751a1440fb30d",
+    "deploymentTx": "0x57a220f5e2200173fa8c3d5ca1d84dac76c9ac9e0987fd4d69fc0e15e7ff1803"
+  },
+  "mandateRegistry": {
+    "address": "0x836853Ee4786afa57d41E93874cfb3A9C7BCc72F",
+    "codeHash": "0xb62f1614ba04ab5f16155e4473f87c3bdfe03119ce8b5954f2caa511fa518590",
+    "deploymentTx": "0xbc2ad9ffa3c75be3440ef52e7b713aaea26271a884bd6dd89bb673b8a45c474a"
+  },
+  "mandateEvaluator": {
+    "address": "0x4bf4a8D8d3de9523373E8c29d045EecfAD76bAC4",
+    "codeHash": "0xcb7f969e0632c9762cdb4cd303161eb5764b050fef23707be9b16dbc1e93995a",
+    "registry": "0x836853Ee4786afa57d41E93874cfb3A9C7BCc72F",
+    "usdValueProvider": "0x0000000000000000000000000000000000000000",
+    "skipUnavailableUsdValuation": true,
+    "deploymentTx": "0x512cdc9aee581528a05f5e0e1bdb59430decf07e882d2c9fda20cc8ffe2f2938"
+  },
+  "vaultExecutor": {
+    "address": "0x0c214b54E32394e85864e4C6fEbbEA3681fAE14E",
+    "codeHash": "0x36800247a65878b01aeae6625ab80751a64a26568f4f1c6aa43a997fc564f25c",
+    "evaluator": "0x4bf4a8D8d3de9523373E8c29d045EecfAD76bAC4",
+    "deploymentTx": "0x8c7f60fdcf6b4fefe19c70957a4e4264b160ae6e524b4dc484250e7cf8c2b50e"
+  }
+}

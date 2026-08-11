@@ -6,13 +6,36 @@ import {ScriptBase} from "./ScriptBase.s.sol";
 
 contract DeployMandateEvaluator is ScriptBase {
     function run() external returns (MandateEvaluator evaluator) {
-        _requireExpectedChain();
+        string memory manifest = _manifest();
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        address registry = vm.envAddress("MANDATE_REGISTRY_ADDRESS");
-        address usdValueProvider = vm.envAddress("USD_VALUE_PROVIDER_ADDRESS");
-        bool skipUnavailableUsdValuation = vm.envBool(
-            "SKIP_UNAVAILABLE_USD_VALUATION"
+        address registry = vm.parseJsonAddress(
+            manifest,
+            ".mandateRegistry.address"
         );
+        address manifestRegistry = vm.parseJsonAddress(
+            manifest,
+            ".mandateEvaluator.registry"
+        );
+        if (manifestRegistry != registry) {
+            revert ManifestAddressMismatch(
+                "mandateEvaluator.registry",
+                registry,
+                manifestRegistry
+            );
+        }
+        bytes32 registryCodeHash = vm.parseJsonBytes32(
+            manifest,
+            ".mandateRegistry.codeHash"
+        );
+        address usdValueProvider = vm.parseJsonAddress(
+            manifest,
+            ".mandateEvaluator.usdValueProvider"
+        );
+        bool skipUnavailableUsdValuation = vm.parseJsonBool(
+            manifest,
+            ".mandateEvaluator.skipUnavailableUsdValuation"
+        );
+        _requireRuntimeCodeHash(registry, registryCodeHash, "mandateRegistry");
 
         vm.startBroadcast(deployerKey);
         evaluator = new MandateEvaluator(

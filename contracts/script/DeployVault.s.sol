@@ -6,7 +6,7 @@ import {ScriptBase} from "./ScriptBase.s.sol";
 
 contract DeployVault is ScriptBase {
     function run() external returns (Vault vault) {
-        _requireExpectedChain();
+        _manifest();
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
 
         vm.startBroadcast(deployerKey);

@@ -37,16 +37,17 @@ Future application boundaries are expected to be `website/` for the Next.js land
 
 ## Current status
 
-The repository contains the product brief, a static landing-page prototype, and the first working contracts loop. The contracts workspace now has the Vault, Mandate registry, typed ActionPlan and signatures, read-only evaluation, executor, shared nonce replay protection, and onchain execution records. All local tests pass. The active X Layer testnet stack uses a Vault deployed with the token-target guard, an evaluator that enforces every available USD quote even when another quote is unavailable, and an executor whose authority assignment was validated against its evaluator and registry. Relayer, indexing, Decision Receipt assembly, SDK, API, and demo application work remain deferred.
+The repository contains the product brief, a static landing-page prototype, and the first working contracts loop. The contracts workspace now has the Vault, Mandate registry, typed ActionPlan and signatures, read-only evaluation, executor, shared nonce replay protection, onchain execution records, and a tracked X Layer deployment manifest with runtime-hash validation. All local tests pass. The active testnet stack uses a Vault deployed with the token-target guard, an evaluator that enforces every available USD quote even when another quote is unavailable, and an executor whose authority assignment was validated against its evaluator and registry. Relayer, indexing, Decision Receipt assembly, SDK, API, and demo application work remain deferred.
 
 The next implementation step is to exercise the deployed end-to-end loop with a signed transfer plan, then extend action-specific rules only when the product needs them.
 
 ## Decision log
 
-| Date       | Decision                                          | Reason and impact                                                                                                                 |
-| ---------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-08-11 | Keep blockchain files under `contracts/`.         | The repository will also contain a website, SDKs, and API, so root-level tooling would make ownership and commands ambiguous.     |
-| 2026-08-11 | Use `AGENTS.md` as the working-memory convention. | Agents discover the file automatically, and nested files can document package-local boundaries without bloating the root context. |
+| Date       | Decision                                                  | Reason and impact                                                                                                                 |
+| ---------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-11 | Keep blockchain files under `contracts/`.                 | The repository will also contain a website, SDKs, and API, so root-level tooling would make ownership and commands ambiguous.     |
+| 2026-08-11 | Use `AGENTS.md` as the working-memory convention.         | Agents discover the file automatically, and nested files can document package-local boundaries without bloating the root context. |
+| 2026-08-11 | Keep deployment identity in a tracked contracts manifest. | Deployment scripts need one reviewable source for addresses, dependency wiring, runtime hashes, and current Vault authority.      |
 
 ## Working-memory rules
 

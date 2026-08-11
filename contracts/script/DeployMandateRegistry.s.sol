@@ -6,7 +6,7 @@ import {ScriptBase} from "./ScriptBase.s.sol";
 
 contract DeployMandateRegistry is ScriptBase {
     function run() external returns (MandateRegistry registry) {
-        _requireExpectedChain();
+        _manifest();
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
 
         vm.startBroadcast(deployerKey);

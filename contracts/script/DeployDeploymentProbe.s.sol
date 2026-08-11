@@ -6,7 +6,7 @@ import {ScriptBase} from "./ScriptBase.s.sol";
 
 contract DeployDeploymentProbe is ScriptBase {
     function run() external returns (DeploymentProbe probe) {
-        _requireExpectedChain();
+        _manifest();
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
 
         vm.startBroadcast(deployerKey);
