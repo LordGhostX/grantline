@@ -58,7 +58,7 @@ The expected Anvil chain ID is `31337`. The expected X Layer testnet chain ID is
 
 The workspace contains the Foundry toolchain smoke test, the `DeploymentProbe`, the `Vault`, and the `MandateRegistry`. `forge test` passes with Foundry 1.7.1, Anvil responds on chain ID `31337`, and the X Layer RPC responds on chain ID `1952`.
 
-The Vault and MandateRegistry deployment paths are verified on local Anvil and X Layer testnet. Both deployed Vaults start with authority unset, and the MandateRegistry starts empty, so no autonomous execution or authority evaluation is enabled. Mandates currently store an optional per-transaction limit; `transactionLimit == 0` means disabled. The limit is data only for now and is not enforced during Vault execution. The recorded X Layer MandateRegistry deployment predates this transaction-only schema change and has not been redeployed. `ActionTypes` now defines an atomic, ordered ActionPlan with versioned high-level action payloads; only `TRANSFER` version 1 exists, and raw Vault calldata is intentionally outside the agent-facing format. `ActionSignature` provides EIP-712 hashing and low-s malleability-checked signer recovery, and `MandateEvaluator` now performs read-only Mandate, signature, deadline, action-shape, and native-amount checks. Nonce assignment, action-hash storage, adapters, decision aggregation, and execution remain unimplemented.
+The Vault and MandateRegistry deployment paths are verified on local Anvil and X Layer testnet. Both deployed Vaults start with authority unset, and the MandateRegistry starts empty, so no autonomous execution or authority evaluation is enabled. Mandates currently store an optional per-transaction limit; `transactionLimit == 0` means disabled. The limit is data only for now and is not enforced by the Vault itself. The recorded X Layer MandateRegistry deployment predates this transaction-only schema change and has not been redeployed. `ActionTypes` now defines an atomic, ordered ActionPlan with versioned high-level action payloads; only `TRANSFER` is currently defined, and raw Vault calldata is intentionally outside the agent-facing format. `ActionSignature` provides EIP-712 hashing and low-s malleability-checked signer recovery, and `MandateEvaluator` now performs read-only Mandate, signature, deadline, action-shape, and native-amount checks. `VaultExecutor` now translates evaluator-approved native and ERC-20 transfers into atomic Vault calls. Nonce consumption, action-hash storage, adapters beyond transfers, decision aggregation, records, and relaying remain unimplemented.
 
 ## Action format
 
@@ -82,7 +82,7 @@ The agent-facing proposal uses readable intent fields rather than Solidity calld
 }
 ```
 
-`actions` is an ordered, atomic plan. `nonce` is a Grantline-managed proposal identifier scoped to the mandate and agent; it does not force strict execution order. `deadline` is an absolute Unix timestamp in seconds, with `0` meaning no expiry. The `type` and `version` select the typed decoder, and `ActionTypes` currently supports only `transfer` version `1`. `native` maps to the zero address internally; token amounts use raw base units. Typed parameters are later translated into validated Vault calls, while raw calldata remains outside the agent-facing format.
+`actions` is an ordered, atomic plan. `nonce` is a Grantline-managed proposal identifier scoped to the mandate and agent; it does not force strict execution order. `deadline` is an absolute Unix timestamp in seconds, with `0` meaning no expiry. The `type` and `version` select the typed decoder, and `ActionTypes` currently supports only `transfer`; nonzero versions use the existing transfer payload shape until version-specific decoding is added. `native` maps to the zero address internally; token amounts use raw base units. Typed parameters are translated into validated Vault calls, while raw calldata remains outside the agent-facing format.
 
 ## Agent signatures
 
@@ -91,6 +91,12 @@ The agent-facing proposal uses readable intent fields rather than Solidity calld
 ## Mandate evaluation
 
 `MandateEvaluator` returns a structured pass/fail result and stops at the first failure; it does not emit ALLOW or DENY. It checks Mandate existence and activity, agent binding, EIP-712 signature, deadline, non-empty actions, nonzero action version and parameters, and the transfer payload's recipient and amount. A nonzero `transactionLimit` is currently interpreted as native OKB base units and applies to the aggregate native amount across the plan. Token amounts are not compared or rejected because no asset guard or valuation source exists yet; only native amounts contribute to the limit. A disabled limit (`transactionLimit == 0`) skips amount enforcement. Future Guardian, Preflight, and decision checks should consume this result rather than be folded into the evaluator.
+
+## Vault execution
+
+`VaultExecutor` is the execution boundary above the low-level `Vault`. It re-runs `MandateEvaluator`, confirms the Mandate points to the supplied Vault, and translates each supported `TRANSFER` action into a `Vault.execute` call. Native transfers target the recipient directly; token transfers call ERC-20 `transfer` through the Vault. The executor accepts the standard empty or `true` ERC-20 return conventions and rejects false, malformed, or missing token targets.
+
+The Vault owner must explicitly set the executor as the Vault authority. The executor does not configure authority and cannot execute against a different Vault than the one stored in the Mandate. If evaluation fails, the executor reverts before calling the Vault; if a later downstream action fails, the whole executor transaction reverts, so earlier actions are rolled back. The signed nonce is currently not consumed, so replay protection remains unfinished.
 
 ## Deployment evidence
 
@@ -123,5 +129,7 @@ The probe returns the configured deployer and chain ID `1952` on X Layer, and ex
 | 2026-08-11 | Sign ActionPlans with EIP-712.                                                 | Agents sign readable intent while the digest binds the complete ordered plan to chain ID and verifying contract, preventing cross-domain replay.   |
 | 2026-08-11 | Keep Mandate evaluation separate from decision aggregation.                    | The evaluator returns the first structured failure so later Guardian and Preflight checks can compose before ALLOW, DENY, or ESCALATE is produced. |
 | 2026-08-11 | Treat the MVP transaction limit as native OKB only.                            | Raw amounts from different tokens cannot share a global numeric limit; token amounts are skipped until a valuation or asset-specific guard exists. |
+| 2026-08-11 | Keep Vault custody unchanged and execute through a separate VaultExecutor.     | Vault remains a simple authority-controlled custody primitive, while action translation and execution failure handling can evolve independently.   |
+| 2026-08-11 | Revert the complete executor transaction when a downstream action fails.       | A plan is atomic, so partial capital movement cannot be mistaken for successful execution.                                                         |
 
 Update this file whenever contract boundaries, deployment flow, network configuration, or security assumptions change. Do not record secrets or transient command output here.
