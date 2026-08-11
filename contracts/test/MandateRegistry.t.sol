@@ -20,7 +20,8 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            10 ether
+            10 ether,
+            1_000e18
         );
         MandateRegistry.Mandate memory mandate = registry.getMandate(mandateId);
 
@@ -32,6 +33,7 @@ contract MandateRegistryTest {
         assert(mandate.agent == agent);
         assert(mandate.status == MandateRegistry.MandateStatus.ACTIVE);
         assert(mandate.transactionLimit == 10 ether);
+        assert(mandate.usdTransactionLimit == 1_000e18);
         assert(registry.isActive(mandateId));
     }
 
@@ -43,15 +45,20 @@ contract MandateRegistryTest {
         bool unknownVaultReverted;
 
         try
-            registry.createMandate(address(0), address(0xA11CE), 1 ether)
+            registry.createMandate(address(0), address(0xA11CE), 1 ether, 0)
         {} catch {
             zeroAddressReverted = true;
         }
-        try registry.createMandate(address(vault), address(0xA11CE), 0) {
+        try registry.createMandate(address(vault), address(0xA11CE), 0, 0) {
             zeroTransactionLimitAllowed = true;
         } catch {}
         try
-            registry.createMandate(address(0xBEEF), address(0xA11CE), 1 ether)
+            registry.createMandate(
+                address(0xBEEF),
+                address(0xA11CE),
+                1 ether,
+                0
+            )
         {} catch {
             unknownVaultReverted = true;
         }
@@ -69,7 +76,7 @@ contract MandateRegistryTest {
 
         vm.prank(address(0xB0B));
         try
-            registry.createMandate(address(vault), address(0xA11CE), 1 ether)
+            registry.createMandate(address(vault), address(0xA11CE), 1 ether, 0)
         {} catch {
             reverted = true;
         }
@@ -84,17 +91,20 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             address(0xA11CE),
-            10 ether
+            10 ether,
+            1_000e18
         );
 
-        registry.updateMandate(mandateId, 20 ether);
+        registry.updateMandate(mandateId, 20 ether, 2_000e18);
         MandateRegistry.Mandate memory mandate = registry.getMandate(mandateId);
 
         assert(mandate.transactionLimit == 20 ether);
+        assert(mandate.usdTransactionLimit == 2_000e18);
         assert(mandate.status == MandateRegistry.MandateStatus.ACTIVE);
 
-        registry.updateMandate(mandateId, 0);
+        registry.updateMandate(mandateId, 0, 0);
         assert(registry.getMandate(mandateId).transactionLimit == 0);
+        assert(registry.getMandate(mandateId).usdTransactionLimit == 0);
     }
 
     function test_vaultOwnershipTransferMovesMandateAdministration() public {
@@ -104,20 +114,22 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             address(0xA11CE),
-            10 ether
+            10 ether,
+            1_000e18
         );
         vault.transferOwnership(newOwner);
 
         vm.prank(newOwner);
-        registry.updateMandate(mandateId, 20 ether);
+        registry.updateMandate(mandateId, 20 ether, 2_000e18);
 
         bool formerOwnerReverted;
-        try registry.updateMandate(mandateId, 30 ether) {} catch {
+        try registry.updateMandate(mandateId, 30 ether, 3_000e18) {} catch {
             formerOwnerReverted = true;
         }
 
         assert(formerOwnerReverted);
         assert(registry.getMandate(mandateId).transactionLimit == 20 ether);
+        assert(registry.getMandate(mandateId).usdTransactionLimit == 2_000e18);
     }
 
     function test_revokesWithoutDeletingHistory() public {
@@ -127,7 +139,8 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            10 ether
+            10 ether,
+            1_000e18
         );
 
         registry.revokeMandate(mandateId);
@@ -146,13 +159,14 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             address(0xA11CE),
-            10 ether
+            10 ether,
+            1_000e18
         );
         registry.revokeMandate(mandateId);
         bool updateReverted;
         bool revokeReverted;
 
-        try registry.updateMandate(mandateId, 20 ether) {} catch {
+        try registry.updateMandate(mandateId, 20 ether, 2_000e18) {} catch {
             updateReverted = true;
         }
         try registry.revokeMandate(mandateId) {} catch {
@@ -169,13 +183,15 @@ contract MandateRegistryTest {
         uint256 firstId = registry.createMandate(
             address(vault),
             address(0xA11CE),
-            10 ether
+            10 ether,
+            1_000e18
         );
         registry.revokeMandate(firstId);
         uint256 secondId = registry.createMandate(
             address(vault),
             address(0xB0B),
-            5 ether
+            5 ether,
+            500e18
         );
 
         assert(firstId == 1);

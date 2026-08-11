@@ -18,6 +18,7 @@ contract MandateRegistry {
         address agent;
         MandateStatus status;
         uint256 transactionLimit;
+        uint256 usdTransactionLimit;
         uint64 createdAt;
         uint64 revokedAt;
     }
@@ -34,11 +35,13 @@ contract MandateRegistry {
         address indexed vault,
         address agent,
         uint256 transactionLimit,
+        uint256 usdTransactionLimit,
         uint64 createdAt
     );
     event MandateUpdated(
         uint256 indexed mandateId,
         uint256 transactionLimit,
+        uint256 usdTransactionLimit,
         uint64 updatedAt
     );
     event MandateRevoked(
@@ -53,7 +56,8 @@ contract MandateRegistry {
     function createMandate(
         address vault,
         address agent,
-        uint256 transactionLimit
+        uint256 transactionLimit,
+        uint256 usdTransactionLimit
     ) external returns (uint256 mandateId) {
         _requireValidAddresses(vault, agent);
         _requireVaultOwner(vault, msg.sender);
@@ -67,6 +71,7 @@ contract MandateRegistry {
             agent: agent,
             status: MandateStatus.ACTIVE,
             transactionLimit: transactionLimit,
+            usdTransactionLimit: usdTransactionLimit,
             createdAt: createdAt,
             revokedAt: 0
         });
@@ -77,22 +82,26 @@ contract MandateRegistry {
             vault,
             agent,
             transactionLimit,
+            usdTransactionLimit,
             createdAt
         );
     }
 
     function updateMandate(
         uint256 mandateId,
-        uint256 transactionLimit
+        uint256 transactionLimit,
+        uint256 usdTransactionLimit
     ) external {
         Mandate storage mandate = _activeMandate(mandateId);
         _requireVaultOwner(mandate.vault, msg.sender);
 
         mandate.transactionLimit = transactionLimit;
+        mandate.usdTransactionLimit = usdTransactionLimit;
 
         emit MandateUpdated(
             mandateId,
             transactionLimit,
+            usdTransactionLimit,
             uint64(block.timestamp)
         );
     }
@@ -111,8 +120,9 @@ contract MandateRegistry {
     function getMandate(
         uint256 mandateId
     ) external view returns (Mandate memory) {
-        if (mandateId == 0 || mandateId > mandateCount)
+        if (mandateId == 0 || mandateId > mandateCount) {
             revert MandateNotFound(mandateId);
+        }
         return _mandates[mandateId];
     }
 
@@ -124,12 +134,14 @@ contract MandateRegistry {
     function _activeMandate(
         uint256 mandateId
     ) private view returns (Mandate storage mandate) {
-        if (mandateId == 0 || mandateId > mandateCount)
+        if (mandateId == 0 || mandateId > mandateCount) {
             revert MandateNotFound(mandateId);
+        }
 
         mandate = _mandates[mandateId];
-        if (mandate.status != MandateStatus.ACTIVE)
+        if (mandate.status != MandateStatus.ACTIVE) {
             revert MandateNotActive(mandateId);
+        }
     }
 
     function _requireVaultOwner(address vault, address caller) private view {

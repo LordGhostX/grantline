@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {ActionSignature} from "../src/ActionSignature.sol";
 import {ActionTypes} from "../src/ActionTypes.sol";
-import {MandateEvaluator} from "../src/MandateEvaluator.sol";
+import {IUsdValueProvider, MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {Vault} from "../src/Vault.sol";
 
@@ -16,6 +16,27 @@ interface EvaluatorVm {
     ) external returns (uint8 v, bytes32 r, bytes32 s);
 
     function warp(uint256 timestamp) external;
+}
+
+contract MockUsdValueProvider is IUsdValueProvider {
+    mapping(address asset => uint256 usdQuote) private _quotes;
+    mapping(address asset => bool available) private _available;
+
+    function setQuote(address asset, uint256 usdQuote) external {
+        _quotes[asset] = usdQuote;
+        _available[asset] = true;
+    }
+
+    function setUnavailable(address asset) external {
+        _available[asset] = false;
+    }
+
+    function quoteUsd(
+        address asset,
+        uint256
+    ) external view returns (uint256 usdAmount, bool available) {
+        return (_quotes[asset], _available[asset]);
+    }
 }
 
 contract MandateEvaluatorTest {
@@ -65,6 +86,194 @@ contract MandateEvaluatorTest {
         );
         assert(result.failedActionIndex == 1);
         assert(result.nativeAmount == 11 ether);
+    }
+
+    function test_evaluatesAggregateUsdTransferLimit() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        address token = address(0xCAFE);
+        provider.setQuote(address(0), 2_000e18);
+        provider.setQuote(token, 500e18);
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithUsd(10 ether, 2_500e18, address(provider), false);
+        plan.actions = new ActionTypes.Action[](2);
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 1 ether);
+        plan.actions[1] = _transferAction(token, address(0xD00D), 1);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.passed);
+        assert(result.usdAmount == 2_500e18);
+        assert(!result.usdLimitSkipped);
+    }
+
+    function test_rejectsPlanWhenAggregateUsdAmountExceedsLimit() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        provider.setQuote(address(0), 2_000e18);
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithUsd(10 ether, 3_000e18, address(provider), false);
+        plan.actions = new ActionTypes.Action[](2);
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 1 ether);
+        plan.actions[1] = _transferAction(address(0), address(0xD00D), 1 ether);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(!result.passed);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
+        );
+        assert(result.failedActionIndex == 1);
+        assert(result.usdAmount == 4_000e18);
+    }
+
+    function test_nativeAndUsdLimitsApplyIndependently() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        provider.setQuote(address(0), 2_000e18);
+
+        (
+            MandateEvaluator nativeLimitedEvaluator,
+            ActionTypes.ActionPlan memory nativeLimitedPlan,
+            uint256 nativePrivateKey
+        ) = _setupWithUsd(1 ether, 5_000e18, address(provider), false);
+        nativeLimitedPlan.actions[0] = _transferAction(
+            address(0),
+            address(0xBEEF),
+            2 ether
+        );
+        MandateEvaluator.EvaluationResult
+            memory nativeResult = nativeLimitedEvaluator.evaluate(
+                nativeLimitedPlan,
+                _sign(
+                    nativeLimitedEvaluator,
+                    nativeLimitedPlan,
+                    nativePrivateKey
+                )
+            );
+
+        assert(!nativeResult.passed);
+        assert(
+            nativeResult.failureCode ==
+                MandateEvaluator.FailureCode.TRANSACTION_LIMIT_EXCEEDED
+        );
+
+        (
+            MandateEvaluator usdLimitedEvaluator,
+            ActionTypes.ActionPlan memory usdLimitedPlan,
+            uint256 usdPrivateKey
+        ) = _setupWithUsd(10 ether, 1_000e18, address(provider), false);
+        MandateEvaluator.EvaluationResult memory usdResult = usdLimitedEvaluator
+            .evaluate(
+                usdLimitedPlan,
+                _sign(usdLimitedEvaluator, usdLimitedPlan, usdPrivateKey)
+            );
+
+        assert(!usdResult.passed);
+        assert(
+            usdResult.failureCode ==
+                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
+        );
+    }
+
+    function test_skipsUnavailableUsdValuationWhenConfigured() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithUsd(0, 1_000e18, address(provider), true);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.passed);
+        assert(result.usdAmount == 0);
+        assert(result.usdLimitSkipped);
+    }
+
+    function test_skippingUsdValuationStillEnforcesNativeLimit() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithUsd(1 ether, 1_000e18, address(provider), true);
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 2 ether);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(!result.passed);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.TRANSACTION_LIMIT_EXCEEDED
+        );
+        assert(!result.usdLimitSkipped);
+    }
+
+    function test_rejectsUnavailableUsdValuationWhenNotSkipped() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithUsd(0, 1_000e18, address(provider), false);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(!result.passed);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.USD_VALUATION_UNAVAILABLE
+        );
+    }
+
+    function test_rejectsUsdAmountOverflow() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        provider.setQuote(address(0), type(uint256).max);
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithUsd(
+                10 ether,
+                type(uint256).max,
+                address(provider),
+                false
+            );
+        plan.actions = new ActionTypes.Action[](2);
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 1 ether);
+        plan.actions[1] = _transferAction(address(0), address(0xD00D), 1 ether);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(!result.passed);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.USD_AMOUNT_OVERFLOW
+        );
+        assert(result.failedActionIndex == 1);
     }
 
     function test_disabledLimitAllowsTokenTransfer() public {
@@ -263,7 +472,11 @@ contract MandateEvaluatorTest {
 
     function test_rejectsUnknownAndRevokedMandates() public {
         MandateRegistry registry = new MandateRegistry();
-        MandateEvaluator evaluator = new MandateEvaluator(address(registry));
+        MandateEvaluator evaluator = new MandateEvaluator(
+            address(registry),
+            address(0),
+            true
+        );
         ActionTypes.ActionPlan memory unknownPlan = _plan(
             1,
             address(0xA11CE),
@@ -283,7 +496,8 @@ contract MandateEvaluatorTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             address(0xA11CE),
-            10 ether
+            10 ether,
+            0
         );
         registry.revokeMandate(mandateId);
         ActionTypes.ActionPlan memory revokedPlan = _plan(
@@ -312,6 +526,22 @@ contract MandateEvaluatorTest {
             uint256 privateKey
         )
     {
+        return _setupWithUsd(transactionLimit, 0, address(0), true);
+    }
+
+    function _setupWithUsd(
+        uint256 transactionLimit,
+        uint256 usdTransactionLimit,
+        address usdValueProvider,
+        bool skipUnavailableUsdValuation
+    )
+        private
+        returns (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        )
+    {
         privateKey = 0xA11CE;
         address agent = vm.addr(privateKey);
         Vault vault = new Vault();
@@ -319,9 +549,14 @@ contract MandateEvaluatorTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            transactionLimit
+            transactionLimit,
+            usdTransactionLimit
         );
-        evaluator = new MandateEvaluator(address(registry));
+        evaluator = new MandateEvaluator(
+            address(registry),
+            usdValueProvider,
+            skipUnavailableUsdValuation
+        );
         plan = _plan(mandateId, agent, 1 ether, 0);
     }
 
