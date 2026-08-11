@@ -107,6 +107,46 @@ contract MandateRegistryTest {
         assert(registry.getMandate(mandateId).usdTransactionLimit == 0);
     }
 
+    function test_consumesNonceOnlyOnceForCurrentVaultAuthority() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address agent = address(0xA11CE);
+        uint256 mandateId = registry.createMandate(address(vault), agent, 0, 0);
+        vault.setAuthority(address(this));
+
+        registry.consumeNonce(mandateId, agent, 7);
+        assert(registry.nonceUsed(mandateId, agent, 7));
+
+        bool duplicateReverted;
+        try registry.consumeNonce(mandateId, agent, 7) {} catch {
+            duplicateReverted = true;
+        }
+
+        assert(duplicateReverted);
+    }
+
+    function test_rejectsNonceConsumptionFromNonAuthorityOrWrongAgent() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address agent = address(0xA11CE);
+        uint256 mandateId = registry.createMandate(address(vault), agent, 0, 0);
+        vault.setAuthority(address(this));
+
+        bool wrongAgentReverted;
+        bool nonAuthorityReverted;
+        try registry.consumeNonce(mandateId, address(0xB0B), 1) {} catch {
+            wrongAgentReverted = true;
+        }
+        vm.prank(address(0xB0B));
+        try registry.consumeNonce(mandateId, agent, 1) {} catch {
+            nonAuthorityReverted = true;
+        }
+
+        assert(wrongAgentReverted);
+        assert(nonAuthorityReverted);
+        assert(!registry.nonceUsed(mandateId, agent, 1));
+    }
+
     function test_vaultOwnershipTransferMovesMandateAdministration() public {
         Vault vault = new Vault();
         MandateRegistry registry = new MandateRegistry();

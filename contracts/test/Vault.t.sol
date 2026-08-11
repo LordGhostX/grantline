@@ -115,6 +115,23 @@ contract VaultTest {
         assert(token.balanceOf(address(this)) == 65 ether);
     }
 
+    function test_rejectsEOATokenCustody() public {
+        Vault vault = new Vault();
+        address token = address(0xCAFE);
+        bool depositReverted;
+        bool withdrawalReverted;
+
+        try vault.depositToken(token, 1 ether) {} catch {
+            depositReverted = true;
+        }
+        try vault.withdrawToken(token, address(this), 1 ether) {} catch {
+            withdrawalReverted = true;
+        }
+
+        assert(depositReverted);
+        assert(withdrawalReverted);
+    }
+
     function test_rejectsNonOwnerAdministration() public {
         Vault vault = new Vault();
         address outsider = address(0x1234);

@@ -5,6 +5,10 @@ interface IVaultOwner {
     function owner() external view returns (address);
 }
 
+interface IVaultAuthority {
+    function authority() external view returns (address);
+}
+
 contract MandateRegistry {
     enum MandateStatus {
         ACTIVE,
@@ -27,6 +31,9 @@ contract MandateRegistry {
     error InvalidVault();
     error MandateNotActive(uint256 mandateId);
     error MandateNotFound(uint256 mandateId);
+    error MandateAgentMismatch(uint256 mandateId, address agent);
+    error NonceAlreadyUsed(uint256 mandateId, address agent, uint256 nonce);
+    error NotVaultAuthority(address caller);
     error NotVaultOwner(address caller);
 
     event MandateCreated(
@@ -51,6 +58,8 @@ contract MandateRegistry {
     );
 
     mapping(uint256 mandateId => Mandate mandate) private _mandates;
+    mapping(uint256 mandateId => mapping(address agent => mapping(uint256 nonce => bool)))
+        public nonceUsed;
     uint256 public mandateCount;
 
     function createMandate(
@@ -117,6 +126,23 @@ contract MandateRegistry {
         emit MandateRevoked(mandateId, msg.sender, revokedAt);
     }
 
+    function consumeNonce(
+        uint256 mandateId,
+        address agent,
+        uint256 nonce
+    ) external {
+        Mandate storage mandate = _activeMandate(mandateId);
+        if (mandate.agent != agent) {
+            revert MandateAgentMismatch(mandateId, agent);
+        }
+        _requireVaultAuthority(mandate.vault, msg.sender);
+
+        if (nonceUsed[mandateId][agent][nonce]) {
+            revert NonceAlreadyUsed(mandateId, agent, nonce);
+        }
+        nonceUsed[mandateId][agent][nonce] = true;
+    }
+
     function getMandate(
         uint256 mandateId
     ) external view returns (Mandate memory) {
@@ -149,6 +175,21 @@ contract MandateRegistry {
 
         try IVaultOwner(vault).owner() returns (address vaultOwner) {
             if (vaultOwner != caller) revert NotVaultOwner(caller);
+        } catch {
+            revert InvalidVault();
+        }
+    }
+
+    function _requireVaultAuthority(
+        address vault,
+        address caller
+    ) private view {
+        if (vault.code.length == 0) revert InvalidVault();
+
+        try IVaultAuthority(vault).authority() returns (
+            address vaultAuthority
+        ) {
+            if (vaultAuthority != caller) revert NotVaultAuthority(caller);
         } catch {
             revert InvalidVault();
         }

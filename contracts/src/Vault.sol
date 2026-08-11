@@ -23,6 +23,7 @@ contract Vault {
     error NativeTransferFailed();
     error NotAuthority(address caller);
     error NotOwner(address caller);
+    error InvalidTokenTarget(address token);
     error TokenTransferFailed();
 
     event AuthorityUpdated(
@@ -140,8 +141,9 @@ contract Vault {
         uint256 value,
         bytes calldata data
     ) external onlyAuthority returns (bool success, bytes memory result) {
-        if (target == address(0) || target == address(this))
+        if (target == address(0) || target == address(this)) {
             revert InvalidAddress();
+        }
 
         (success, result) = target.call{value: value}(data);
         emit ExecutionAttempted(
@@ -160,17 +162,19 @@ contract Vault {
     }
 
     modifier onlyAuthority() {
-        if (authority == address(0) || msg.sender != authority)
+        if (authority == address(0) || msg.sender != authority) {
             revert NotAuthority(msg.sender);
+        }
         _;
     }
 
     function _requireTokenAndAmount(
         address token,
         uint256 amount
-    ) private pure {
+    ) private view {
         if (token == address(0)) revert InvalidAddress();
         if (amount == 0) revert InvalidAmount();
+        if (token.code.length == 0) revert InvalidTokenTarget(token);
     }
 
     function _safeTokenCall(address token, bytes memory callData) private {

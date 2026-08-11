@@ -238,6 +238,35 @@ contract VaultExecutorTest {
         assert(address(vault).balance == 1 ether);
     }
 
+    function test_rejectsReplayAfterExecutorReplacement() public {
+        (
+            Vault vault,
+            VaultExecutor executor,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(2 ether);
+        address recipient = address(0xBEEF);
+        vm.deal(address(vault), 2 ether);
+        bytes memory signature = _sign(executor, plan, privateKey);
+
+        executor.execute(vault, plan, signature);
+
+        VaultExecutor replacement = new VaultExecutor(
+            address(executor.evaluator())
+        );
+        vault.setAuthority(address(replacement));
+
+        bool reverted;
+        try replacement.execute(vault, plan, signature) {} catch {
+            reverted = true;
+        }
+
+        assert(reverted);
+        assert(replacement.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+        assert(recipient.balance == 1 ether);
+        assert(address(vault).balance == 1 ether);
+    }
+
     function test_rejectsDifferentPlanWithUsedNonce() public {
         (
             Vault vault,

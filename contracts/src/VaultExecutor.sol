@@ -39,8 +39,6 @@ contract VaultExecutor {
     );
 
     MandateEvaluator public immutable evaluator;
-    mapping(uint256 => mapping(address => mapping(uint256 => bool)))
-        public nonceUsed;
 
     constructor(address evaluatorAddress) {
         if (
@@ -77,10 +75,13 @@ contract VaultExecutor {
             address(evaluator),
             block.chainid
         );
-        if (nonceUsed[plan.mandateId][plan.agent][plan.nonce]) {
+        MandateRegistry registry = MandateRegistry(
+            address(evaluator.registry())
+        );
+        if (registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce)) {
             revert NonceAlreadyUsed(plan.mandateId, plan.agent, plan.nonce);
         }
-        nonceUsed[plan.mandateId][plan.agent][plan.nonce] = true;
+        registry.consumeNonce(plan.mandateId, plan.agent, plan.nonce);
 
         for (uint256 index; index < plan.actions.length; index++) {
             _executeAction(vault, plan.actions[index], index);
@@ -97,6 +98,19 @@ contract VaultExecutor {
             evaluation.usdLimitSkipped,
             plan.actions.length
         );
+    }
+
+    function nonceUsed(
+        uint256 mandateId,
+        address agent,
+        uint256 nonce
+    ) external view returns (bool) {
+        return
+            MandateRegistry(address(evaluator.registry())).nonceUsed(
+                mandateId,
+                agent,
+                nonce
+            );
     }
 
     function _executeAction(
