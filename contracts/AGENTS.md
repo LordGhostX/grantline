@@ -98,6 +98,10 @@ The agent-facing proposal uses readable intent fields rather than Solidity calld
 
 The Vault owner must explicitly set the executor as the Vault authority. The executor does not configure authority and cannot execute against a different Vault than the one stored in the Mandate. If evaluation fails, the executor reverts before calling the Vault; if a later downstream action fails, the whole executor transaction reverts, so earlier actions are rolled back. The signed nonce is currently not consumed, so replay protection remains unfinished.
 
+## Deferred work
+
+- [ ] Build a minimal offchain relayer after the contract execution loop is complete. It should accept a signed ActionPlan, submit `VaultExecutor.execute` with a funded EOA, and report the transaction receipt. It must remain a gas-paying caller only; `VaultExecutor` and the Vault authority configuration remain the enforcement boundary.
+
 ## Deployment evidence
 
 | Deployment                                 | Chain ID | Contract address                             | Transaction hash                                                     |
