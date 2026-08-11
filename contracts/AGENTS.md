@@ -86,14 +86,14 @@ The agent-facing proposal uses readable intent fields rather than Solidity calld
 
 ## Deployment evidence
 
-| Deployment                                 | Chain ID | Contract address                             | Transaction hash                                                     | Explorer                                                                  |
-| ------------------------------------------ | -------: | -------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| DeploymentProbe · local Anvil (fresh node) |  `31337` | `0x5FbDB2315678afecb367f032d93F642f64180aa3` | Stored in the ignored local broadcast receipt                        | Local node only                                                           |
-| DeploymentProbe · X Layer testnet          |   `1952` | `0xdeFC33e462C77AbbA7DCaEa2888FA5B937e9eC91` | `0xccf3c6f6b9d081e549f0ad5156cad85cc5e9476a2e7e4fb6176f3da779ea33d9` | [X Layer testnet explorer](https://web3.okx.com/explorer/x-layer-testnet) |
-| Vault · local Anvil (fresh node)           |  `31337` | `0x5FbDB2315678afecb367f032d93F642f64180aa3` | Stored in the ignored local broadcast receipt                        | Local node only                                                           |
-| Vault · X Layer testnet                    |   `1952` | `0xee1C3897A9c69460a3957d17B7B368B4162F6129` | `0x18cfe66cb3003486738f2624a1ca209af51103d4d966c16d8710d7502df5bcee` | [X Layer testnet explorer](https://web3.okx.com/explorer/x-layer-testnet) |
-| MandateRegistry · local Anvil (fresh node) |  `31337` | `0x5FbDB2315678afecb367f032d93F642f64180aa3` | Stored in the ignored local broadcast receipt                        | Local node only                                                           |
-| MandateRegistry · X Layer testnet          |   `1952` | `0x5c6c7b9850385190D297B55C1C81f99adb0fd1d7` | `0x9bfc665985d4ce11cb71ae3769b7404d3ac9dc4155a89bafd0cbc4e7cdf6f7da` | [X Layer testnet explorer](https://web3.okx.com/explorer/x-layer-testnet) |
+| Deployment                                 | Chain ID | Contract address                             | Transaction hash                                                     |
+| ------------------------------------------ | -------: | -------------------------------------------- | -------------------------------------------------------------------- |
+| DeploymentProbe · local Anvil (fresh node) |  `31337` | `0x5FbDB2315678afecb367f032d93F642f64180aa3` | Stored in the ignored local broadcast receipt                        |
+| DeploymentProbe · X Layer testnet          |   `1952` | `0xdeFC33e462C77AbbA7DCaEa2888FA5B937e9eC91` | `0xccf3c6f6b9d081e549f0ad5156cad85cc5e9476a2e7e4fb6176f3da779ea33d9` |
+| Vault · local Anvil (fresh node)           |  `31337` | `0x5FbDB2315678afecb367f032d93F642f64180aa3` | Stored in the ignored local broadcast receipt                        |
+| Vault · X Layer testnet                    |   `1952` | `0xee1C3897A9c69460a3957d17B7B368B4162F6129` | `0x18cfe66cb3003486738f2624a1ca209af51103d4d966c16d8710d7502df5bcee` |
+| MandateRegistry · local Anvil (fresh node) |  `31337` | `0x5FbDB2315678afecb367f032d93F642f64180aa3` | Stored in the ignored local broadcast receipt                        |
+| MandateRegistry · X Layer testnet          |   `1952` | `0x5c6c7b9850385190D297B55C1C81f99adb0fd1d7` | `0x9bfc665985d4ce11cb71ae3769b7404d3ac9dc4155a89bafd0cbc4e7cdf6f7da` |
 
 The probe returns the configured deployer and chain ID `1952` on X Layer, and exposes version `grantline-deployment-probe-v1`. The deployer key is intentionally not recorded.
 
