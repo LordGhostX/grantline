@@ -1,2 +1,9 @@
 .DS_Store
 plans
+.env
+.env.*
+!.env.example
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+contracts/lib/
