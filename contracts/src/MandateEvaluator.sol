@@ -205,7 +205,10 @@ contract MandateEvaluator {
             FailureCode failureCode
         )
     {
-        if (action.version == 0 || action.parameters.length == 0) {
+        if (
+            action.version != ActionTypes.TRANSFER_VERSION ||
+            action.parameters.length == 0
+        ) {
             return (
                 false,
                 currentNativeAmount,

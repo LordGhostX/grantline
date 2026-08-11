@@ -458,31 +458,54 @@ contract MandateEvaluatorTest {
         assert(result.nativeAmount == 0);
     }
 
-    function test_doesNotRequireTransferVersionOne() public {
+    function test_rejectsUnsupportedTransferVersions() public {
         (
             MandateEvaluator evaluator,
             ActionTypes.ActionPlan memory plan,
             uint256 privateKey
         ) = _setup(10 ether);
-        plan.actions[0] = ActionTypes.Action({
-            actionType: ActionTypes.ActionType.TRANSFER,
-            version: 2,
-            parameters: abi.encode(
-                ActionTypes.TransferParameters({
-                    asset: address(0),
-                    recipient: address(0xBEEF),
-                    amount: 1 ether
-                })
-            )
-        });
+        plan.actions[0].version = 2;
+
+        MandateEvaluator.EvaluationResult memory versionTwoResult = evaluator
+            .evaluate(plan, _sign(evaluator, plan, privateKey));
+        assert(!versionTwoResult.passed);
+        assert(
+            versionTwoResult.failureCode ==
+                MandateEvaluator.FailureCode.INVALID_ACTION
+        );
+        assert(versionTwoResult.failedActionIndex == 0);
+        assert(versionTwoResult.nativeAmount == 0);
+
+        plan.actions[0].version = type(uint8).max;
+        MandateEvaluator.EvaluationResult memory maxVersionResult = evaluator
+            .evaluate(plan, _sign(evaluator, plan, privateKey));
+        assert(!maxVersionResult.passed);
+        assert(
+            maxVersionResult.failureCode ==
+                MandateEvaluator.FailureCode.INVALID_ACTION
+        );
+        assert(maxVersionResult.failedActionIndex == 0);
+        assert(maxVersionResult.nativeAmount == 0);
+    }
+
+    function test_rejectsZeroTransferVersion() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(10 ether);
+        plan.actions[0].version = 0;
 
         MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
             plan,
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(result.passed);
-        assert(result.nativeAmount == 1 ether);
+        assert(!result.passed);
+        assert(
+            result.failureCode == MandateEvaluator.FailureCode.INVALID_ACTION
+        );
+        assert(result.failedActionIndex == 0);
     }
 
     function test_rejectsMandateAgentSignatureAndDeadlineFailures() public {

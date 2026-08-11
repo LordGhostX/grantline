@@ -2,6 +2,8 @@
 pragma solidity ^0.8.28;
 
 library ActionTypes {
+    uint8 internal constant TRANSFER_VERSION = 1;
+
     enum ActionType {
         TRANSFER
     }

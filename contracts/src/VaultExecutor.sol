@@ -24,6 +24,7 @@ contract VaultExecutor {
     error InvalidTokenTarget(address token);
     error NonceAlreadyUsed(uint256 mandateId, address agent, uint256 nonce);
     error UnsupportedAction(ActionTypes.ActionType actionType);
+    error UnsupportedActionVersion(uint8 version);
     error VaultMismatch(address expectedVault, address providedVault);
 
     event ActionPlanExecuted(
@@ -120,6 +121,9 @@ contract VaultExecutor {
     ) private {
         if (action.actionType != ActionTypes.ActionType.TRANSFER) {
             revert UnsupportedAction(action.actionType);
+        }
+        if (action.version != ActionTypes.TRANSFER_VERSION) {
+            revert UnsupportedActionVersion(action.version);
         }
 
         ActionTypes.TransferParameters memory transfer = abi.decode(

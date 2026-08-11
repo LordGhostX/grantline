@@ -148,6 +148,30 @@ contract VaultExecutorTest {
         assert(address(vault).balance == 1 ether);
     }
 
+    function test_rejectsUnsupportedActionVersionBeforeExecution() public {
+        (
+            Vault vault,
+            VaultExecutor executor,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(2 ether);
+        address recipient = address(0xBEEF);
+        vm.deal(address(vault), 2 ether);
+        plan.actions[0].version = 2;
+
+        bool reverted;
+        try
+            executor.execute(vault, plan, _sign(executor, plan, privateKey))
+        {} catch {
+            reverted = true;
+        }
+
+        assert(reverted);
+        assert(!executor.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+        assert(recipient.balance == 0);
+        assert(address(vault).balance == 2 ether);
+    }
+
     function test_executesSignedTokenPlanThroughVault() public {
         (
             Vault vault,
