@@ -1,0 +1,2271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grantline | Programmable financial authority for AI agents</title>
+    <meta
+      name="description"
+      content="Grantline provides programmable financial authority for AI agents, with enforceable limits, conditions, delegation, approvals, and traceable execution."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0c0f0d;
+        --surface: #131713;
+        --surface-raised: #191e1a;
+        --border: #2b312c;
+        --border-subtle: #202620;
+        --text: #f1f4ee;
+        --text-secondary: #a1aaa2;
+        --brand: #d0b46c;
+        --allow: #72b98b;
+        --escalate: #e1a85a;
+        --deny: #d97878;
+        --max: 1180px;
+        --radius: 6px;
+        --radius-sm: 4px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: auto;
+      }
+      body {
+        margin: 0;
+        font-family: "Geist", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      a {
+        color: inherit;
+      }
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .page-grid {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background:
+          linear-gradient(
+            to right,
+            transparent calc(50% - 0.5px),
+            rgba(208, 180, 108, 0.045) 50%,
+            transparent calc(50% + 0.5px)
+          ),
+          repeating-linear-gradient(
+            to right,
+            transparent 0,
+            transparent calc(8.333vw - 1px),
+            rgba(255, 255, 255, 0.025) calc(8.333vw - 1px),
+            rgba(255, 255, 255, 0.025) 8.333vw
+          );
+        mask-image: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0.7),
+          transparent 78%
+        );
+        z-index: -1;
+      }
+
+      .shell {
+        width: min(var(--max), calc(100% - 48px));
+        margin: 0 auto;
+      }
+
+      .nav-wrap {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        border-bottom: 1px solid rgba(43, 49, 44, 0.82);
+        background: rgba(12, 15, 13, 0.88);
+        backdrop-filter: blur(14px);
+      }
+      nav {
+        min-height: 66px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+      .brand-lockup {
+        display: inline-flex;
+        gap: 11px;
+        align-items: center;
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 19px;
+        line-height: 1;
+        letter-spacing: -0.025em;
+      }
+      .brand-mark {
+        width: 28px;
+        height: 28px;
+        display: block;
+        flex: 0 0 auto;
+        color: var(--brand);
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+      }
+      .nav-links a {
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 14px;
+      }
+      .nav-links a:hover {
+        color: var(--text);
+      }
+      .menu-toggle {
+        display: none;
+        width: 42px;
+        height: 42px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+        color: var(--text);
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        cursor: pointer;
+      }
+      .menu-icon {
+        width: 16px;
+        height: 12px;
+        display: grid;
+        align-content: space-between;
+      }
+      .menu-icon span {
+        display: block;
+        width: 100%;
+        height: 1px;
+        background: currentColor;
+        transition:
+          transform 0.16s ease,
+          opacity 0.16s ease;
+      }
+      .menu-toggle[aria-expanded="true"] .menu-icon span:nth-child(1) {
+        transform: translateY(5.5px) rotate(45deg);
+      }
+      .menu-toggle[aria-expanded="true"] .menu-icon span:nth-child(2) {
+        opacity: 0;
+      }
+      .menu-toggle[aria-expanded="true"] .menu-icon span:nth-child(3) {
+        transform: translateY(-5.5px) rotate(-45deg);
+      }
+      .mobile-menu {
+        display: none;
+        border-top: 1px solid var(--border);
+        background: rgba(12, 15, 13, 0.97);
+      }
+      .mobile-menu-inner {
+        width: min(var(--max), calc(100% - 28px));
+        margin: 0 auto;
+        padding: 12px 0 16px;
+        display: grid;
+      }
+      .mobile-menu a {
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        color: var(--text-secondary);
+        text-decoration: none;
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: 15px;
+      }
+      .mobile-menu a:last-child {
+        border-bottom: 0;
+      }
+      .mobile-menu a.mobile-demo {
+        margin-top: 10px;
+        min-height: 44px;
+        padding: 0 14px;
+        justify-content: center;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        background: var(--surface);
+        font-weight: 600;
+      }
+      .mobile-menu[data-open="true"] {
+        display: block;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 16px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        transition:
+          border-color 0.16s ease,
+          background 0.16s ease,
+          transform 0.16s ease;
+      }
+      .btn:hover {
+        border-color: #465046;
+        background: var(--surface-raised);
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+      .btn.primary {
+        border-color: var(--brand);
+        background: var(--brand);
+        color: #17140d;
+      }
+      .btn.primary:hover {
+        background: #ddc27b;
+      }
+
+      .hero {
+        padding: clamp(34px, 5vh, 58px) 0 clamp(42px, 6vh, 68px);
+        min-height: calc(100svh - 66px);
+        display: grid;
+        align-items: center;
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.04fr 0.96fr;
+        gap: 64px;
+        align-items: center;
+      }
+      .eyebrow,
+      .section-kicker {
+        font-family: "Geist Mono", monospace;
+        color: var(--brand);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 20px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+      h1 {
+        font-size: clamp(42px, 4.5vw, 64px);
+        line-height: 1.01;
+        letter-spacing: -0.046em;
+        margin-bottom: 22px;
+        max-width: 690px;
+      }
+      .hero-copy {
+        font-size: clamp(17px, 1.35vw, 20px);
+        color: var(--text-secondary);
+        max-width: 650px;
+        line-height: 1.48;
+        margin-bottom: 22px;
+      }
+      .hero-principle {
+        font-family: "Geist Mono", monospace;
+        font-size: 14px;
+        color: var(--text);
+        border-left: 1px solid var(--brand);
+        padding-left: 14px;
+        margin: 22px 0 26px;
+      }
+      .hero-actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .auth-console {
+        border: 1px solid var(--border);
+        background: linear-gradient(
+          180deg,
+          rgba(25, 30, 26, 0.96),
+          rgba(15, 18, 16, 0.96)
+        );
+        border-radius: var(--radius);
+        overflow: hidden;
+        box-shadow: 0 28px 90px rgba(0, 0, 0, 0.34);
+      }
+      .console-top {
+        min-height: 46px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.012);
+      }
+      .console-title {
+        font-family: "Geist Mono", monospace;
+        font-size: 11px;
+        color: var(--text-secondary);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .console-status {
+        font-family: "Geist Mono", monospace;
+        font-size: 11px;
+        color: var(--brand);
+      }
+      .decision-explore-label {
+        padding: 10px 16px 9px;
+        border-bottom: 1px solid var(--border);
+        background: #0f130f;
+        color: var(--text-secondary);
+        font:
+          500 11px/1 "Geist Mono",
+          monospace;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      .decision-explore-label strong {
+        color: var(--brand);
+        font-weight: 500;
+      }
+      .decision-tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        border-bottom: 1px solid var(--border);
+      }
+      .decision-tab {
+        position: relative;
+        appearance: none;
+        border: 0;
+        border-right: 1px solid var(--border);
+        background: #101410;
+        color: var(--text-secondary);
+        padding: 15px 8px;
+        font:
+          500 11px/1 "Geist Mono",
+          monospace;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition:
+          background-color 150ms ease,
+          color 150ms ease,
+          box-shadow 150ms ease;
+      }
+      .decision-tab:last-child {
+        border-right: 0;
+      }
+      .decision-tab:hover {
+        background: rgba(208, 180, 108, 0.055);
+        color: var(--text);
+      }
+      .decision-tab:focus-visible {
+        z-index: 1;
+        outline: 2px solid var(--brand);
+        outline-offset: -2px;
+        color: var(--text);
+      }
+      .decision-tab[aria-selected="true"] {
+        background: var(--surface-raised);
+        color: var(--text);
+        box-shadow: inset 0 -2px 0 var(--brand);
+      }
+      .console-body {
+        padding: 24px;
+      }
+      .request-block {
+        padding: 16px;
+        border: 1px solid var(--border);
+        background: #101410;
+        border-radius: 4px;
+        margin-bottom: 20px;
+      }
+      .label {
+        font-family: "Geist Mono", monospace;
+        font-size: 10px;
+        color: var(--text-secondary);
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+      }
+      .request-name {
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+      }
+      .request-agent {
+        color: var(--text-secondary);
+        font-size: 13px;
+        margin-top: 5px;
+      }
+      .authority-line {
+        position: relative;
+        width: 1px;
+        height: 28px;
+        background: var(--brand);
+        margin: 14px auto 16px;
+        justify-self: center;
+      }
+      .authority-line::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        bottom: 1px;
+        width: 7px;
+        height: 7px;
+        border-right: 1px solid var(--brand);
+        border-bottom: 1px solid var(--brand);
+        transform: translateX(-50%) rotate(45deg);
+        transform-origin: center;
+      }
+      .mandate-card {
+        border: 1px solid var(--brand);
+        border-radius: 4px;
+        overflow: hidden;
+        background: rgba(208, 180, 108, 0.035);
+      }
+      .mandate-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid rgba(208, 180, 108, 0.28);
+        font:
+          600 11px/1.2 "Geist Mono",
+          monospace;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .mandate-rows {
+        padding: 6px 14px;
+      }
+      .mandate-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 9px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+        font-family: "Geist Mono", monospace;
+        font-size: 11px;
+      }
+      .mandate-row:last-child {
+        border-bottom: 0;
+      }
+      .mandate-row span:first-child {
+        color: var(--text-secondary);
+      }
+      .ok {
+        color: var(--allow);
+      }
+      .warn {
+        color: var(--escalate);
+      }
+      .bad {
+        color: var(--deny);
+      }
+      .decision-output {
+        margin-top: 20px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-left-width: 3px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        background: #101410;
+        border-radius: 4px;
+      }
+      .decision-output.allow {
+        border-left-color: var(--allow);
+      }
+      .decision-output.escalate {
+        border-left-color: var(--escalate);
+      }
+      .decision-output.deny {
+        border-left-color: var(--deny);
+      }
+      .decision-word {
+        font:
+          600 16px/1 "Geist Mono",
+          monospace;
+        letter-spacing: 0.06em;
+      }
+      .decision-output.allow .decision-word {
+        color: var(--allow);
+      }
+      .decision-output.escalate .decision-word {
+        color: var(--escalate);
+      }
+      .decision-output.deny .decision-word {
+        color: var(--deny);
+      }
+      .decision-reason {
+        color: var(--text-secondary);
+        font-size: 12px;
+        text-align: right;
+        max-width: 210px;
+      }
+      .decision-meta {
+        margin-top: 8px;
+        font:
+          500 11px/1.35 "Geist Mono",
+          monospace;
+        color: var(--text-secondary);
+      }
+      .decision-meta:empty {
+        display: none;
+      }
+      .decision-meta a {
+        color: var(--text-secondary);
+        text-decoration: none;
+      }
+      .decision-meta a:hover {
+        color: var(--text);
+      }
+
+      section {
+        padding: clamp(72px, 10vh, 112px) 0;
+        border-top: 1px solid var(--border-subtle);
+      }
+      .section-head {
+        max-width: 820px;
+        margin-bottom: 40px;
+      }
+      h2 {
+        font-size: clamp(30px, 3.15vw, 46px);
+        line-height: 1.08;
+        letter-spacing: -0.035em;
+        margin-bottom: 16px;
+      }
+      .section-copy {
+        color: var(--text-secondary);
+        font-size: 19px;
+        line-height: 1.55;
+        max-width: 760px;
+      }
+
+      .question-frame {
+        position: relative;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        overflow: hidden;
+        background: var(--surface);
+      }
+      .question-frame::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 1px;
+        background: var(--border);
+        pointer-events: none;
+        z-index: 3;
+      }
+      .question-shift {
+        background: var(--surface);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        align-items: stretch;
+      }
+      .question-side {
+        padding: clamp(28px, 3.3vw, 42px);
+        min-height: 270px;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        gap: 0;
+      }
+      .question-side > div:last-child {
+        margin-top: clamp(52px, 4.5vw, 70px);
+      }
+      .question-side.grantline {
+        background: linear-gradient(
+          180deg,
+          rgba(208, 180, 108, 0.055),
+          rgba(208, 180, 108, 0.018)
+        );
+      }
+      .question-title {
+        font-family: "Geist Mono", monospace;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--text-secondary);
+      }
+      .question-main {
+        font-size: clamp(27px, 2.6vw, 38px);
+        line-height: 1.08;
+        letter-spacing: -0.03em;
+        font-weight: 500;
+        max-width: 450px;
+      }
+      .question-side.grantline .question-main {
+        color: var(--text);
+      }
+      .question-note {
+        color: var(--text-secondary);
+        font-size: 14px;
+        max-width: 420px;
+        margin: 18px 0 0;
+        line-height: 1.55;
+      }
+      .authority-questions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        border-top: 1px solid var(--border);
+        background: #101410;
+      }
+      .authority-question {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+      .authority-question:nth-last-child(-n + 2) {
+        border-bottom: 0;
+      }
+      .authority-question b {
+        color: var(--brand);
+        font:
+          500 10px/1 "Geist Mono",
+          monospace;
+        margin-right: 7px;
+      }
+
+      .flow-track {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        align-items: stretch;
+        position: relative;
+      }
+      .flow-track::before {
+        content: "";
+        position: absolute;
+        height: 1px;
+        left: 7%;
+        right: 7%;
+        top: 37px;
+        background: var(--brand);
+        z-index: 0;
+      }
+      .flow-step {
+        position: relative;
+        z-index: 1;
+        text-align: center;
+        padding: 0 10px;
+      }
+      .flow-node {
+        width: 104px;
+        height: 76px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        margin: 0 auto 16px;
+        display: grid;
+        place-items: center;
+        font:
+          600 11px/1.2 "Geist Mono",
+          monospace;
+        color: var(--text);
+        text-transform: uppercase;
+        white-space: nowrap;
+        padding: 6px 10px;
+      }
+      .flow-step.control .flow-node {
+        border-color: var(--brand);
+        color: var(--brand);
+      }
+      .flow-step h3 {
+        font-size: 17px;
+        font-weight: 700;
+        margin-bottom: 6px;
+        color: var(--text);
+      }
+      .flow-step.control h3 {
+        color: var(--brand);
+      }
+      .flow-step p {
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+      .condition-branch {
+        margin: 52px auto 0;
+        max-width: 900px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        padding: 22px 24px;
+        border-radius: 4px;
+        display: grid;
+        grid-template-columns: 1fr 1px 1fr 1px 1fr;
+        gap: 22px;
+        align-items: stretch;
+      }
+      .condition-branch .sep {
+        width: 1px;
+        min-height: 74px;
+        background: var(--border);
+      }
+      .condition-item {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 7px;
+      }
+      .condition-item strong {
+        color: var(--text);
+        font-size: 17px;
+        line-height: 1.2;
+      }
+      .condition-item p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .model-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1px;
+        background: var(--border);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .model-cell {
+        background: var(--bg);
+        padding: 34px;
+        min-height: 285px;
+      }
+      .model-num {
+        color: var(--brand);
+        font:
+          600 12px/1 "Geist Mono",
+          monospace;
+        margin-bottom: 38px;
+      }
+      .model-topic {
+        color: var(--text-secondary);
+        font:
+          600 12px/1.3 "Geist Mono",
+          monospace;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+      }
+      .model-cell h3 {
+        font-size: 26px;
+        line-height: 1.12;
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        margin-bottom: 12px;
+      }
+      .model-cell p {
+        color: var(--text-secondary);
+        font-size: 18px;
+        line-height: 1.52;
+        max-width: 560px;
+      }
+      .model-tags {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 20px;
+      }
+      .tag {
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 3px;
+        padding: 7px 9px;
+        color: var(--text-secondary);
+        font:
+          500 11px/1 "Geist Mono",
+          monospace;
+        text-transform: uppercase;
+      }
+
+      .thesis-break {
+        padding: clamp(92px, 13vh, 150px) 0;
+      }
+      .thesis-break .shell {
+        max-width: 1040px;
+      }
+      .thesis-statement {
+        margin: 0;
+        font-size: clamp(42px, 5.2vw, 72px);
+        line-height: 1.08;
+        letter-spacing: -0.045em;
+        font-weight: 500;
+        max-width: 980px;
+      }
+      .thesis-statement .accent {
+        color: var(--brand);
+      }
+
+      .delegation-wrap {
+        display: grid;
+        grid-template-columns: 0.8fr 1.2fr;
+        gap: 64px;
+        align-items: center;
+      }
+      .delegation-copy p {
+        color: var(--text-secondary);
+        font-size: 18px;
+      }
+      .delegation-principle {
+        margin-top: 26px;
+        padding: 14px 0 14px 16px;
+        border-left: 1px solid var(--brand);
+        font:
+          500 13px/1.55 "Geist Mono",
+          monospace;
+        color: var(--text);
+      }
+      .tree {
+        display: grid;
+        justify-items: center;
+      }
+      .tree-card {
+        width: min(100%, 430px);
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 4px;
+        padding: 16px 18px;
+      }
+      .tree-card strong {
+        display: block;
+        font-size: 16px;
+        margin-bottom: 3px;
+      }
+      .tree-card small {
+        color: var(--text-secondary);
+        font-family: "Geist Mono", monospace;
+      }
+      .denied-branch {
+        width: min(100%, 430px);
+        margin-top: 24px;
+        border-top: 1px solid var(--border);
+        padding-top: 16px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .branch-item {
+        border: 1px solid var(--border);
+        padding: 11px;
+        background: #101410;
+        font:
+          500 10px/1.35 "Geist Mono",
+          monospace;
+        color: var(--text-secondary);
+      }
+      .branch-item.good {
+        border-left: 2px solid var(--allow);
+      }
+      .branch-item.bad {
+        border-left: 2px solid var(--deny);
+      }
+
+      .proof-artifact {
+        border: 1px solid var(--border);
+        background: linear-gradient(
+          180deg,
+          rgba(19, 23, 19, 0.98),
+          rgba(15, 18, 15, 0.98)
+        );
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .proof-head {
+        min-height: 50px;
+        padding: 0 18px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .proof-head-title {
+        font:
+          600 11px/1 "Geist Mono",
+          monospace;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      .proof-head-status {
+        color: var(--brand);
+        font:
+          500 11px/1 "Geist Mono",
+          monospace;
+      }
+      .proof-body {
+        display: grid;
+      }
+      .proof-row {
+        display: grid;
+        grid-template-columns: 190px minmax(0, 1fr);
+        gap: 28px;
+        align-items: center;
+        min-height: 62px;
+        padding: 13px 18px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .proof-row:last-child {
+        border-bottom: 0;
+      }
+      .proof-label {
+        color: var(--text-secondary);
+        font:
+          600 10px/1.25 "Geist Mono",
+          monospace;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      .proof-value {
+        color: var(--text);
+        font-size: 16px;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+      .proof-value.mono {
+        font:
+          600 12px/1.4 "Geist Mono",
+          monospace;
+      }
+      .proof-value.ok {
+        color: var(--allow);
+      }
+      .proof-value.muted {
+        color: var(--text-secondary);
+      }
+      .proof-link {
+        color: var(--brand);
+        text-decoration: none;
+      }
+      .proof-link:hover {
+        color: #ddc27b;
+      }
+      .proof-row.emphasis {
+        background: rgba(114, 185, 139, 0.035);
+      }
+      .proof-row.evidence {
+        background: rgba(208, 180, 108, 0.025);
+      }
+      .proof-cta {
+        margin-top: 24px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .future-track {
+        position: relative;
+        display: grid;
+        gap: 0;
+      }
+      .future-item {
+        display: grid;
+        grid-template-columns: 145px 1fr;
+        gap: 32px;
+        position: relative;
+        padding: 0 0 52px;
+      }
+      .future-item:last-child {
+        padding-bottom: 0;
+      }
+      .future-item::before {
+        content: "";
+        position: absolute;
+        left: 160px;
+        top: 28px;
+        bottom: -4px;
+        width: 1px;
+        background: var(--border);
+      }
+      .future-item:last-child::before {
+        display: none;
+      }
+      .future-phase {
+        font:
+          600 11px/1.4 "Geist Mono",
+          monospace;
+        color: var(--brand);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        padding-top: 18px;
+      }
+      .future-card {
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 4px;
+        padding: 22px 24px;
+        position: relative;
+      }
+      .future-card::before {
+        content: "";
+        position: absolute;
+        left: -20px;
+        top: 23px;
+        width: 7px;
+        height: 7px;
+        background: var(--brand);
+        border-radius: 1px;
+        transform: rotate(45deg);
+      }
+      .future-card h3 {
+        font-size: 23px;
+        margin-bottom: 8px;
+      }
+      .future-card p {
+        color: var(--text-secondary);
+        margin-bottom: 16px;
+      }
+      .future-card .model-tags {
+        margin-top: 0;
+      }
+
+      .cta {
+        padding: 120px 0 130px;
+        text-align: center;
+      }
+      .cta h2 {
+        max-width: 1040px;
+        margin-left: auto;
+        margin-right: auto;
+        font-size: clamp(38px, 4.2vw, 56px);
+        line-height: 1.06;
+      }
+      .cta p {
+        max-width: 760px;
+        color: var(--text-secondary);
+        margin: 0 auto 30px;
+        font-size: 19px;
+      }
+      .cta-actions {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .cta-brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 auto 22px;
+        color: var(--brand);
+        font:
+          600 12px/1 "Geist Mono",
+          monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .cta-brand .brand-mark {
+        width: 26px;
+        height: 26px;
+      }
+
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 28px 0 40px;
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+      .footer-row {
+        display: grid;
+        gap: 12px;
+      }
+      .footer-top {
+        display: flex;
+        align-items: center;
+      }
+      .footer-bottom {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 28px;
+      }
+      .footer-lockup {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        width: fit-content;
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 16px;
+        letter-spacing: -0.02em;
+      }
+      .footer-lockup .brand-mark {
+        width: 24px;
+        height: 24px;
+      }
+      .footer-note {
+        color: var(--text-secondary);
+        white-space: nowrap;
+      }
+      .footer-links {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 18px;
+        flex-wrap: wrap;
+      }
+      .footer-links a {
+        color: var(--text-secondary);
+        text-decoration: none;
+      }
+      .footer-links a:hover {
+        color: var(--text);
+      }
+
+      .reveal {
+        opacity: 0;
+        transform: translateY(14px);
+        transition:
+          opacity 0.45s ease,
+          transform 0.45s ease;
+      }
+      .reveal.visible {
+        opacity: 1;
+        transform: none;
+      }
+
+      @media (min-width: 961px) and (max-height: 820px) {
+        .hero {
+          padding-top: 28px;
+          padding-bottom: 34px;
+        }
+        .hero-grid {
+          gap: 46px;
+        }
+        h1 {
+          font-size: clamp(40px, 4.1vw, 56px);
+          margin-bottom: 18px;
+        }
+        .hero-copy {
+          font-size: 17px;
+          margin-bottom: 18px;
+        }
+        .hero-principle {
+          margin: 18px 0 22px;
+        }
+        .console-body {
+          padding: 18px 20px;
+        }
+        .request-block {
+          margin-bottom: 14px;
+          padding: 13px 14px;
+        }
+        .mandate-row {
+          padding: 7px 0;
+        }
+        .decision-output {
+          margin-top: 14px;
+          padding: 13px 14px;
+        }
+        section {
+          padding: 72px 0;
+        }
+        .section-head {
+          margin-bottom: 32px;
+        }
+      }
+
+      @media (max-width: 960px) {
+        .hero {
+          padding-top: 72px;
+          min-height: auto;
+        }
+        .hero-grid,
+        .delegation-wrap {
+          grid-template-columns: 1fr;
+        }
+        .auth-console {
+          width: min(100%, 680px);
+          max-width: 680px;
+          margin-inline: auto;
+        }
+        .question-frame::after {
+          display: none;
+        }
+        .question-shift {
+          grid-template-columns: 1fr;
+        }
+        .question-side {
+          min-height: 0;
+          justify-content: flex-start;
+          gap: 0;
+          padding: 28px 30px;
+        }
+        .question-side > div:last-child {
+          margin-top: 30px;
+        }
+        .question-side.grantline {
+          border-top: 1px solid var(--border);
+        }
+        .authority-question:nth-child(odd) {
+          border-right: 1px solid var(--border);
+        }
+        .flow-track {
+          grid-template-columns: repeat(3, 1fr);
+          row-gap: 36px;
+        }
+        .flow-track::before {
+          display: none;
+        }
+        .condition-branch {
+          grid-template-columns: 1fr;
+          text-align: left;
+        }
+        .condition-branch .sep {
+          width: 100%;
+          height: 1px;
+          min-height: 1px;
+        }
+        .model-grid {
+          grid-template-columns: 1fr;
+        }
+        .future-item {
+          grid-template-columns: 110px 1fr;
+          gap: 24px;
+        }
+        .future-item::before {
+          left: 122px;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .shell {
+          width: min(100% - 28px, var(--max));
+        }
+        .nav-links {
+          display: none;
+        }
+        .menu-toggle {
+          display: inline-flex;
+        }
+        nav {
+          min-height: 60px;
+        }
+        .hero {
+          padding: 48px 0 64px;
+        }
+        h1 {
+          font-size: clamp(39px, 11.5vw, 54px);
+        }
+        section {
+          padding: 84px 0;
+        }
+        .console-body {
+          padding: 16px;
+        }
+        .decision-tabs {
+          grid-template-columns: 1fr;
+        }
+        .decision-tab {
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+        }
+        .decision-tab:last-child {
+          border-bottom: 0;
+        }
+        .decision-tab[aria-selected="true"] {
+          box-shadow: inset 3px 0 0 var(--brand);
+        }
+        .mandate-row {
+          font-size: 10px;
+        }
+        .decision-output {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        .decision-reason {
+          text-align: left;
+        }
+        .question-side {
+          min-height: auto;
+          padding: 22px;
+        }
+        .authority-questions {
+          grid-template-columns: 1fr;
+        }
+        .authority-question,
+        .authority-question:nth-child(odd),
+        .authority-question:nth-child(2n) {
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+        }
+        .authority-question:last-child {
+          border-bottom: 0;
+        }
+        .flow-track {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .model-cell {
+          min-height: auto;
+          padding: 24px 20px;
+        }
+        .model-num {
+          margin-bottom: 24px;
+        }
+        .proof-row {
+          grid-template-columns: 1fr;
+          gap: 6px;
+          min-height: 0;
+          padding: 15px 16px;
+        }
+
+        .proof-head {
+          align-items: flex-start;
+          flex-direction: column;
+          justify-content: center;
+          gap: 5px;
+          padding-top: 12px;
+          padding-bottom: 12px;
+        }
+        .footer-row {
+          gap: 14px;
+        }
+        .footer-bottom {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .footer-note {
+          white-space: normal;
+        }
+        .footer-links {
+          justify-content: flex-start;
+          gap: 14px 18px;
+        }
+        .future-item {
+          grid-template-columns: 1fr;
+          gap: 8px;
+          padding-bottom: 34px;
+        }
+        .future-item::before,
+        .future-card::before {
+          display: none;
+        }
+        .future-phase {
+          padding-top: 0;
+        }
+        .thesis-break {
+          padding: 82px 0;
+        }
+        .thesis-statement {
+          font-size: clamp(36px, 10.5vw, 52px);
+        }
+        .cta {
+          padding: 88px 0 96px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+        .reveal {
+          opacity: 1;
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg
+      width="0"
+      height="0"
+      aria-hidden="true"
+      focusable="false"
+      style="position: absolute; overflow: hidden"
+    >
+      <symbol id="grantline-mark" viewBox="0 0 28 28">
+        <rect
+          x="0.75"
+          y="0.75"
+          width="26.5"
+          height="26.5"
+          rx="2.75"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+        />
+        <path
+          d="M17.2 9.2c-.8-1.35-2.05-2.05-3.55-2.05-2.9 0-4.75 2.55-4.75 6.6 0 4.05 1.75 6.35 4.55 6.35 1.65 0 2.95-.65 3.8-1.85v-3.6h-3.65"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.45"
+          stroke-linecap="square"
+          stroke-linejoin="miter"
+        />
+        <path
+          d="M17.7 6.6 11.8 22.3"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.65"
+          stroke-linecap="square"
+          opacity=".92"
+        />
+      </symbol>
+    </svg>
+    <div class="page-grid"></div>
+
+    <div class="nav-wrap">
+      <nav class="shell" aria-label="Primary navigation">
+        <a class="brand-lockup" href="#top" aria-label="Grantline home">
+          <svg
+            class="brand-mark"
+            viewBox="0 0 28 28"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <use href="#grantline-mark"></use>
+          </svg>
+          <span>Grantline</span>
+        </a>
+        <div class="nav-links">
+          <a href="#mechanism">How it works</a>
+          <a href="#platform">Platform</a>
+          <a href="#vision">Vision</a>
+          <a href="#">Docs</a>
+          <a class="btn" href="#">Try Grantline</a>
+        </div>
+        <button
+          class="menu-toggle"
+          type="button"
+          aria-label="Open navigation"
+          aria-expanded="false"
+          aria-controls="mobile-menu"
+        >
+          <span class="menu-icon" aria-hidden="true"
+            ><span></span><span></span><span></span
+          ></span>
+        </button>
+      </nav>
+      <div class="mobile-menu" id="mobile-menu" data-open="false">
+        <div class="mobile-menu-inner">
+          <a href="#mechanism">How it works</a>
+          <a href="#platform">Platform</a>
+          <a href="#vision">Vision</a>
+          <a href="#">Docs</a>
+          <a class="mobile-demo" href="#">Try Grantline</a>
+        </div>
+      </div>
+    </div>
+
+    <main id="top">
+      <header class="hero">
+        <div class="shell hero-grid">
+          <div class="reveal">
+            <div class="eyebrow">
+              Programmable financial authority for AI agents
+            </div>
+            <h1>
+              Give AI agents capital without giving them unlimited authority.
+            </h1>
+            <p class="hero-copy">
+              Grantline lets people and organisations define exactly what an
+              agent can do, under what conditions, and when another authority
+              needs to step in.
+            </p>
+            <div class="hero-principle">
+              Your AI agent proposes. Grantline authorises.
+            </div>
+            <div class="hero-actions">
+              <a class="btn primary" href="#mechanism"
+                >See how Grantline works</a
+              >
+              <a class="btn" href="#">Try Grantline</a>
+            </div>
+          </div>
+
+          <div
+            class="auth-console reveal"
+            aria-label="Example Grantline authorisation event"
+          >
+            <div class="console-top">
+              <span class="console-title">Authorisation event</span>
+              <span class="console-status">MANDATE ACTIVE</span>
+            </div>
+            <div class="decision-explore-label">
+              <strong>Explore outcomes</strong> · select a decision state
+            </div>
+            <div
+              class="decision-tabs"
+              role="tablist"
+              aria-label="Authorisation examples"
+            >
+              <button
+                class="decision-tab"
+                role="tab"
+                aria-selected="true"
+                data-case="allow"
+              >
+                Allowed
+              </button>
+              <button
+                class="decision-tab"
+                role="tab"
+                aria-selected="false"
+                data-case="escalate"
+              >
+                Escalated
+              </button>
+              <button
+                class="decision-tab"
+                role="tab"
+                aria-selected="false"
+                data-case="deny"
+              >
+                Denied
+              </button>
+            </div>
+            <div class="console-body">
+              <div class="request-block">
+                <div class="label">Proposed action</div>
+                <div class="request-name" id="requestName">
+                  Allocate $3,000 to approved tokenised Treasury asset
+                </div>
+                <div class="request-agent">AI Treasury Agent</div>
+              </div>
+              <div class="authority-line" aria-hidden="true"></div>
+              <div class="mandate-card">
+                <div class="mandate-head">
+                  <span>Mandate</span><span>TREASURY_EXECUTION_V3</span>
+                </div>
+                <div class="mandate-rows" id="mandateRows">
+                  <div class="mandate-row">
+                    <span>Transaction limit</span><span class="ok">PASS</span>
+                  </div>
+                  <div class="mandate-row">
+                    <span>Approved asset</span><span class="ok">PASS</span>
+                  </div>
+                  <div class="mandate-row">
+                    <span>Minimum liquidity</span><span class="ok">PASS</span>
+                  </div>
+                </div>
+              </div>
+              <div class="decision-output allow" id="decisionOutput">
+                <div>
+                  <div class="label">Decision</div>
+                  <div class="decision-word" id="decisionWord">ALLOW</div>
+                  <div class="decision-meta" id="decisionMeta">
+                    <a href="#">Executed · X Layer Testnet ↗</a>
+                  </div>
+                </div>
+                <div class="decision-reason" id="decisionReason">
+                  Authority and required conditions are satisfied.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section>
+        <div class="shell">
+          <div class="section-head reveal">
+            <div class="section-kicker">The question changes</div>
+            <h2>A wallet proves access. Grantline defines authority.</h2>
+            <p class="section-copy">
+              Autonomous systems need more than permission to sign. They need a
+              precise answer to what an agent can do with that access.
+            </p>
+          </div>
+          <div class="question-frame reveal">
+            <div class="question-shift">
+              <article class="question-side">
+                <div class="question-title">Wallet layer</div>
+                <div>
+                  <div class="question-main">
+                    Who can access and sign for these assets?
+                  </div>
+                  <p class="question-note">
+                    Identity, custody and signing determine who can act.
+                  </p>
+                </div>
+              </article>
+              <article class="question-side grantline">
+                <div class="question-title">Authority layer</div>
+                <div>
+                  <div class="question-main">
+                    What is this agent actually allowed to do?
+                  </div>
+                  <p class="question-note">
+                    Grantline turns access into bounded, conditional and
+                    revocable authority.
+                  </p>
+                </div>
+              </article>
+            </div>
+            <div
+              class="authority-questions"
+              aria-label="Questions Grantline answers"
+            >
+              <div class="authority-question">
+                <b>01</b>How much authority does it have?
+              </div>
+              <div class="authority-question">
+                <b>02</b>Where did that authority come from?
+              </div>
+              <div class="authority-question">
+                <b>03</b>What conditions must be satisfied?
+              </div>
+              <div class="authority-question">
+                <b>04</b>When should another authority step in?
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="mechanism">
+        <div class="shell">
+          <div class="section-head reveal">
+            <div class="section-kicker">Authorisation flow</div>
+            <h2>Authority sits between intent and execution.</h2>
+            <p class="section-copy">
+              An agent chooses what it wants to do. Grantline evaluates whether
+              it has authority to do it, runs the conditions selected by the
+              owner, and returns a decision before capital moves.
+            </p>
+          </div>
+          <div class="flow-track reveal">
+            <div class="flow-step">
+              <div class="flow-node">Agent</div>
+              <h3>Proposes</h3>
+              <p>Chooses an action.</p>
+            </div>
+            <div class="flow-step control">
+              <div class="flow-node">Mandate</div>
+              <h3>Authorises</h3>
+              <p>Checks delegated authority.</p>
+            </div>
+            <div class="flow-step control">
+              <div class="flow-node">Conditions</div>
+              <h3>Verify</h3>
+              <p>Runs required checks.</p>
+            </div>
+            <div class="flow-step control">
+              <div class="flow-node">Decision</div>
+              <h3>Resolves</h3>
+              <p>Allow, Escalate, Deny.</p>
+            </div>
+            <div class="flow-step">
+              <div class="flow-node">X Layer</div>
+              <h3>Executes</h3>
+              <p>Moves capital only when authorised.</p>
+            </div>
+            <div class="flow-step control">
+              <div class="flow-node">Record</div>
+              <h3>Traces</h3>
+              <p>Links the authorisation decision to its onchain outcome.</p>
+            </div>
+          </div>
+          <div
+            class="condition-branch reveal"
+            aria-label="Optional authorisation conditions"
+          >
+            <div class="condition-item">
+              <strong>Guardian</strong>
+              <p>Checks relevant external conditions.</p>
+            </div>
+            <div class="sep"></div>
+            <div class="condition-item">
+              <strong>Preflight</strong>
+              <p>Tests the resulting financial state.</p>
+            </div>
+            <div class="sep"></div>
+            <div class="condition-item">
+              <strong>Human approval</strong>
+              <p>Escalates when another authority is required.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="platform">
+        <div class="shell">
+          <div class="section-head reveal">
+            <div class="section-kicker">GRANTLINE PLATFORM</div>
+            <h2>Financial authority has four parts.</h2>
+            <p class="section-copy">
+              The system stays understandable by grouping the product around
+              what authority is, what capital it applies to, which conditions
+              matter, and what remains afterwards.
+            </p>
+          </div>
+          <div class="model-grid reveal">
+            <article class="model-cell">
+              <div class="model-num">01 / AUTHORITY</div>
+              <div class="model-topic">Mandates + Delegation</div>
+              <h3>Define exactly what an agent can do.</h3>
+              <p>
+                Set limits, actions, approvals, and delegation rights, then
+                preserve the source of that authority as it moves between
+                agents.
+              </p>
+              <div class="model-tags">
+                <span class="tag">Limits</span><span class="tag">Actions</span
+                ><span class="tag">Approvals</span
+                ><span class="tag">Delegation</span>
+              </div>
+            </article>
+            <article class="model-cell">
+              <div class="model-num">02 / CAPITAL</div>
+              <div class="model-topic">Vaults</div>
+              <h3>Limit the capital that authority applies to.</h3>
+              <p>
+                Keep delegated capital separate from unrestricted funds so an
+                agent operates only against what has been made available to it.
+              </p>
+              <div class="model-tags">
+                <span class="tag">Capital scope</span
+                ><span class="tag">Isolation</span>
+              </div>
+            </article>
+            <article class="model-cell">
+              <div class="model-num">03 / CONDITIONS</div>
+              <div class="model-topic">Guardians + Preflight</div>
+              <h3>
+                Make authority conditional on the state around the action.
+              </h3>
+              <p>
+                Require external condition checks and test whether the proposed
+                resulting state stays inside configured boundaries.
+              </p>
+              <div class="model-tags">
+                <span class="tag">External checks</span
+                ><span class="tag">Stress limits</span
+                ><span class="tag">Liquidity floor</span>
+              </div>
+            </article>
+            <article class="model-cell">
+              <div class="model-num">04 / ACCOUNTABILITY</div>
+              <div class="model-topic">Records</div>
+              <h3>Trace every proposal, decision, and execution.</h3>
+              <p>
+                Show what was proposed, which authority applied, what checks
+                ran, which decision was returned, and what was executed.
+              </p>
+              <div class="model-tags">
+                <span class="tag">Decision receipt</span
+                ><span class="tag">Traceability</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="thesis-break" aria-label="Grantline authority principle">
+        <div class="shell reveal">
+          <p class="thesis-statement">
+            An agent can act freely within
+            <span class="accent">its Mandate.</span><br />Beyond it,
+            <span class="accent">authority ends.</span>
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <div class="shell delegation-wrap">
+          <div class="delegation-copy reveal">
+            <div class="section-kicker">Delegated authority</div>
+            <h2>
+              Delegation passes authority down, but never beyond its source.
+            </h2>
+            <p>
+              Each handoff inherits an upper bound from the authority above it.
+              An agent can delegate less capital, fewer actions, fewer assets,
+              shorter duration, or stricter approvals. It cannot create
+              authority it was never granted.
+            </p>
+            <div class="delegation-principle">
+              Every delegation stays inside its parent Mandate and remains
+              traceable to the original authority.
+            </div>
+          </div>
+          <div class="tree reveal" aria-label="Delegation graph example">
+            <div class="tree-card">
+              <strong>Company</strong><small>$500,000 treasury authority</small>
+            </div>
+            <div class="authority-line" aria-hidden="true"></div>
+            <div class="tree-card">
+              <strong>Treasury Agent</strong
+              ><small>$50,000 execution authority · no borrowing</small>
+            </div>
+            <div class="authority-line" aria-hidden="true"></div>
+            <div class="tree-card">
+              <strong>Execution Agent</strong
+              ><small
+                >$5,000 payments · approved assets · no further
+                delegation</small
+              >
+            </div>
+            <div class="denied-branch">
+              <div class="branch-item good">
+                $3,000 PAYMENT<br /><span class="ok">WITHIN AUTHORITY</span>
+              </div>
+              <div class="branch-item bad">
+                $100,000 BORROW<br /><span class="bad">AUTHORITY STOPS</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="scenario">
+        <div class="shell">
+          <div class="section-head reveal">
+            <div class="section-kicker">Conditional authority</div>
+            <h2>One proposal can require more than a spending limit.</h2>
+            <p class="section-copy">
+              A Mandate can require external condition checks, resulting state
+              checks, and human approval thresholds before an action is
+              authorised.
+            </p>
+          </div>
+
+          <div
+            class="proof-artifact reveal"
+            aria-label="Grantline authorisation proof example"
+          >
+            <div class="proof-head">
+              <span class="proof-head-title">Authorisation trace</span>
+              <span class="proof-head-status">MANDATE ACTIVE</span>
+            </div>
+            <div class="proof-body">
+              <div class="proof-row">
+                <div class="proof-label">Proposed by</div>
+                <div class="proof-value">AI Treasury Agent</div>
+              </div>
+              <div class="proof-row">
+                <div class="proof-label">Action</div>
+                <div class="proof-value">
+                  Allocate $3,000 to approved tokenised Treasury asset
+                </div>
+              </div>
+              <div class="proof-row">
+                <div class="proof-label">Mandate</div>
+                <div class="proof-value mono ok">PASS</div>
+              </div>
+              <div class="proof-row">
+                <div class="proof-label">Guardian</div>
+                <div class="proof-value mono ok">PASS</div>
+              </div>
+              <div class="proof-row">
+                <div class="proof-label">Preflight</div>
+                <div class="proof-value mono ok">PASS</div>
+              </div>
+              <div class="proof-row">
+                <div class="proof-label">Human approval</div>
+                <div class="proof-value mono muted">NOT REQUIRED</div>
+              </div>
+              <div class="proof-row emphasis">
+                <div class="proof-label">Decision</div>
+                <div class="proof-value mono ok">ALLOW</div>
+              </div>
+              <div class="proof-row evidence">
+                <div class="proof-label">Execution</div>
+                <div class="proof-value mono">
+                  <a class="proof-link" href="#"
+                    >X LAYER TESTNET · CONFIRMED ↗</a
+                  >
+                </div>
+              </div>
+              <div class="proof-row evidence">
+                <div class="proof-label">Receipt</div>
+                <div class="proof-value mono">
+                  <a class="proof-link" href="#">VIEW DECISION RECEIPT ↗</a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="proof-cta reveal" aria-label="Proof and next steps">
+            <a class="btn" href="#">View contract ↗</a>
+            <a class="btn" href="#">Read how enforcement works ↗</a>
+            <a class="btn primary" href="#">See Grantline in action</a>
+          </div>
+        </div>
+      </section>
+
+      <section id="vision">
+        <div class="shell">
+          <div class="section-head reveal">
+            <div class="section-kicker">Vision</div>
+            <h2>Start with one agent. Scale to autonomous organisations.</h2>
+            <p class="section-copy">
+              The same authority model can expand from bounded agent spending
+              into richer policies, specialised agent hierarchies, external
+              control modules, and eventually behavioural history that other
+              financial systems can evaluate.
+            </p>
+          </div>
+          <div class="future-track reveal">
+            <div class="future-item">
+              <div class="future-phase">Now / MVP</div>
+              <div class="future-card">
+                <h3>Bounded agent authority</h3>
+                <p>
+                  Prove that an agent can operate autonomously with capital
+                  without receiving unrestricted control over it.
+                </p>
+                <div class="model-tags">
+                  <span class="tag">Vaults</span
+                  ><span class="tag">Mandates</span
+                  ><span class="tag">Delegation</span
+                  ><span class="tag">Guardian</span
+                  ><span class="tag">Preflight</span
+                  ><span class="tag">Revocation</span
+                  ><span class="tag">Records</span>
+                </div>
+              </div>
+            </div>
+            <div class="future-item">
+              <div class="future-phase">Expand</div>
+              <div class="future-card">
+                <h3>Richer authority</h3>
+                <p>
+                  Temporary permissions, multi-party approvals, reusable
+                  Mandates, expiry, emergency permissions, and conditional
+                  changes in authority.
+                </p>
+              </div>
+            </div>
+            <div class="future-item">
+              <div class="future-phase">Scale</div>
+              <div class="future-card">
+                <h3>Agent organisations</h3>
+                <p>
+                  Treasury, payments, procurement, execution, and risk agents
+                  operating through connected but bounded authority graphs.
+                </p>
+              </div>
+            </div>
+            <div class="future-item">
+              <div class="future-phase">Ecosystem</div>
+              <div class="future-card">
+                <h3>Authorisation infrastructure</h3>
+                <p>
+                  Guardian ecosystems, reusable policy templates,
+                  organisation-specific preflight, and agent-to-agent
+                  delegation.
+                </p>
+              </div>
+            </div>
+            <div class="future-item">
+              <div class="future-phase">Long term</div>
+              <div class="future-card">
+                <h3>Economic accountability</h3>
+                <p>
+                  Records can become trusted behavioural history for external
+                  reputation, credit, insurance, compliance, and risk systems.
+                </p>
+                <div class="model-tags">
+                  <span class="tag">Reputation</span
+                  ><span class="tag">Credit</span
+                  ><span class="tag">Insurance</span
+                  ><span class="tag">Compliance</span
+                  ><span class="tag">Risk</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="cta">
+        <div class="shell reveal">
+          <div class="cta-brand">
+            <svg
+              class="brand-mark"
+              viewBox="0 0 28 28"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <use href="#grantline-mark"></use>
+            </svg>
+            <span>Grantline</span>
+          </div>
+          <h2>Give agents autonomy. Keep authority bounded.</h2>
+          <p>
+            Grantline governs the authority between autonomous intent and
+            financial execution.
+          </p>
+          <div class="cta-actions">
+            <a class="btn primary" href="#">See Grantline in action</a>
+            <a class="btn" href="#">Read the documentation</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="shell footer-row">
+        <div class="footer-top">
+          <a class="footer-lockup" href="#top" aria-label="Grantline home">
+            <svg
+              class="brand-mark"
+              viewBox="0 0 28 28"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <use href="#grantline-mark"></use>
+            </svg>
+            <span>Grantline</span>
+          </a>
+        </div>
+        <div class="footer-bottom">
+          <div class="footer-note">
+            Programmable financial authority for AI agents.
+          </div>
+          <div class="footer-links">
+            <a href="#mechanism">How it works</a>
+            <a href="#platform">Platform</a>
+            <a href="#vision">Vision</a>
+            <a href="#">Docs</a>
+            <a href="#">Try Grantline</a>
+            <a
+              href="https://x.com/usegrantline"
+              target="_blank"
+              rel="noreferrer"
+              >X / @usegrantline ↗</a
+            >
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/lenis@1.3.11/dist/lenis.min.js"></script>
+    <script>
+      const reduceMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      const menuToggle = document.querySelector(".menu-toggle");
+      const mobileMenu = document.getElementById("mobile-menu");
+      const navWrap = document.querySelector(".nav-wrap");
+      let lenis = null;
+
+      function closeMobileMenu() {
+        if (!menuToggle || !mobileMenu) return;
+        menuToggle.setAttribute("aria-expanded", "false");
+        menuToggle.setAttribute("aria-label", "Open navigation");
+        mobileMenu.dataset.open = "false";
+      }
+
+      if (!reduceMotion && window.Lenis) {
+        lenis = new Lenis({
+          duration: 1.05,
+          smoothWheel: true,
+          wheelMultiplier: 0.9,
+          touchMultiplier: 1,
+        });
+        function raf(time) {
+          lenis.raf(time);
+          requestAnimationFrame(raf);
+        }
+        requestAnimationFrame(raf);
+      }
+
+      function scrollToAnchor(target) {
+        const el = document.querySelector(target);
+        if (!el) return;
+        const wasOpen = mobileMenu && mobileMenu.dataset.open === "true";
+        if (wasOpen) closeMobileMenu();
+
+        const performScroll = () => {
+          const navHeight = navWrap
+            ? navWrap.querySelector("nav").offsetHeight
+            : 0;
+          if (lenis) {
+            lenis.scrollTo(el, { offset: -navHeight });
+          } else {
+            const top =
+              el.getBoundingClientRect().top + window.scrollY - navHeight;
+            window.scrollTo({
+              top,
+              behavior: reduceMotion ? "auto" : "smooth",
+            });
+          }
+        };
+
+        // Closing the mobile menu changes the sticky header's layout height.
+        // Wait for that collapse before calculating the destination.
+        if (wasOpen) {
+          requestAnimationFrame(() => requestAnimationFrame(performScroll));
+        } else {
+          performScroll();
+        }
+      }
+
+      document.querySelectorAll('a[href^="#"]').forEach((link) => {
+        link.addEventListener("click", (event) => {
+          const target = link.getAttribute("href");
+          if (!target || target === "#") return;
+          if (!document.querySelector(target)) return;
+          event.preventDefault();
+          scrollToAnchor(target);
+        });
+      });
+
+      if (menuToggle && mobileMenu) {
+        menuToggle.addEventListener("click", () => {
+          const isOpen = menuToggle.getAttribute("aria-expanded") === "true";
+          menuToggle.setAttribute("aria-expanded", String(!isOpen));
+          menuToggle.setAttribute(
+            "aria-label",
+            isOpen ? "Open navigation" : "Close navigation",
+          );
+          mobileMenu.dataset.open = String(!isOpen);
+        });
+
+        window.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") closeMobileMenu();
+        });
+
+        window.addEventListener("resize", () => {
+          if (window.innerWidth > 720) closeMobileMenu();
+        });
+      }
+
+      const authorizationCases = {
+        allow: {
+          request: "Allocate $3,000 to approved tokenised Treasury asset",
+          rows: [
+            ["Transaction limit", "PASS", "ok"],
+            ["Approved asset", "PASS", "ok"],
+            ["Minimum liquidity", "PASS", "ok"],
+          ],
+          decision: "ALLOW",
+          tone: "allow",
+          reason: "Authority and required conditions are satisfied.",
+          meta: '<a href="#">Executed · X Layer Testnet ↗</a>',
+        },
+        escalate: {
+          request: "Allocate $8,500 to approved tokenised Treasury asset",
+          rows: [
+            ["Transaction limit", "PASS", "ok"],
+            ["Approved asset", "PASS", "ok"],
+            ["Human approval", "REQUIRED", "warn"],
+          ],
+          decision: "ESCALATE",
+          tone: "escalate",
+          reason: "Human approval is required above the $7,500 threshold.",
+          meta: "",
+        },
+        deny: {
+          request: "Borrow $20,000 against Treasury Vault",
+          rows: [
+            ["Transaction limit", "OUTSIDE", "bad"],
+            ["Borrowing", "NOT PERMITTED", "bad"],
+            ["Mandate authority", "FAIL", "bad"],
+          ],
+          decision: "DENY",
+          tone: "deny",
+          reason: "Borrowing is outside the delegated Mandate.",
+          meta: "No execution submitted.",
+        },
+      };
+
+      const decisionTabs = [...document.querySelectorAll(".decision-tab")];
+      const requestName = document.getElementById("requestName");
+      const mandateRows = document.getElementById("mandateRows");
+      const decisionOutput = document.getElementById("decisionOutput");
+      const decisionWord = document.getElementById("decisionWord");
+      const decisionReason = document.getElementById("decisionReason");
+      const decisionMeta = document.getElementById("decisionMeta");
+
+      function renderAuthorizationCase(caseName) {
+        const data = authorizationCases[caseName];
+        if (
+          !data ||
+          !requestName ||
+          !mandateRows ||
+          !decisionOutput ||
+          !decisionWord ||
+          !decisionReason ||
+          !decisionMeta
+        )
+          return;
+
+        decisionTabs.forEach((tab) => {
+          tab.setAttribute(
+            "aria-selected",
+            String(tab.dataset.case === caseName),
+          );
+        });
+        requestName.textContent = data.request;
+        mandateRows.innerHTML = data.rows
+          .map(
+            ([label, value, tone]) =>
+              `<div class="mandate-row"><span>${label}</span><span class="${tone}">${value}</span></div>`,
+          )
+          .join("");
+        decisionOutput.classList.remove("allow", "escalate", "deny");
+        decisionOutput.classList.add(data.tone);
+        decisionWord.textContent = data.decision;
+        decisionReason.textContent = data.reason;
+        decisionMeta.innerHTML = data.meta || "";
+      }
+
+      decisionTabs.forEach((tab, index) => {
+        tab.addEventListener("click", () =>
+          renderAuthorizationCase(tab.dataset.case),
+        );
+        tab.addEventListener("keydown", (event) => {
+          if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+          event.preventDefault();
+          const delta = event.key === "ArrowRight" ? 1 : -1;
+          const next =
+            decisionTabs[
+              (index + delta + decisionTabs.length) % decisionTabs.length
+            ];
+          next.focus();
+          renderAuthorizationCase(next.dataset.case);
+        });
+      });
+
+      const revealEls = document.querySelectorAll(".reveal");
+      if ("IntersectionObserver" in window && !reduceMotion) {
+        const io = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (entry.isIntersecting) {
+                entry.target.classList.add("visible");
+                io.unobserve(entry.target);
+              }
+            });
+          },
+          { threshold: 0.12 },
+        );
+        revealEls.forEach((el) => io.observe(el));
+      } else {
+        revealEls.forEach((el) => el.classList.add("visible"));
+      }
+    </script>
+  </body>
+</html>
