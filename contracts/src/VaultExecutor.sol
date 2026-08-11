@@ -16,6 +16,7 @@ contract VaultExecutor {
     error EvaluationDenied(MandateEvaluator.FailureCode failureCode, uint256 failedActionIndex);
     error InvalidEvaluator();
     error InvalidTokenTarget(address token);
+    error NonceAlreadyUsed(uint256 mandateId, address agent, uint256 nonce);
     error UnsupportedAction(ActionTypes.ActionType actionType);
     error VaultMismatch(address expectedVault, address providedVault);
 
@@ -30,6 +31,7 @@ contract VaultExecutor {
     );
 
     MandateEvaluator public immutable evaluator;
+    mapping(uint256 => mapping(address => mapping(uint256 => bool))) public nonceUsed;
 
     constructor(address evaluatorAddress) {
         if (evaluatorAddress == address(0) || evaluatorAddress.code.length == 0) {
@@ -54,6 +56,11 @@ contract VaultExecutor {
         }
 
         actionDigest = ActionSignature.digest(plan, address(evaluator), block.chainid);
+        if (nonceUsed[plan.mandateId][plan.agent][plan.nonce]) {
+            revert NonceAlreadyUsed(plan.mandateId, plan.agent, plan.nonce);
+        }
+        nonceUsed[plan.mandateId][plan.agent][plan.nonce] = true;
+
         for (uint256 index; index < plan.actions.length; index++) {
             _executeAction(vault, plan.actions[index], index);
         }

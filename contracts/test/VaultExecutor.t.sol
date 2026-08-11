@@ -103,6 +103,103 @@ contract VaultExecutorTest {
         assert(token.balanceOf(recipient) == 40 ether);
     }
 
+    function test_rejectsReplayedPlan() public {
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(2 ether);
+        address recipient = address(0xBEEF);
+        vm.deal(address(vault), 2 ether);
+        bytes memory signature = _sign(executor, plan, privateKey);
+
+        executor.execute(vault, plan, signature);
+
+        bool reverted;
+        try executor.execute(vault, plan, signature) {}
+        catch {
+            reverted = true;
+        }
+
+        assert(reverted);
+        assert(executor.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+        assert(recipient.balance == 1 ether);
+        assert(address(vault).balance == 1 ether);
+    }
+
+    function test_rejectsDifferentPlanWithUsedNonce() public {
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(2 ether);
+        address firstRecipient = address(0xBEEF);
+        address secondRecipient = address(0xCAFE);
+        vm.deal(address(vault), 2 ether);
+
+        executor.execute(vault, plan, _sign(executor, plan, privateKey));
+
+        ActionTypes.ActionPlan memory secondPlan = plan;
+        secondPlan.actions = new ActionTypes.Action[](1);
+        secondPlan.actions[0] = _transferAction(address(0), secondRecipient, 1 ether);
+        bool reverted;
+
+        try executor.execute(vault, secondPlan, _sign(executor, secondPlan, privateKey)) {}
+        catch {
+            reverted = true;
+        }
+
+        assert(reverted);
+        assert(firstRecipient.balance == 1 ether);
+        assert(secondRecipient.balance == 0);
+        assert(address(vault).balance == 1 ether);
+    }
+
+    function test_allowsDifferentNoncesWithoutStrictOrdering() public {
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(2 ether);
+        address firstRecipient = address(0xBEEF);
+        address secondRecipient = address(0xCAFE);
+        vm.deal(address(vault), 2 ether);
+        plan.actions[0] = _transferAction(address(0), firstRecipient, 1 ether);
+
+        executor.execute(vault, plan, _sign(executor, plan, privateKey));
+
+        ActionTypes.ActionPlan memory secondPlan = plan;
+        secondPlan.nonce = 2;
+        secondPlan.actions = new ActionTypes.Action[](1);
+        secondPlan.actions[0] = _transferAction(address(0), secondRecipient, 1 ether);
+        executor.execute(vault, secondPlan, _sign(executor, secondPlan, privateKey));
+
+        assert(firstRecipient.balance == 1 ether);
+        assert(secondRecipient.balance == 1 ether);
+        assert(address(vault).balance == 0);
+    }
+
+    function test_failedPlanDoesNotConsumeNonce() public {
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(3 ether);
+        address firstRecipient = address(0xBEEF);
+        address correctedRecipient = address(0xCAFE);
+        RevertingReceiver receiver = new RevertingReceiver();
+        vm.deal(address(vault), 3 ether);
+        plan.actions = new ActionTypes.Action[](2);
+        plan.actions[0] = _transferAction(address(0), firstRecipient, 1 ether);
+        plan.actions[1] = _transferAction(address(0), address(receiver), 1 ether);
+        bool reverted;
+
+        try executor.execute(vault, plan, _sign(executor, plan, privateKey)) {}
+        catch {
+            reverted = true;
+        }
+
+        assert(reverted);
+        assert(!executor.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+        assert(firstRecipient.balance == 0);
+        assert(address(vault).balance == 3 ether);
+
+        ActionTypes.ActionPlan memory correctedPlan = plan;
+        correctedPlan.actions = new ActionTypes.Action[](2);
+        correctedPlan.actions[0] = _transferAction(address(0), firstRecipient, 1 ether);
+        correctedPlan.actions[1] = _transferAction(address(0), correctedRecipient, 1 ether);
+        executor.execute(vault, correctedPlan, _sign(executor, correctedPlan, privateKey));
+
+        assert(executor.nonceUsed(correctedPlan.mandateId, correctedPlan.agent, correctedPlan.nonce));
+        assert(firstRecipient.balance == 1 ether);
+        assert(correctedRecipient.balance == 1 ether);
+        assert(address(vault).balance == 1 ether);
+    }
+
     function test_acceptsTokenCallWithNoReturnData() public {
         (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(0);
         NoReturnToken token = new NoReturnToken();
