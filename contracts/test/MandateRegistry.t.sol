@@ -1,0 +1,171 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.28;
+
+import {MandateRegistry} from "../src/MandateRegistry.sol";
+import {Vault} from "../src/Vault.sol";
+
+interface RegistryTestVm {
+    function prank(address sender) external;
+}
+
+contract MandateRegistryTest {
+    RegistryTestVm private constant vm = RegistryTestVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+
+    function test_createsActiveMandateForVaultOwner() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address agent = address(0xA11CE);
+
+        uint256 mandateId = registry.createMandate(address(vault), agent, 10 ether);
+        MandateRegistry.Mandate memory mandate = registry.getMandate(mandateId);
+
+        assert(mandateId == 1);
+        assert(registry.mandateCount() == 1);
+        assert(mandate.id == 1);
+        assert(mandate.owner == address(this));
+        assert(mandate.vault == address(vault));
+        assert(mandate.agent == agent);
+        assert(mandate.status == MandateRegistry.MandateStatus.ACTIVE);
+        assert(mandate.transactionLimit == 10 ether);
+        assert(registry.isActive(mandateId));
+    }
+
+    function test_rejectsInvalidCreationInputs() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        bool zeroAddressReverted;
+        bool zeroTransactionLimitAllowed;
+        bool unknownVaultReverted;
+
+        try registry.createMandate(address(0), address(0xA11CE), 1 ether) {}
+        catch {
+            zeroAddressReverted = true;
+        }
+        try registry.createMandate(address(vault), address(0xA11CE), 0) {
+            zeroTransactionLimitAllowed = true;
+        } catch {}
+        try registry.createMandate(address(0xBEEF), address(0xA11CE), 1 ether) {}
+        catch {
+            unknownVaultReverted = true;
+        }
+
+        assert(zeroAddressReverted);
+        assert(zeroTransactionLimitAllowed);
+        assert(unknownVaultReverted);
+        assert(registry.mandateCount() == 1);
+    }
+
+    function test_rejectsCreationByNonVaultOwner() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        bool reverted;
+
+        vm.prank(address(0xB0B));
+        try registry.createMandate(address(vault), address(0xA11CE), 1 ether) {}
+        catch {
+            reverted = true;
+        }
+
+        assert(reverted);
+        assert(registry.mandateCount() == 0);
+    }
+
+    function test_currentVaultOwnerCanUpdateMandate() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        uint256 mandateId = registry.createMandate(address(vault), address(0xA11CE), 10 ether);
+
+        registry.updateMandate(mandateId, 20 ether);
+        MandateRegistry.Mandate memory mandate = registry.getMandate(mandateId);
+
+        assert(mandate.transactionLimit == 20 ether);
+        assert(mandate.status == MandateRegistry.MandateStatus.ACTIVE);
+
+        registry.updateMandate(mandateId, 0);
+        assert(registry.getMandate(mandateId).transactionLimit == 0);
+    }
+
+    function test_vaultOwnershipTransferMovesMandateAdministration() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address newOwner = address(0xCAFE);
+        uint256 mandateId = registry.createMandate(address(vault), address(0xA11CE), 10 ether);
+        vault.transferOwnership(newOwner);
+
+        vm.prank(newOwner);
+        registry.updateMandate(mandateId, 20 ether);
+
+        bool formerOwnerReverted;
+        try registry.updateMandate(mandateId, 30 ether) {}
+        catch {
+            formerOwnerReverted = true;
+        }
+
+        assert(formerOwnerReverted);
+        assert(registry.getMandate(mandateId).transactionLimit == 20 ether);
+    }
+
+    function test_revokesWithoutDeletingHistory() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address agent = address(0xA11CE);
+        uint256 mandateId = registry.createMandate(address(vault), agent, 10 ether);
+
+        registry.revokeMandate(mandateId);
+        MandateRegistry.Mandate memory mandate = registry.getMandate(mandateId);
+
+        assert(!registry.isActive(mandateId));
+        assert(mandate.id == mandateId);
+        assert(mandate.agent == agent);
+        assert(mandate.status == MandateRegistry.MandateStatus.REVOKED);
+        assert(mandate.revokedAt > 0);
+    }
+
+    function test_rejectsUpdatesAndDoubleRevocationAfterRevoke() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        uint256 mandateId = registry.createMandate(address(vault), address(0xA11CE), 10 ether);
+        registry.revokeMandate(mandateId);
+        bool updateReverted;
+        bool revokeReverted;
+
+        try registry.updateMandate(mandateId, 20 ether) {}
+        catch {
+            updateReverted = true;
+        }
+        try registry.revokeMandate(mandateId) {}
+        catch {
+            revokeReverted = true;
+        }
+
+        assert(updateReverted);
+        assert(revokeReverted);
+    }
+
+    function test_idsAreMonotonicAndNeverReused() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        uint256 firstId = registry.createMandate(address(vault), address(0xA11CE), 10 ether);
+        registry.revokeMandate(firstId);
+        uint256 secondId = registry.createMandate(address(vault), address(0xB0B), 5 ether);
+
+        assert(firstId == 1);
+        assert(secondId == 2);
+        assert(registry.mandateCount() == 2);
+        assert(!registry.isActive(firstId));
+        assert(registry.isActive(secondId));
+    }
+
+    function test_unknownMandateQueriesAreSafe() public {
+        MandateRegistry registry = new MandateRegistry();
+        bool getReverted;
+
+        try registry.getMandate(1) {}
+        catch {
+            getReverted = true;
+        }
+
+        assert(getReverted);
+        assert(!registry.isActive(1));
+    }
+}

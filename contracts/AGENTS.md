@@ -56,9 +56,9 @@ The expected Anvil chain ID is `31337`. The expected X Layer testnet chain ID is
 
 ## Current status and handoff
 
-The workspace contains the Foundry toolchain smoke test, the `DeploymentProbe`, and the first Grantline product contract, `Vault`. `forge test` passes with Foundry 1.7.1, Anvil responds on chain ID `31337`, and the X Layer RPC responds on chain ID `1952`.
+The workspace contains the Foundry toolchain smoke test, the `DeploymentProbe`, the `Vault`, and the `MandateRegistry`. `forge test` passes with Foundry 1.7.1, Anvil responds on chain ID `31337`, and the X Layer RPC responds on chain ID `1952`.
 
-The Vault deployment path is now verified on local Anvil and X Layer testnet. Both deployed Vaults start with authority unset, so no autonomous execution is enabled. Next: define the Agent and Mandate representation while preserving the Vault enforcement boundary.
+The Vault and MandateRegistry deployment paths are verified on local Anvil and X Layer testnet. Both deployed Vaults start with authority unset, and the MandateRegistry starts empty, so no autonomous execution or authority evaluation is enabled. Mandates currently store an optional per-transaction limit; `transactionLimit == 0` means disabled. The limit is data only for now and is not enforced during Vault execution. The recorded X Layer MandateRegistry deployment predates this transaction-only schema change and has not been redeployed. Next: define the structured Action representation while preserving the Vault and registry boundaries.
 
 ## Deployment evidence
 
@@ -68,6 +68,8 @@ The Vault deployment path is now verified on local Anvil and X Layer testnet. Bo
 | DeploymentProbe · X Layer testnet | `1952` | `0xdeFC33e462C77AbbA7DCaEa2888FA5B937e9eC91` | `0xccf3c6f6b9d081e549f0ad5156cad85cc5e9476a2e7e4fb6176f3da779ea33d9` | [X Layer testnet explorer](https://web3.okx.com/explorer/x-layer-testnet) |
 | Vault · local Anvil (fresh node) | `31337` | `0x5FbDB2315678afecb367f032d93F642f64180aa3` | Stored in the ignored local broadcast receipt | Local node only |
 | Vault · X Layer testnet | `1952` | `0xee1C3897A9c69460a3957d17B7B368B4162F6129` | `0x18cfe66cb3003486738f2624a1ca209af51103d4d966c16d8710d7502df5bcee` | [X Layer testnet explorer](https://web3.okx.com/explorer/x-layer-testnet) |
+| MandateRegistry · local Anvil (fresh node) | `31337` | `0x5FbDB2315678afecb367f032d93F642f64180aa3` | Stored in the ignored local broadcast receipt | Local node only |
+| MandateRegistry · X Layer testnet | `1952` | `0x5c6c7b9850385190D297B55C1C81f99adb0fd1d7` | `0x9bfc665985d4ce11cb71ae3769b7404d3ac9dc4155a89bafd0cbc4e7cdf6f7da` | [X Layer testnet explorer](https://web3.okx.com/explorer/x-layer-testnet) |
 
 The probe returns the configured deployer and chain ID `1952` on X Layer, and exposes version `grantline-deployment-probe-v1`. The deployer key is intentionally not recorded.
 
@@ -80,5 +82,8 @@ The probe returns the configured deployer and chain ID `1952` on X Layer, and ex
 | 2026-08-11 | Keep the first smoke test free of Grantline logic.                             | It proves the toolchain independently, so later contract failures are not confused with environment failures.   |
 | 2026-08-11 | Use a dependency-free `DeploymentProbe` before Grantline contracts.             | It verifies signer, chain ID, broadcast, receipts, and remote reads without introducing product authority logic. |
 | 2026-08-11 | Use one configurable Vault authority, initially unset.                          | Owner custody remains available, while autonomous execution is impossible until a later authority contract is explicitly connected. |
+| 2026-08-11 | Represent Agents as registered EOA addresses.                                   | A Mandate can bind directly to the signing address without introducing smart accounts or a separate identity lifecycle. |
+| 2026-08-11 | Store Mandates in one sequential onchain registry.                              | IDs, status, lifecycle history, and future indexing remain in one durable authority data layer. |
+| 2026-08-11 | Start with a single optional transaction limit.                           | `transactionLimit == 0` means disabled, which lets a mandate omit the constraint while the enforcement path is designed separately. |
 
 Update this file whenever contract boundaries, deployment flow, network configuration, or security assumptions change. Do not record secrets or transient command output here.
