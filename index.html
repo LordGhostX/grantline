@@ -640,11 +640,14 @@
       .authority-question:nth-last-child(-n + 2) {
         border-bottom: 0;
       }
-      .authority-question b {
-        color: var(--brand);
-        font:
-          500 10px/1 "Geist Mono",
-          monospace;
+      .authority-question span {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        background: var(--brand);
+        border-radius: 1px;
+        transform: rotate(45deg);
+        vertical-align: middle;
         margin-right: 7px;
       }
 
@@ -1227,10 +1230,33 @@
         }
         .flow-track {
           grid-template-columns: repeat(3, 1fr);
+          grid-auto-rows: 1fr;
           row-gap: 36px;
         }
         .flow-track::before {
-          display: none;
+          display: block;
+          inset: 0;
+          width: auto;
+          height: auto;
+          left: 0;
+          right: 0;
+          top: 0;
+          background:
+            linear-gradient(
+                to right,
+                transparent 0 16.6667%,
+                var(--brand) 16.6667% 83.3333%,
+                transparent 83.3333% 100%
+              )
+              0 37px / 100% 1px no-repeat,
+            linear-gradient(
+                to right,
+                transparent 0 16.6667%,
+                var(--brand) 16.6667% 83.3333%,
+                transparent 83.3333% 100%
+              )
+              0 calc(50% + 55px) / 100% 1px no-repeat;
+          z-index: 0;
         }
         .condition-branch {
           grid-template-columns: 1fr;
@@ -1278,19 +1304,6 @@
         .console-body {
           padding: 16px;
         }
-        .decision-tabs {
-          grid-template-columns: 1fr;
-        }
-        .decision-tab {
-          border-right: 0;
-          border-bottom: 1px solid var(--border);
-        }
-        .decision-tab:last-child {
-          border-bottom: 0;
-        }
-        .decision-tab[aria-selected="true"] {
-          box-shadow: inset 3px 0 0 var(--brand);
-        }
         .mandate-row {
           font-size: 10px;
         }
@@ -1319,6 +1332,40 @@
         }
         .flow-track {
           grid-template-columns: repeat(2, 1fr);
+          grid-auto-rows: 1fr;
+          row-gap: 36px;
+        }
+        .flow-track::before {
+          display: block;
+          inset: 0;
+          width: auto;
+          height: auto;
+          left: 0;
+          right: 0;
+          top: 0;
+          background:
+            linear-gradient(
+                to right,
+                transparent 0 25%,
+                var(--brand) 25% 75%,
+                transparent 75% 100%
+              )
+              0 37px / 100% 1px no-repeat,
+            linear-gradient(
+                to right,
+                transparent 0 25%,
+                var(--brand) 25% 75%,
+                transparent 75% 100%
+              )
+              0 calc(33.333% + 49px) / 100% 1px no-repeat,
+            linear-gradient(
+                to right,
+                transparent 0 25%,
+                var(--brand) 25% 75%,
+                transparent 75% 100%
+              )
+              0 calc(66.666% + 61px) / 100% 1px no-repeat;
+          z-index: 0;
         }
         .model-cell {
           min-height: auto;
@@ -1626,16 +1673,16 @@
               aria-label="Questions Grantline answers"
             >
               <div class="authority-question">
-                <b>01</b>How much authority does it have?
+                <span></span>How much authority does it have?
               </div>
               <div class="authority-question">
-                <b>02</b>Where did that authority come from?
+                <span></span>Where did that authority come from?
               </div>
               <div class="authority-question">
-                <b>03</b>What conditions must be satisfied?
+                <span></span>What conditions must be satisfied?
               </div>
               <div class="authority-question">
-                <b>04</b>When should another authority step in?
+                <span></span>When should another authority step in?
               </div>
             </div>
           </div>
@@ -1908,7 +1955,6 @@
           <div class="proof-cta reveal" aria-label="Proof and next steps">
             <a class="btn" href="#">View contract ↗</a>
             <a class="btn" href="#">Read how enforcement works ↗</a>
-            <a class="btn primary" href="#">See Grantline in action</a>
           </div>
         </div>
       </section>
