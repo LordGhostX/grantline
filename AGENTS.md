@@ -37,9 +37,9 @@ Future application boundaries are expected to be `website/` for the Next.js land
 
 ## Current status
 
-The repository contains the product brief, a static landing-page prototype, and the first working contracts loop. The contracts workspace now has the Vault, Mandate registry, typed ActionPlan and signatures, read-only evaluation, executor, shared nonce replay protection, onchain execution records, and a tracked X Layer deployment manifest with runtime-hash validation. All local tests pass. The active testnet stack uses a Vault deployed with the token-target guard, an evaluator that enforces every available USD quote even when another quote is unavailable, and an executor whose authority assignment was validated against its evaluator and registry. Relayer, indexing, Decision Receipt assembly, SDK, API, and demo application work remain deferred.
+The repository contains the product brief, a static landing-page prototype, and the first working contracts loop. The contracts workspace now has the Vault, Mandate registry, typed ActionPlan and signatures, read-only evaluation, executor, shared nonce replay protection, onchain execution records, and a tracked X Layer deployment manifest with runtime-hash validation. All local tests pass. The fresh X Layer enforcement stack has been verified end to end: the funded agent submitted a successful transfer, an over-limit plan was denied, the successful plan was rejected on replay, and the owner withdrew the remaining Vault balance. Relayer, indexing, Decision Receipt assembly, SDK, API, and demo application work remain deferred.
 
-The next implementation step is to exercise the deployed end-to-end loop with a signed transfer plan, then extend action-specific rules only when the product needs them.
+The next implementation step is Phase 2 authority lifecycle work, starting with ESCALATE and pending owner decisions. The relayer remains deferred because the integration evidence uses the agent as the actual transaction submitter.
 
 ## Decision log
 
