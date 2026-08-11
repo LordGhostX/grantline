@@ -58,7 +58,7 @@ The expected Anvil chain ID is `31337`. The expected X Layer testnet chain ID is
 
 The workspace contains the Foundry toolchain smoke test, the `DeploymentProbe`, the `Vault`, and the `MandateRegistry`. `forge test` passes with Foundry 1.7.1, Anvil responds on chain ID `31337`, and the X Layer RPC responds on chain ID `1952`.
 
-The Vault and MandateRegistry deployment paths are verified on local Anvil and X Layer testnet. Both deployed Vaults start with authority unset, and the MandateRegistry starts empty, so no autonomous execution or authority evaluation is enabled. Mandates currently store an optional per-transaction limit; `transactionLimit == 0` means disabled. The limit is data only for now and is not enforced during Vault execution. The recorded X Layer MandateRegistry deployment predates this transaction-only schema change and has not been redeployed. `ActionTypes` now defines an atomic, ordered ActionPlan with versioned high-level action payloads; only `TRANSFER` version 1 exists, and raw Vault calldata is intentionally outside the agent-facing format. Nonce assignment, action-hash binding, deadline checks, adapters, signatures, evaluation, and execution remain unimplemented.
+The Vault and MandateRegistry deployment paths are verified on local Anvil and X Layer testnet. Both deployed Vaults start with authority unset, and the MandateRegistry starts empty, so no autonomous execution or authority evaluation is enabled. Mandates currently store an optional per-transaction limit; `transactionLimit == 0` means disabled. The limit is data only for now and is not enforced during Vault execution. The recorded X Layer MandateRegistry deployment predates this transaction-only schema change and has not been redeployed. `ActionTypes` now defines an atomic, ordered ActionPlan with versioned high-level action payloads; only `TRANSFER` version 1 exists, and raw Vault calldata is intentionally outside the agent-facing format. `ActionSignature` now provides EIP-712 hashing and low-s malleability-checked signer recovery, but nonce assignment, action-hash storage, deadline enforcement, adapters, evaluation, and execution remain unimplemented.
 
 ## Action format
 
@@ -83,6 +83,10 @@ The agent-facing proposal uses readable intent fields rather than Solidity calld
 ```
 
 `actions` is an ordered, atomic plan. `nonce` is a Grantline-managed proposal identifier scoped to the mandate and agent; it does not force strict execution order. `deadline` is an absolute Unix timestamp in seconds, with `0` meaning no expiry. The `type` and `version` select the typed decoder, and `ActionTypes` currently supports only `transfer` version `1`. `native` maps to the zero address internally; token amounts use raw base units. Typed parameters are later translated into validated Vault calls, while raw calldata remains outside the agent-facing format.
+
+## Agent signatures
+
+`ActionSignature` uses EIP-712 with domain name `Grantline`, domain version `1`, the active chain ID, and the verifying-contract address. The signed digest covers the complete ActionPlan, including the ordered action array and each action's exact typed parameter bytes. A valid signature must recover to `ActionPlan.agent`; malformed, non-27/28, or high-`s` signatures return an invalid signer. The verifying contract is supplied by the eventual authority/execution boundary, so signatures are not portable across chains or contracts.
 
 ## Deployment evidence
 
@@ -112,5 +116,6 @@ The probe returns the configured deployer and chain ID `1952` on X Layer, and ex
 | 2026-08-11 | Represent agent proposals as ordered, atomic ActionPlans.                      | Agents submit high-level typed intent; a later adapter can translate each action into validated Vault calls without exposing Solidity calldata. |
 | 2026-08-11 | Version each Action payload independently.                                     | `actionType + version` selects decoding rules, so future action types or changed transfer semantics do not reinterpret existing payloads.       |
 | 2026-08-11 | Use Grantline-managed proposal nonces and absolute Unix-second deadlines.      | Nonces can bind retries to one action hash without forcing strict execution order, while deadlines allow pending escalations to expire.         |
+| 2026-08-11 | Sign ActionPlans with EIP-712.                                                   | Agents sign readable intent while the digest binds the complete ordered plan to chain ID and verifying contract, preventing cross-domain replay. |
 
 Update this file whenever contract boundaries, deployment flow, network configuration, or security assumptions change. Do not record secrets or transient command output here.

@@ -15,8 +15,8 @@ contract DeploymentProbeTest {
         DeploymentProbe probe = new DeploymentProbe();
 
         assert(
-            keccak256(bytes(probe.VERSION()))
-                == keccak256(bytes("grantline-deployment-probe-v1"))
+            keccak256(bytes(probe.VERSION())) ==
+                keccak256(bytes("grantline-deployment-probe-v1"))
         );
     }
 }

@@ -5,7 +5,9 @@ import {DeploymentProbe} from "../src/DeploymentProbe.sol";
 
 interface Vm {
     function envUint(string calldata name) external returns (uint256 value);
+
     function startBroadcast(uint256 privateKey) external;
+
     function stopBroadcast() external;
 }
 

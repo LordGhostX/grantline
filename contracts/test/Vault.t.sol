@@ -5,12 +5,14 @@ import {Vault} from "../src/Vault.sol";
 
 interface TestVm {
     function deal(address account, uint256 newBalance) external;
+
     function prank(address sender) external;
 }
 
 contract MockERC20 {
     mapping(address account => uint256) public balanceOf;
-    mapping(address account => mapping(address spender => uint256)) public allowance;
+    mapping(address account => mapping(address spender => uint256))
+        public allowance;
 
     function mint(address account, uint256 amount) external {
         balanceOf[account] += amount;
@@ -21,12 +23,19 @@ contract MockERC20 {
         return true;
     }
 
-    function transfer(address recipient, uint256 amount) external returns (bool) {
+    function transfer(
+        address recipient,
+        uint256 amount
+    ) external returns (bool) {
         _move(msg.sender, recipient, amount);
         return true;
     }
 
-    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool) {
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) external returns (bool) {
         uint256 approved = allowance[sender][msg.sender];
         assert(approved >= amount);
         allowance[sender][msg.sender] = approved - amount;
@@ -56,16 +65,19 @@ contract CallTarget {
 }
 
 contract ExecutionAuthority {
-    function executeVault(Vault vault, address target, uint256 value, bytes calldata data)
-        external
-        returns (bool success, bytes memory result)
-    {
+    function executeVault(
+        Vault vault,
+        address target,
+        uint256 value,
+        bytes calldata data
+    ) external returns (bool success, bytes memory result) {
         return vault.execute(target, value, data);
     }
 }
 
 contract VaultTest {
-    TestVm private constant vm = TestVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+    TestVm private constant vm =
+        TestVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
     function test_initialisesOwnerAndAuthorityUnset() public {
         Vault vault = new Vault();
@@ -122,7 +134,13 @@ contract VaultTest {
         CallTarget target = new CallTarget();
         bool reverted;
 
-        try vault.execute(address(target), 0, abi.encodeCall(CallTarget.setValue, (1))) {} catch {
+        try
+            vault.execute(
+                address(target),
+                0,
+                abi.encodeCall(CallTarget.setValue, (1))
+            )
+        {} catch {
             reverted = true;
         }
 

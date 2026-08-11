@@ -3,8 +3,17 @@ pragma solidity ^0.8.28;
 
 interface IERC20Like {
     function balanceOf(address account) external view returns (uint256);
-    function transfer(address recipient, uint256 amount) external returns (bool);
-    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+
+    function transfer(
+        address recipient,
+        uint256 amount
+    ) external returns (bool);
+
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) external returns (bool);
 }
 
 contract Vault {
@@ -16,7 +25,10 @@ contract Vault {
     error NotOwner(address caller);
     error TokenTransferFailed();
 
-    event AuthorityUpdated(address indexed previousAuthority, address indexed newAuthority);
+    event AuthorityUpdated(
+        address indexed previousAuthority,
+        address indexed newAuthority
+    );
     event ExecutionAttempted(
         address indexed authority,
         address indexed target,
@@ -27,9 +39,20 @@ contract Vault {
     );
     event NativeDeposited(address indexed from, uint256 amount);
     event NativeWithdrawn(address indexed to, uint256 amount);
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event TokenDeposited(address indexed token, address indexed from, uint256 amount);
-    event TokenWithdrawn(address indexed token, address indexed to, uint256 amount);
+    event OwnershipTransferred(
+        address indexed previousOwner,
+        address indexed newOwner
+    );
+    event TokenDeposited(
+        address indexed token,
+        address indexed from,
+        uint256 amount
+    );
+    event TokenWithdrawn(
+        address indexed token,
+        address indexed to,
+        uint256 amount
+    );
 
     address public owner;
     address public authority;
@@ -51,26 +74,45 @@ contract Vault {
         _requireTokenAndAmount(token, amount);
         _safeTokenCall(
             token,
-            abi.encodeWithSelector(IERC20Like.transferFrom.selector, msg.sender, address(this), amount)
+            abi.encodeWithSelector(
+                IERC20Like.transferFrom.selector,
+                msg.sender,
+                address(this),
+                amount
+            )
         );
         emit TokenDeposited(token, msg.sender, amount);
     }
 
-    function withdrawNative(address payable recipient, uint256 amount) external onlyOwner {
+    function withdrawNative(
+        address payable recipient,
+        uint256 amount
+    ) external onlyOwner {
         if (recipient == address(0)) revert InvalidAddress();
         if (amount > address(this).balance) revert InsufficientNativeBalance();
 
-        (bool success,) = recipient.call{value: amount}("");
+        (bool success, ) = recipient.call{value: amount}("");
         if (!success) revert NativeTransferFailed();
 
         emit NativeWithdrawn(recipient, amount);
     }
 
-    function withdrawToken(address token, address recipient, uint256 amount) external onlyOwner {
+    function withdrawToken(
+        address token,
+        address recipient,
+        uint256 amount
+    ) external onlyOwner {
         _requireTokenAndAmount(token, amount);
         if (recipient == address(0)) revert InvalidAddress();
 
-        _safeTokenCall(token, abi.encodeWithSelector(IERC20Like.transfer.selector, recipient, amount));
+        _safeTokenCall(
+            token,
+            abi.encodeWithSelector(
+                IERC20Like.transfer.selector,
+                recipient,
+                amount
+            )
+        );
         emit TokenWithdrawn(token, recipient, amount);
     }
 
@@ -93,12 +135,13 @@ contract Vault {
         return IERC20Like(token).balanceOf(address(this));
     }
 
-    function execute(address target, uint256 value, bytes calldata data)
-        external
-        onlyAuthority
-        returns (bool success, bytes memory result)
-    {
-        if (target == address(0) || target == address(this)) revert InvalidAddress();
+    function execute(
+        address target,
+        uint256 value,
+        bytes calldata data
+    ) external onlyAuthority returns (bool success, bytes memory result) {
+        if (target == address(0) || target == address(this))
+            revert InvalidAddress();
 
         (success, result) = target.call{value: value}(data);
         emit ExecutionAttempted(
@@ -117,18 +160,25 @@ contract Vault {
     }
 
     modifier onlyAuthority() {
-        if (authority == address(0) || msg.sender != authority) revert NotAuthority(msg.sender);
+        if (authority == address(0) || msg.sender != authority)
+            revert NotAuthority(msg.sender);
         _;
     }
 
-    function _requireTokenAndAmount(address token, uint256 amount) private pure {
+    function _requireTokenAndAmount(
+        address token,
+        uint256 amount
+    ) private pure {
         if (token == address(0)) revert InvalidAddress();
         if (amount == 0) revert InvalidAmount();
     }
 
     function _safeTokenCall(address token, bytes memory callData) private {
         (bool success, bytes memory returnData) = token.call(callData);
-        if (!success || (returnData.length != 0 && !abi.decode(returnData, (bool)))) {
+        if (
+            !success ||
+            (returnData.length != 0 && !abi.decode(returnData, (bool)))
+        ) {
             revert TokenTransferFailed();
         }
     }
