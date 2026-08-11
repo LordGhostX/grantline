@@ -58,7 +58,7 @@ The expected Anvil chain ID is `31337`. The expected X Layer testnet chain ID is
 
 The workspace contains the Foundry toolchain smoke test, the `DeploymentProbe`, the `Vault`, and the `MandateRegistry`. `forge test` passes with Foundry 1.7.1, Anvil responds on chain ID `31337`, and the X Layer RPC responds on chain ID `1952`.
 
-The Vault and MandateRegistry deployment paths are verified on local Anvil and X Layer testnet. Both deployed Vaults start with authority unset, and the MandateRegistry starts empty, so no autonomous execution or authority evaluation is enabled. Mandates currently store an optional per-transaction limit; `transactionLimit == 0` means disabled. The limit is data only for now and is not enforced by the Vault itself. The recorded X Layer MandateRegistry deployment predates this transaction-only schema change and has not been redeployed. `ActionTypes` now defines an atomic, ordered ActionPlan with versioned high-level action payloads; only `TRANSFER` is currently defined, and raw Vault calldata is intentionally outside the agent-facing format. `ActionSignature` provides EIP-712 hashing and low-s malleability-checked signer recovery, and `MandateEvaluator` now performs read-only Mandate, signature, deadline, action-shape, and native-amount checks. `VaultExecutor` now translates evaluator-approved native and ERC-20 transfers into atomic Vault calls. Nonce consumption, action-hash storage, adapters beyond transfers, decision aggregation, records, and relaying remain unimplemented.
+The Vault and MandateRegistry deployment paths are verified on local Anvil and X Layer testnet. Both deployed Vaults start with authority unset, and the MandateRegistry starts empty, so no autonomous execution or authority evaluation is enabled. Mandates currently store an optional per-transaction limit; `transactionLimit == 0` means disabled. The limit is data only for now and is not enforced by the Vault itself. The recorded X Layer MandateRegistry deployment predates this transaction-only schema change and has not been redeployed. `ActionTypes` now defines an atomic, ordered ActionPlan with versioned high-level action payloads; only `TRANSFER` is currently defined, and raw Vault calldata is intentionally outside the agent-facing format. `ActionSignature` provides EIP-712 hashing and low-s malleability-checked signer recovery, and `MandateEvaluator` now performs read-only Mandate, signature, deadline, action-shape, and native-amount checks. `VaultExecutor` now translates evaluator-approved native and ERC-20 transfers into atomic Vault calls and emits a plan-level success record. Nonce consumption, action-hash storage, adapters beyond transfers, decision aggregation, offchain indexing, Decision Receipt assembly, and relaying remain unimplemented.
 
 ## Action format
 
@@ -98,9 +98,14 @@ The agent-facing proposal uses readable intent fields rather than Solidity calld
 
 The Vault owner must explicitly set the executor as the Vault authority. The executor does not configure authority and cannot execute against a different Vault than the one stored in the Mandate. If evaluation fails, the executor reverts before calling the Vault; if a later downstream action fails, the whole executor transaction reverts, so earlier actions are rolled back. The signed nonce is currently not consumed, so replay protection remains unfinished.
 
+## Onchain records
+
+Contracts emit events rather than storing large human-readable records. MandateRegistry events cover Mandate lifecycle, Vault events cover custody and low-level execution, and `VaultExecutor.ActionPlanExecuted` records the digest, Mandate, agent, Vault, nonce, aggregate native amount, and action count after a complete plan succeeds. Denied plans and failed executions keep the current revert behavior, so their logs do not persist; evaluator results and revert data remain caller-visible until an offchain indexing and Decision Receipt layer is built.
+
 ## Deferred work
 
 - [ ] Build a minimal offchain relayer after the contract execution loop is complete. It should accept a signed ActionPlan, submit `VaultExecutor.execute` with a funded EOA, and report the transaction receipt. It must remain a gas-paying caller only; `VaultExecutor` and the Vault authority configuration remain the enforcement boundary.
+- [ ] Build offchain indexing and Decision Receipt assembly. It should combine signed ActionPlans, evaluator results, revert data, transaction receipts, Mandate events, Vault events, and `VaultExecutor` events into a queryable behavioural history without moving the enforcement boundary offchain.
 
 ## Deployment evidence
 

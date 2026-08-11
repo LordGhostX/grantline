@@ -8,18 +8,12 @@ import {MandateRegistry} from "./MandateRegistry.sol";
 import {Vault} from "./Vault.sol";
 
 interface IERC20TransferLike {
-    function transfer(
-        address recipient,
-        uint256 amount
-    ) external returns (bool);
+    function transfer(address recipient, uint256 amount) external returns (bool);
 }
 
 contract VaultExecutor {
     error ActionExecutionFailed(uint256 actionIndex);
-    error EvaluationDenied(
-        MandateEvaluator.FailureCode failureCode,
-        uint256 failedActionIndex
-    );
+    error EvaluationDenied(MandateEvaluator.FailureCode failureCode, uint256 failedActionIndex);
     error InvalidEvaluator();
     error InvalidTokenTarget(address token);
     error UnsupportedAction(ActionTypes.ActionType actionType);
@@ -30,46 +24,36 @@ contract VaultExecutor {
         uint256 indexed mandateId,
         address indexed agent,
         address vault,
+        uint256 nonce,
+        uint256 nativeAmount,
         uint256 actionCount
     );
 
     MandateEvaluator public immutable evaluator;
 
     constructor(address evaluatorAddress) {
-        if (
-            evaluatorAddress == address(0) || evaluatorAddress.code.length == 0
-        ) {
+        if (evaluatorAddress == address(0) || evaluatorAddress.code.length == 0) {
             revert InvalidEvaluator();
         }
         evaluator = MandateEvaluator(evaluatorAddress);
     }
 
-    function execute(
-        Vault vault,
-        ActionTypes.ActionPlan calldata plan,
-        bytes calldata signature
-    ) external returns (bytes32 actionDigest) {
-        MandateEvaluator.EvaluationResult memory evaluation = evaluator
-            .evaluate(plan, signature);
+    function execute(Vault vault, ActionTypes.ActionPlan calldata plan, bytes calldata signature)
+        external
+        returns (bytes32 actionDigest)
+    {
+        MandateEvaluator.EvaluationResult memory evaluation = evaluator.evaluate(plan, signature);
         if (!evaluation.passed) {
-            revert EvaluationDenied(
-                evaluation.failureCode,
-                evaluation.failedActionIndex
-            );
+            revert EvaluationDenied(evaluation.failureCode, evaluation.failedActionIndex);
         }
 
-        MandateRegistry.Mandate memory mandate = MandateRegistry(
-            address(evaluator.registry())
-        ).getMandate(plan.mandateId);
+        MandateRegistry.Mandate memory mandate =
+            MandateRegistry(address(evaluator.registry())).getMandate(plan.mandateId);
         if (mandate.vault != address(vault)) {
             revert VaultMismatch(mandate.vault, address(vault));
         }
 
-        actionDigest = ActionSignature.digest(
-            plan,
-            address(evaluator),
-            block.chainid
-        );
+        actionDigest = ActionSignature.digest(plan, address(evaluator), block.chainid);
         for (uint256 index; index < plan.actions.length; index++) {
             _executeAction(vault, plan.actions[index], index);
         }
@@ -79,54 +63,40 @@ contract VaultExecutor {
             plan.mandateId,
             plan.agent,
             address(vault),
+            plan.nonce,
+            evaluation.nativeAmount,
             plan.actions.length
         );
     }
 
-    function _executeAction(
-        Vault vault,
-        ActionTypes.Action calldata action,
-        uint256 actionIndex
-    ) private {
+    function _executeAction(Vault vault, ActionTypes.Action calldata action, uint256 actionIndex) private {
         if (action.actionType != ActionTypes.ActionType.TRANSFER) {
             revert UnsupportedAction(action.actionType);
         }
 
-        ActionTypes.TransferParameters memory transfer = abi.decode(
-            action.parameters,
-            (ActionTypes.TransferParameters)
-        );
+        ActionTypes.TransferParameters memory transfer = abi.decode(action.parameters, (ActionTypes.TransferParameters));
 
         if (transfer.asset == address(0)) {
-            (bool nativeSuccess, ) = vault.execute(
-                transfer.recipient,
-                transfer.amount,
-                ""
-            );
+            (bool nativeSuccess,) = vault.execute(transfer.recipient, transfer.amount, "");
             if (!nativeSuccess) revert ActionExecutionFailed(actionIndex);
             return;
         }
 
-        if (transfer.asset.code.length == 0)
+        if (transfer.asset.code.length == 0) {
             revert InvalidTokenTarget(transfer.asset);
+        }
 
         (bool tokenSuccess, bytes memory result) = vault.execute(
             transfer.asset,
             0,
-            abi.encodeWithSelector(
-                IERC20TransferLike.transfer.selector,
-                transfer.recipient,
-                transfer.amount
-            )
+            abi.encodeWithSelector(IERC20TransferLike.transfer.selector, transfer.recipient, transfer.amount)
         );
         if (!tokenSuccess || !_tokenTransferSucceeded(result)) {
             revert ActionExecutionFailed(actionIndex);
         }
     }
 
-    function _tokenTransferSucceeded(
-        bytes memory result
-    ) private pure returns (bool) {
+    function _tokenTransferSucceeded(bytes memory result) private pure returns (bool) {
         if (result.length == 0) return true;
         if (result.length != 32) return false;
         return abi.decode(result, (bool));

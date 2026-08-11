@@ -13,10 +13,9 @@ interface ExecutorVm {
 
     function deal(address account, uint256 newBalance) external;
 
-    function sign(
-        uint256 privateKey,
-        bytes32 digest
-    ) external returns (uint8 v, bytes32 r, bytes32 s);
+    function expectEmit(bool checkTopic1, bool checkTopic2, bool checkTopic3, bool checkData) external;
+
+    function sign(uint256 privateKey, bytes32 digest) external returns (uint8 v, bytes32 r, bytes32 s);
 }
 
 contract ExecutorMockERC20 {
@@ -26,10 +25,7 @@ contract ExecutorMockERC20 {
         balanceOf[account] += amount;
     }
 
-    function transfer(
-        address recipient,
-        uint256 amount
-    ) external returns (bool) {
+    function transfer(address recipient, uint256 amount) external returns (bool) {
         if (balanceOf[msg.sender] < amount) return false;
         balanceOf[msg.sender] -= amount;
         balanceOf[recipient] += amount;
@@ -63,50 +59,44 @@ contract RevertingReceiver {
 }
 
 contract VaultExecutorTest {
-    ExecutorVm private constant vm =
-        ExecutorVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+    event ActionPlanExecuted(
+        bytes32 indexed actionDigest,
+        uint256 indexed mandateId,
+        address indexed agent,
+        address vault,
+        uint256 nonce,
+        uint256 nativeAmount,
+        uint256 actionCount
+    );
+
+    ExecutorVm private constant vm = ExecutorVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
     function test_executesSignedNativePlanThroughVault() public {
-        (
-            Vault vault,
-            VaultExecutor executor,
-            ActionTypes.ActionPlan memory plan,
-            uint256 privateKey
-        ) = _setup(2 ether);
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(2 ether);
         address recipient = address(0xBEEF);
         plan.actions[0] = _transferAction(address(0), recipient, 1 ether);
         vm.deal(address(vault), 2 ether);
 
-        bytes32 actionDigest = executor.execute(
-            vault,
-            plan,
-            _sign(executor, plan, privateKey)
-        );
+        bytes32 expectedDigest = ActionSignature.digest(plan, address(executor.evaluator()), block.chainid);
+        vm.expectEmit(true, true, true, true);
+        emit ActionPlanExecuted(expectedDigest, plan.mandateId, plan.agent, address(vault), plan.nonce, 1 ether, 1);
+        bytes32 actionDigest = executor.execute(vault, plan, _sign(executor, plan, privateKey));
 
-        assert(
-            actionDigest ==
-                ActionSignature.digest(
-                    plan,
-                    address(executor.evaluator()),
-                    block.chainid
-                )
-        );
+        assert(actionDigest == ActionSignature.digest(plan, address(executor.evaluator()), block.chainid));
         assert(recipient.balance == 1 ether);
         assert(address(vault).balance == 1 ether);
     }
 
     function test_executesSignedTokenPlanThroughVault() public {
-        (
-            Vault vault,
-            VaultExecutor executor,
-            ActionTypes.ActionPlan memory plan,
-            uint256 privateKey
-        ) = _setup(0);
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(0);
         ExecutorMockERC20 token = new ExecutorMockERC20();
         address recipient = address(0xBEEF);
         token.mint(address(vault), 100 ether);
         plan.actions[0] = _transferAction(address(token), recipient, 40 ether);
 
+        bytes32 expectedDigest = ActionSignature.digest(plan, address(executor.evaluator()), block.chainid);
+        vm.expectEmit(true, true, true, true);
+        emit ActionPlanExecuted(expectedDigest, plan.mandateId, plan.agent, address(vault), plan.nonce, 0, 1);
         executor.execute(vault, plan, _sign(executor, plan, privateKey));
 
         assert(token.balanceOf(address(vault)) == 60 ether);
@@ -114,23 +104,13 @@ contract VaultExecutorTest {
     }
 
     function test_acceptsTokenCallWithNoReturnData() public {
-        (
-            Vault vault,
-            VaultExecutor executor,
-            ActionTypes.ActionPlan memory plan,
-            uint256 privateKey
-        ) = _setup(0);
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(0);
         NoReturnToken token = new NoReturnToken();
-        plan.actions[0] = _transferAction(
-            address(token),
-            address(0xBEEF),
-            1 ether
-        );
+        plan.actions[0] = _transferAction(address(token), address(0xBEEF), 1 ether);
         bool reverted;
 
-        try
-            executor.execute(vault, plan, _sign(executor, plan, privateKey))
-        {} catch {
+        try executor.execute(vault, plan, _sign(executor, plan, privateKey)) {}
+        catch {
             reverted = true;
         }
 
@@ -138,23 +118,13 @@ contract VaultExecutorTest {
     }
 
     function test_rejectsFalseTokenReturn() public {
-        (
-            Vault vault,
-            VaultExecutor executor,
-            ActionTypes.ActionPlan memory plan,
-            uint256 privateKey
-        ) = _setup(0);
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(0);
         FalseReturnToken token = new FalseReturnToken();
-        plan.actions[0] = _transferAction(
-            address(token),
-            address(0xBEEF),
-            1 ether
-        );
+        plan.actions[0] = _transferAction(address(token), address(0xBEEF), 1 ether);
         bool reverted;
 
-        try
-            executor.execute(vault, plan, _sign(executor, plan, privateKey))
-        {} catch {
+        try executor.execute(vault, plan, _sign(executor, plan, privateKey)) {}
+        catch {
             reverted = true;
         }
 
@@ -162,23 +132,13 @@ contract VaultExecutorTest {
     }
 
     function test_rejectsMalformedTokenReturn() public {
-        (
-            Vault vault,
-            VaultExecutor executor,
-            ActionTypes.ActionPlan memory plan,
-            uint256 privateKey
-        ) = _setup(0);
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(0);
         MalformedReturnToken token = new MalformedReturnToken();
-        plan.actions[0] = _transferAction(
-            address(token),
-            address(0xBEEF),
-            1 ether
-        );
+        plan.actions[0] = _transferAction(address(token), address(0xBEEF), 1 ether);
         bool reverted;
 
-        try
-            executor.execute(vault, plan, _sign(executor, plan, privateKey))
-        {} catch {
+        try executor.execute(vault, plan, _sign(executor, plan, privateKey)) {}
+        catch {
             reverted = true;
         }
 
@@ -186,22 +146,12 @@ contract VaultExecutorTest {
     }
 
     function test_rejectsTokenTargetWithoutCode() public {
-        (
-            Vault vault,
-            VaultExecutor executor,
-            ActionTypes.ActionPlan memory plan,
-            uint256 privateKey
-        ) = _setup(0);
-        plan.actions[0] = _transferAction(
-            address(0xCAFE),
-            address(0xBEEF),
-            1 ether
-        );
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(0);
+        plan.actions[0] = _transferAction(address(0xCAFE), address(0xBEEF), 1 ether);
         bool reverted;
 
-        try
-            executor.execute(vault, plan, _sign(executor, plan, privateKey))
-        {} catch {
+        try executor.execute(vault, plan, _sign(executor, plan, privateKey)) {}
+        catch {
             reverted = true;
         }
 
@@ -209,20 +159,14 @@ contract VaultExecutorTest {
     }
 
     function test_deniedPlanNeverCallsVault() public {
-        (
-            Vault vault,
-            VaultExecutor executor,
-            ActionTypes.ActionPlan memory plan,
-            uint256 privateKey
-        ) = _setup(1 ether);
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(1 ether);
         address recipient = address(0xBEEF);
         vm.deal(address(vault), 2 ether);
         plan.actions[0] = _transferAction(address(0), recipient, 2 ether);
         bool reverted;
 
-        try
-            executor.execute(vault, plan, _sign(executor, plan, privateKey))
-        {} catch {
+        try executor.execute(vault, plan, _sign(executor, plan, privateKey)) {}
+        catch {
             reverted = true;
         }
 
@@ -232,27 +176,17 @@ contract VaultExecutorTest {
     }
 
     function test_revertsWholePlanWhenLaterActionFails() public {
-        (
-            Vault vault,
-            VaultExecutor executor,
-            ActionTypes.ActionPlan memory plan,
-            uint256 privateKey
-        ) = _setup(2 ether);
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(2 ether);
         address recipient = address(0xBEEF);
         RevertingReceiver receiver = new RevertingReceiver();
         vm.deal(address(vault), 2 ether);
         plan.actions = new ActionTypes.Action[](2);
         plan.actions[0] = _transferAction(address(0), recipient, 1 ether);
-        plan.actions[1] = _transferAction(
-            address(0),
-            address(receiver),
-            1 ether
-        );
+        plan.actions[1] = _transferAction(address(0), address(receiver), 1 ether);
         bool reverted;
 
-        try
-            executor.execute(vault, plan, _sign(executor, plan, privateKey))
-        {} catch {
+        try executor.execute(vault, plan, _sign(executor, plan, privateKey)) {}
+        catch {
             reverted = true;
         }
 
@@ -262,22 +196,12 @@ contract VaultExecutorTest {
     }
 
     function test_rejectsPlanForDifferentVault() public {
-        (
-            Vault vault,
-            VaultExecutor executor,
-            ActionTypes.ActionPlan memory plan,
-            uint256 privateKey
-        ) = _setup(1 ether);
+        (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey) = _setup(1 ether);
         Vault otherVault = new Vault();
         bool reverted;
 
-        try
-            executor.execute(
-                otherVault,
-                plan,
-                _sign(executor, plan, privateKey)
-            )
-        {} catch {
+        try executor.execute(otherVault, plan, _sign(executor, plan, privateKey)) {}
+        catch {
             reverted = true;
         }
 
@@ -289,75 +213,49 @@ contract VaultExecutorTest {
     function test_rejectsInvalidEvaluator() public {
         bool reverted;
 
-        try new VaultExecutor(address(0)) {} catch {
+        try new VaultExecutor(address(0)) {}
+        catch {
             reverted = true;
         }
 
         assert(reverted);
     }
 
-    function _setup(
-        uint256 transactionLimit
-    )
+    function _setup(uint256 transactionLimit)
         private
-        returns (
-            Vault vault,
-            VaultExecutor executor,
-            ActionTypes.ActionPlan memory plan,
-            uint256 privateKey
-        )
+        returns (Vault vault, VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey)
     {
         privateKey = 0xA11CE;
         address agent = vm.addr(privateKey);
         vault = new Vault();
         MandateRegistry registry = new MandateRegistry();
-        uint256 mandateId = registry.createMandate(
-            address(vault),
-            agent,
-            transactionLimit
-        );
+        uint256 mandateId = registry.createMandate(address(vault), agent, transactionLimit);
         MandateEvaluator evaluator = new MandateEvaluator(address(registry));
         executor = new VaultExecutor(address(evaluator));
         vault.setAuthority(address(executor));
         plan = ActionTypes.ActionPlan({
-            mandateId: mandateId,
-            agent: agent,
-            nonce: 1,
-            deadline: 0,
-            actions: new ActionTypes.Action[](1)
+            mandateId: mandateId, agent: agent, nonce: 1, deadline: 0, actions: new ActionTypes.Action[](1)
         });
         plan.actions[0] = _transferAction(address(0), address(0xBEEF), 1 ether);
     }
 
-    function _transferAction(
-        address asset,
-        address recipient,
-        uint256 amount
-    ) private pure returns (ActionTypes.Action memory) {
-        return
-            ActionTypes.Action({
-                actionType: ActionTypes.ActionType.TRANSFER,
-                version: 1,
-                parameters: abi.encode(
-                    ActionTypes.TransferParameters({
-                        asset: asset,
-                        recipient: recipient,
-                        amount: amount
-                    })
-                )
-            });
+    function _transferAction(address asset, address recipient, uint256 amount)
+        private
+        pure
+        returns (ActionTypes.Action memory)
+    {
+        return ActionTypes.Action({
+            actionType: ActionTypes.ActionType.TRANSFER,
+            version: 1,
+            parameters: abi.encode(ActionTypes.TransferParameters({asset: asset, recipient: recipient, amount: amount}))
+        });
     }
 
-    function _sign(
-        VaultExecutor executor,
-        ActionTypes.ActionPlan memory plan,
-        uint256 privateKey
-    ) private returns (bytes memory signature) {
-        bytes32 digest = ActionSignature.digest(
-            plan,
-            address(executor.evaluator()),
-            block.chainid
-        );
+    function _sign(VaultExecutor executor, ActionTypes.ActionPlan memory plan, uint256 privateKey)
+        private
+        returns (bytes memory signature)
+    {
+        bytes32 digest = ActionSignature.digest(plan, address(executor.evaluator()), block.chainid);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(r, s, v);
     }
