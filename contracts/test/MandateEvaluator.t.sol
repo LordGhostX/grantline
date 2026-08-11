@@ -204,6 +204,144 @@ contract MandateEvaluatorTest {
         assert(result.usdLimitSkipped);
     }
 
+    function test_enforcesAvailableUsdSubtotalRegardlessOfActionOrder() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        address unavailableToken = address(0xCAFE);
+        address quotedToken = address(0xF00D);
+        provider.setQuote(quotedToken, 1_200e18);
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithUsd(0, 1_000e18, address(provider), true);
+        plan.actions = new ActionTypes.Action[](2);
+        plan.actions[0] = _transferAction(unavailableToken, address(0xBEEF), 1);
+        plan.actions[1] = _transferAction(quotedToken, address(0xD00D), 1);
+
+        MandateEvaluator.EvaluationResult memory unavailableFirst = evaluator
+            .evaluate(plan, _sign(evaluator, plan, privateKey));
+
+        plan.actions[0] = _transferAction(quotedToken, address(0xD00D), 1);
+        plan.actions[1] = _transferAction(unavailableToken, address(0xBEEF), 1);
+        MandateEvaluator.EvaluationResult memory quotedFirst = evaluator
+            .evaluate(plan, _sign(evaluator, plan, privateKey));
+
+        assert(!unavailableFirst.passed);
+        assert(!quotedFirst.passed);
+        assert(
+            unavailableFirst.failureCode ==
+                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
+        );
+        assert(
+            quotedFirst.failureCode ==
+                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
+        );
+        assert(unavailableFirst.usdAmount == 1_200e18);
+        assert(quotedFirst.usdAmount == 1_200e18);
+    }
+
+    function test_preservesAvailableUsdSubtotalWhenValuationIsSkipped() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        address unavailableToken = address(0xCAFE);
+        address quotedToken = address(0xF00D);
+        provider.setQuote(quotedToken, 600e18);
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithUsd(0, 1_000e18, address(provider), true);
+        plan.actions = new ActionTypes.Action[](2);
+        plan.actions[0] = _transferAction(unavailableToken, address(0xBEEF), 1);
+        plan.actions[1] = _transferAction(quotedToken, address(0xD00D), 1);
+
+        MandateEvaluator.EvaluationResult memory unavailableFirst = evaluator
+            .evaluate(plan, _sign(evaluator, plan, privateKey));
+
+        plan.actions[0] = _transferAction(quotedToken, address(0xD00D), 1);
+        plan.actions[1] = _transferAction(unavailableToken, address(0xBEEF), 1);
+        MandateEvaluator.EvaluationResult memory quotedFirst = evaluator
+            .evaluate(plan, _sign(evaluator, plan, privateKey));
+
+        assert(unavailableFirst.passed);
+        assert(quotedFirst.passed);
+        assert(unavailableFirst.usdAmount == 600e18);
+        assert(quotedFirst.usdAmount == 600e18);
+        assert(unavailableFirst.usdLimitSkipped);
+        assert(quotedFirst.usdLimitSkipped);
+    }
+
+    function test_aggregatesQuotesAroundUnavailableValuation() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        address firstQuotedToken = address(0xCAFE);
+        address unavailableToken = address(0xBAD);
+        address secondQuotedToken = address(0xF00D);
+        provider.setQuote(firstQuotedToken, 600e18);
+        provider.setQuote(secondQuotedToken, 500e18);
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithUsd(0, 1_000e18, address(provider), true);
+        plan.actions = new ActionTypes.Action[](3);
+        plan.actions[0] = _transferAction(firstQuotedToken, address(0xBEEF), 1);
+        plan.actions[1] = _transferAction(unavailableToken, address(0xD00D), 1);
+        plan.actions[2] = _transferAction(
+            secondQuotedToken,
+            address(0xC0DE),
+            1
+        );
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(!result.passed);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
+        );
+        assert(result.failedActionIndex == 2);
+        assert(result.usdAmount == 1_100e18);
+        assert(result.usdLimitSkipped);
+    }
+
+    function test_rejectsUsdOverflowAfterUnavailableValuation() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        address firstQuotedToken = address(0xCAFE);
+        address unavailableToken = address(0xBAD);
+        address secondQuotedToken = address(0xF00D);
+        provider.setQuote(firstQuotedToken, type(uint256).max);
+        provider.setQuote(secondQuotedToken, 1);
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithUsd(0, type(uint256).max, address(provider), true);
+        plan.actions = new ActionTypes.Action[](3);
+        plan.actions[0] = _transferAction(unavailableToken, address(0xBEEF), 1);
+        plan.actions[1] = _transferAction(firstQuotedToken, address(0xD00D), 1);
+        plan.actions[2] = _transferAction(
+            secondQuotedToken,
+            address(0xC0DE),
+            1
+        );
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(!result.passed);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.USD_AMOUNT_OVERFLOW
+        );
+        assert(result.failedActionIndex == 2);
+        assert(result.usdAmount == type(uint256).max);
+        assert(result.usdLimitSkipped);
+    }
+
     function test_skippingUsdValuationStillEnforcesNativeLimit() public {
         MockUsdValueProvider provider = new MockUsdValueProvider();
         (

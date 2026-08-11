@@ -274,7 +274,7 @@ contract MandateEvaluator {
                 }
             }
 
-            if (usdTransactionLimit != 0 && !usdLimitSkipped) {
+            if (usdTransactionLimit != 0) {
                 (uint256 actionUsdAmount, bool available) = _quoteUsd(
                     transfer.asset,
                     transfer.amount
@@ -290,7 +290,6 @@ contract MandateEvaluator {
                         );
                     }
                     usdLimitSkipped = true;
-                    usdAmount = 0;
                 } else {
                     if (usdAmount > type(uint256).max - actionUsdAmount) {
                         return (

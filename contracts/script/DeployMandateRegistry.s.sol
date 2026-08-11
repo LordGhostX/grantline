@@ -2,20 +2,11 @@
 pragma solidity ^0.8.28;
 
 import {MandateRegistry} from "../src/MandateRegistry.sol";
+import {ScriptBase} from "./ScriptBase.s.sol";
 
-interface RegistryVm {
-    function envUint(string calldata name) external returns (uint256 value);
-
-    function startBroadcast(uint256 privateKey) external;
-
-    function stopBroadcast() external;
-}
-
-contract DeployMandateRegistry {
-    RegistryVm private constant vm =
-        RegistryVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
-
+contract DeployMandateRegistry is ScriptBase {
     function run() external returns (MandateRegistry registry) {
+        _requireExpectedChain();
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
 
         vm.startBroadcast(deployerKey);

@@ -37,7 +37,7 @@ Future application boundaries are expected to be `website/` for the Next.js land
 
 ## Current status
 
-The repository contains the product brief, a static landing-page prototype, and the first working contracts loop. The contracts workspace now has the Vault, Mandate registry, typed ActionPlan and signatures, read-only evaluation, executor, shared nonce replay protection, and onchain execution records. Local tests pass, and a fresh X Layer testnet registry/evaluator/executor stack is wired to the deployed Vault; USD valuation is explicitly skipped on testnet while native limits remain active. Relayer, indexing, Decision Receipt assembly, SDK, API, and demo application work remain deferred.
+The repository contains the product brief, a static landing-page prototype, and the first working contracts loop. The contracts workspace now has the Vault, Mandate registry, typed ActionPlan and signatures, read-only evaluation, executor, shared nonce replay protection, and onchain execution records. All local tests pass. The active X Layer testnet stack uses a Vault deployed with the token-target guard, an evaluator that enforces every available USD quote even when another quote is unavailable, and an executor whose authority assignment was validated against its evaluator and registry. Relayer, indexing, Decision Receipt assembly, SDK, API, and demo application work remain deferred.
 
 The next implementation step is to exercise the deployed end-to-end loop with a signed transfer plan, then extend action-specific rules only when the product needs them.
 
