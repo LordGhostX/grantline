@@ -127,6 +127,28 @@ contract ConfigureVaultAuthority is ScriptBase {
             manifest,
             ".escalationManager.address"
         );
+        address manifestManagerEvaluator = vm.parseJsonAddress(
+            manifest,
+            ".escalationManager.evaluator"
+        );
+        if (manifestManagerEvaluator != config.evaluator) {
+            revert ManifestAddressMismatch(
+                "escalationManager.evaluator",
+                config.evaluator,
+                manifestManagerEvaluator
+            );
+        }
+        address manifestExecutorManager = vm.parseJsonAddress(
+            manifest,
+            ".vaultExecutor.escalationManager"
+        );
+        if (manifestExecutorManager != config.escalationManager) {
+            revert ManifestAddressMismatch(
+                "vaultExecutor.escalationManager",
+                config.escalationManager,
+                manifestExecutorManager
+            );
+        }
         config.escalationManagerCodeHash = vm.parseJsonBytes32(
             manifest,
             ".escalationManager.codeHash"

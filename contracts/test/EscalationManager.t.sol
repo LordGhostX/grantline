@@ -26,6 +26,21 @@ contract EscalationManagerTest {
     EscalationVm private constant vm =
         EscalationVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
+    struct RotationState {
+        Vault vault;
+        MandateRegistry registry;
+        MandateEvaluator evaluator;
+        EscalationManager manager;
+        EscalationManager replacementManager;
+        VaultExecutor replacementExecutor;
+        ActionTypes.ActionPlan pendingPlan;
+        ActionTypes.ActionPlan deniedPlan;
+        bytes pendingSignature;
+        bytes deniedSignature;
+        bytes32 pendingDigest;
+        bytes32 deniedDigest;
+    }
+
     function test_ownerApprovesStoredPlanAndExecutorReevaluatesAndExecutes()
         public
     {
@@ -71,6 +86,10 @@ contract EscalationManagerTest {
         assert(recipient.balance == 2 ether);
         assert(address(vault).balance == 1 ether);
         assert(registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+        assert(
+            registry.reservedDigest(plan.mandateId, plan.agent, plan.nonce) ==
+                bytes32(0)
+        );
         assert(manager.statusOf(digest) == EscalationManager.Status.EXECUTED);
     }
 
@@ -103,6 +122,71 @@ contract EscalationManagerTest {
         assert(recipient.balance == 0);
         assert(address(vault).balance == 3 ether);
         assert(manager.statusOf(digest) == EscalationManager.Status.DENIED);
+    }
+
+    function test_managerReplacementCannotBypassPendingOrDeniedReservations()
+        public
+    {
+        RotationState memory state = _setupRotation();
+        address recipient = address(0xBEEF);
+        state.registry.updateMandate(
+            state.pendingPlan.mandateId,
+            _rules(0, false, 0, false)
+        );
+        vm.deal(address(state.vault), 5 ether);
+
+        bool pendingBypassReverted = _normalExecutionReverted(
+            state.replacementExecutor,
+            state.vault,
+            state.pendingPlan,
+            state.pendingSignature
+        );
+        bool deniedBypassReverted = _normalExecutionReverted(
+            state.replacementExecutor,
+            state.vault,
+            state.deniedPlan,
+            state.deniedSignature
+        );
+
+        assert(pendingBypassReverted);
+        assert(deniedBypassReverted);
+        assert(
+            state.registry.reservedDigest(
+                state.pendingPlan.mandateId,
+                state.pendingPlan.agent,
+                state.pendingPlan.nonce
+            ) == state.pendingDigest
+        );
+        assert(
+            state.registry.reservedDigest(
+                state.deniedPlan.mandateId,
+                state.deniedPlan.agent,
+                state.deniedPlan.nonce
+            ) == state.deniedDigest
+        );
+        assert(
+            state.replacementManager.reservedDigest(
+                state.pendingPlan.mandateId,
+                state.pendingPlan.agent,
+                state.pendingPlan.nonce
+            ) == state.pendingDigest
+        );
+        assert(
+            !state.registry.nonceUsed(
+                state.pendingPlan.mandateId,
+                state.pendingPlan.agent,
+                state.pendingPlan.nonce
+            )
+        );
+        assert(
+            !state.registry.nonceUsed(
+                state.deniedPlan.mandateId,
+                state.deniedPlan.agent,
+                state.deniedPlan.nonce
+            )
+        );
+        assert(recipient.balance == 0);
+        assert(address(state.vault).balance == 5 ether);
     }
 
     function test_ownerApprovesEscalatedMinimumAndExecutorExecutes() public {
@@ -378,6 +462,103 @@ contract EscalationManagerTest {
                     })
                 )
             });
+    }
+
+    function _copyPlanWithNonce(
+        ActionTypes.ActionPlan memory source,
+        uint256 nonce
+    ) private pure returns (ActionTypes.ActionPlan memory plan) {
+        plan = ActionTypes.ActionPlan({
+            mandateId: source.mandateId,
+            agent: source.agent,
+            nonce: nonce,
+            deadline: source.deadline,
+            actions: new ActionTypes.Action[](source.actions.length)
+        });
+        for (uint256 index; index < source.actions.length; index++) {
+            plan.actions[index] = source.actions[index];
+        }
+    }
+
+    function _setupRotation() private returns (RotationState memory state) {
+        uint256 privateKey;
+        (
+            state.vault,
+            state.registry,
+            state.evaluator,
+            state.manager,
+            ,
+            state.pendingPlan,
+            privateKey
+        ) = _setup(1 ether, true);
+        state.pendingPlan.actions[0] = _transferAction(
+            address(0),
+            address(0xBEEF),
+            2 ether
+        );
+        state.pendingSignature = _sign(
+            state.evaluator,
+            state.pendingPlan,
+            privateKey
+        );
+        state.pendingDigest = state.manager.submit(
+            state.pendingPlan,
+            state.pendingSignature
+        );
+
+        state.deniedPlan = _copyPlanWithNonce(state.pendingPlan, 2);
+        state.deniedSignature = _sign(
+            state.evaluator,
+            state.deniedPlan,
+            privateKey
+        );
+        state.deniedDigest = state.manager.submit(
+            state.deniedPlan,
+            state.deniedSignature
+        );
+        state.manager.deny(state.deniedDigest);
+
+        state.replacementManager = new EscalationManager(
+            address(state.evaluator)
+        );
+        state.replacementExecutor = new VaultExecutor(
+            address(state.evaluator),
+            address(state.replacementManager)
+        );
+        state.vault.setAuthority(address(state.replacementExecutor));
+
+        ActionTypes.ActionPlan memory staleManagerPlan = _copyPlanWithNonce(
+            state.pendingPlan,
+            3
+        );
+        bool staleManagerReverted;
+        try
+            state.manager.submit(
+                staleManagerPlan,
+                _sign(state.evaluator, staleManagerPlan, privateKey)
+            )
+        {} catch {
+            staleManagerReverted = true;
+        }
+        assert(staleManagerReverted);
+        assert(
+            state.registry.reservedDigest(
+                staleManagerPlan.mandateId,
+                staleManagerPlan.agent,
+                staleManagerPlan.nonce
+            ) == bytes32(0)
+        );
+    }
+
+    function _normalExecutionReverted(
+        VaultExecutor executor,
+        Vault vault,
+        ActionTypes.ActionPlan memory plan,
+        bytes memory signature
+    ) private returns (bool reverted) {
+        try executor.execute(vault, plan, signature) {} catch {
+            reverted = true;
+        }
     }
 
     function _sign(

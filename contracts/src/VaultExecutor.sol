@@ -104,7 +104,7 @@ contract VaultExecutor {
             block.chainid
         );
         _requireUnreservedNonce(plan);
-        _executePlan(vault, plan, evaluation, actionDigest);
+        _executePlan(vault, plan, evaluation, actionDigest, false);
     }
 
     function executeEscalated(
@@ -139,7 +139,7 @@ contract VaultExecutor {
             revert EscalationNotApproved(actionDigest, escalation.status);
         }
 
-        _executePlan(vault, escalation.plan, evaluation, executedDigest);
+        _executePlan(vault, escalation.plan, evaluation, executedDigest, true);
         escalationManager.markExecuted(actionDigest);
     }
 
@@ -155,13 +155,23 @@ contract VaultExecutor {
         Vault vault,
         ActionTypes.ActionPlan memory plan,
         MandateEvaluator.EvaluationResult memory evaluation,
-        bytes32 actionDigest
+        bytes32 actionDigest,
+        bool consumeReservation
     ) private {
         MandateRegistry registry = _registry();
         if (registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce)) {
             revert NonceAlreadyUsed(plan.mandateId, plan.agent, plan.nonce);
         }
-        registry.consumeNonce(plan.mandateId, plan.agent, plan.nonce);
+        if (consumeReservation) {
+            registry.consumeReservedNonce(
+                plan.mandateId,
+                plan.agent,
+                plan.nonce,
+                actionDigest
+            );
+        } else {
+            registry.consumeNonce(plan.mandateId, plan.agent, plan.nonce);
+        }
 
         for (uint256 index; index < plan.actions.length; index++) {
             _executeAction(vault, plan.actions[index], index);
@@ -183,7 +193,7 @@ contract VaultExecutor {
     function _requireUnreservedNonce(
         ActionTypes.ActionPlan calldata plan
     ) private view {
-        bytes32 reserved = escalationManager.reservedDigest(
+        bytes32 reserved = _registry().reservedDigest(
             plan.mandateId,
             plan.agent,
             plan.nonce

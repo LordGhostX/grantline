@@ -32,14 +32,7 @@ contract EscalationManager {
         MandateEvaluator.Decision decision,
         MandateEvaluator.FailureCode failureCode
     );
-    error NonceAlreadyUsed(uint256 mandateId, address agent, uint256 nonce);
     error NonceNotConsumed(uint256 mandateId, address agent, uint256 nonce);
-    error NonceReserved(
-        uint256 mandateId,
-        address agent,
-        uint256 nonce,
-        bytes32 digest
-    );
     error InvalidVault();
     error NotVaultOwner(address caller);
     error NotVaultAuthority(address caller);
@@ -76,8 +69,6 @@ contract EscalationManager {
 
     MandateEvaluator public immutable evaluator;
     mapping(bytes32 digest => Escalation escalation) private _escalations;
-    mapping(uint256 mandateId => mapping(address agent => mapping(uint256 nonce => bytes32 digest)))
-        public reservedDigest;
 
     constructor(address evaluatorAddress) {
         if (
@@ -109,20 +100,12 @@ contract EscalationManager {
         }
 
         MandateRegistry registry = evaluator.registry();
-        if (registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce)) {
-            revert NonceAlreadyUsed(plan.mandateId, plan.agent, plan.nonce);
-        }
-        bytes32 existingDigest = reservedDigest[plan.mandateId][plan.agent][
-            plan.nonce
-        ];
-        if (existingDigest != bytes32(0)) {
-            revert NonceReserved(
-                plan.mandateId,
-                plan.agent,
-                plan.nonce,
-                existingDigest
-            );
-        }
+        registry.reserveNonce(
+            plan.mandateId,
+            plan.agent,
+            plan.nonce,
+            actionDigest
+        );
 
         Escalation storage escalation = _escalations[actionDigest];
         escalation.status = Status.PENDING;
@@ -144,7 +127,6 @@ contract EscalationManager {
                 .parameters;
         }
         escalation.signature = signature;
-        reservedDigest[plan.mandateId][plan.agent][plan.nonce] = actionDigest;
 
         emit EscalationSubmitted(
             actionDigest,
@@ -244,6 +226,14 @@ contract EscalationManager {
 
     function statusOf(bytes32 actionDigest) external view returns (Status) {
         return _escalations[actionDigest].status;
+    }
+
+    function reservedDigest(
+        uint256 mandateId,
+        address agent,
+        uint256 nonce
+    ) external view returns (bytes32) {
+        return evaluator.registry().reservedDigest(mandateId, agent, nonce);
     }
 
     function _pending(

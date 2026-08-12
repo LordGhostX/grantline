@@ -9,6 +9,10 @@ interface IVaultAuthority {
     function authority() external view returns (address);
 }
 
+interface IVaultEscalationAuthority {
+    function escalationManager() external view returns (address);
+}
+
 contract MandateRegistry {
     enum MandateStatus {
         ACTIVE,
@@ -40,11 +44,27 @@ contract MandateRegistry {
     error MandateNotActive(uint256 mandateId);
     error MandateNotFound(uint256 mandateId);
     error MandateAgentMismatch(uint256 mandateId, address agent);
+    error InvalidReservationDigest();
     error NonceAlreadyUsed(uint256 mandateId, address agent, uint256 nonce);
+    error NonceReserved(
+        uint256 mandateId,
+        address agent,
+        uint256 nonce,
+        bytes32 digest
+    );
+    error NonceReservationMismatch(
+        uint256 mandateId,
+        address agent,
+        uint256 nonce,
+        bytes32 expectedDigest,
+        bytes32 reservedDigest
+    );
     error InvalidNativeAmountRange(uint256 minimum, uint256 maximum);
     error InvalidUsdAmountRange(uint256 minimum, uint256 maximum);
     error NotVaultAuthority(address caller);
+    error NotVaultEscalationManager(address caller);
     error NotVaultOwner(address caller);
+    error InvalidVaultAuthority(address authority);
 
     event MandateCreated(
         uint256 indexed mandateId,
@@ -64,10 +84,24 @@ contract MandateRegistry {
         address indexed owner,
         uint64 revokedAt
     );
+    event NonceReservationCreated(
+        uint256 indexed mandateId,
+        address indexed agent,
+        uint256 indexed nonce,
+        bytes32 digest
+    );
+    event NonceReservationConsumed(
+        uint256 indexed mandateId,
+        address indexed agent,
+        uint256 indexed nonce,
+        bytes32 digest
+    );
 
     mapping(uint256 mandateId => Mandate mandate) private _mandates;
     mapping(uint256 mandateId => mapping(address agent => mapping(uint256 nonce => bool)))
         public nonceUsed;
+    mapping(uint256 mandateId => mapping(address agent => mapping(uint256 nonce => bytes32 digest)))
+        public reservedDigest;
     uint256 public mandateCount;
 
     function createMandate(
@@ -147,15 +181,65 @@ contract MandateRegistry {
         uint256 nonce
     ) external {
         Mandate storage mandate = _activeMandate(mandateId);
-        if (mandate.agent != agent) {
-            revert MandateAgentMismatch(mandateId, agent);
-        }
+        _requireMandateAgent(mandate, mandateId, agent);
         _requireVaultAuthority(mandate.vault, msg.sender);
+        _requireNonceUnused(mandateId, agent, nonce);
 
-        if (nonceUsed[mandateId][agent][nonce]) {
-            revert NonceAlreadyUsed(mandateId, agent, nonce);
+        bytes32 reservation = reservedDigest[mandateId][agent][nonce];
+        if (reservation != bytes32(0)) {
+            revert NonceReserved(mandateId, agent, nonce, reservation);
         }
         nonceUsed[mandateId][agent][nonce] = true;
+    }
+
+    function reserveNonce(
+        uint256 mandateId,
+        address agent,
+        uint256 nonce,
+        bytes32 actionDigest
+    ) external {
+        if (actionDigest == bytes32(0)) revert InvalidReservationDigest();
+
+        Mandate storage mandate = _activeMandate(mandateId);
+        _requireMandateAgent(mandate, mandateId, agent);
+        _requireVaultEscalationManager(mandate.vault, msg.sender);
+        _requireNonceUnused(mandateId, agent, nonce);
+
+        bytes32 existingDigest = reservedDigest[mandateId][agent][nonce];
+        if (existingDigest != bytes32(0)) {
+            revert NonceReserved(mandateId, agent, nonce, existingDigest);
+        }
+        reservedDigest[mandateId][agent][nonce] = actionDigest;
+        emit NonceReservationCreated(mandateId, agent, nonce, actionDigest);
+    }
+
+    function consumeReservedNonce(
+        uint256 mandateId,
+        address agent,
+        uint256 nonce,
+        bytes32 actionDigest
+    ) external {
+        if (actionDigest == bytes32(0)) revert InvalidReservationDigest();
+
+        Mandate storage mandate = _activeMandate(mandateId);
+        _requireMandateAgent(mandate, mandateId, agent);
+        _requireVaultAuthority(mandate.vault, msg.sender);
+        _requireNonceUnused(mandateId, agent, nonce);
+
+        bytes32 reservation = reservedDigest[mandateId][agent][nonce];
+        if (reservation != actionDigest) {
+            revert NonceReservationMismatch(
+                mandateId,
+                agent,
+                nonce,
+                actionDigest,
+                reservation
+            );
+        }
+
+        delete reservedDigest[mandateId][agent][nonce];
+        nonceUsed[mandateId][agent][nonce] = true;
+        emit NonceReservationConsumed(mandateId, agent, nonce, actionDigest);
     }
 
     function getMandate(
@@ -207,6 +291,51 @@ contract MandateRegistry {
             if (vaultAuthority != caller) revert NotVaultAuthority(caller);
         } catch {
             revert InvalidVault();
+        }
+    }
+
+    function _requireVaultEscalationManager(
+        address vault,
+        address caller
+    ) private view {
+        if (vault.code.length == 0) revert InvalidVault();
+
+        address vaultAuthority;
+        try IVaultAuthority(vault).authority() returns (address authority) {
+            vaultAuthority = authority;
+        } catch {
+            revert InvalidVault();
+        }
+        if (vaultAuthority.code.length == 0) {
+            revert InvalidVaultAuthority(vaultAuthority);
+        }
+
+        try
+            IVaultEscalationAuthority(vaultAuthority).escalationManager()
+        returns (address manager) {
+            if (manager != caller) revert NotVaultEscalationManager(caller);
+        } catch {
+            revert InvalidVaultAuthority(vaultAuthority);
+        }
+    }
+
+    function _requireMandateAgent(
+        Mandate storage mandate,
+        uint256 mandateId,
+        address agent
+    ) private view {
+        if (mandate.agent != agent) {
+            revert MandateAgentMismatch(mandateId, agent);
+        }
+    }
+
+    function _requireNonceUnused(
+        uint256 mandateId,
+        address agent,
+        uint256 nonce
+    ) private view {
+        if (nonceUsed[mandateId][agent][nonce]) {
+            revert NonceAlreadyUsed(mandateId, agent, nonce);
         }
     }
 

@@ -54,8 +54,10 @@ contract DeploymentScriptsTest {
         address evaluator;
         bytes32 evaluatorCodeHash;
         address escalationManager;
+        address escalationManagerEvaluator;
         bytes32 escalationManagerCodeHash;
         address executor;
+        address executorEscalationManager;
         bytes32 executorCodeHash;
     }
 
@@ -69,6 +71,8 @@ contract DeploymentScriptsTest {
         _assertRejectsVaultWithUnexpectedCodeHash();
         _assertRejectsExecutorWithUnexpectedEvaluator();
         _assertRejectsEvaluatorWithUnexpectedRegistry();
+        _assertRejectsManifestManagerEvaluatorMismatch();
+        _assertRejectsManifestExecutorManagerMismatch();
         _assertRejectsUnexpectedVaultOwner();
         _assertRejectsUnexpectedCurrentAuthority();
         _assertRejectsMissingManifestEntries();
@@ -347,6 +351,90 @@ contract DeploymentScriptsTest {
         assert(vault.authority() == address(0));
     }
 
+    function _assertRejectsManifestManagerEvaluatorMismatch() private {
+        (
+            Vault vault,
+            MandateRegistry registry,
+            MandateEvaluator evaluator,
+            VaultExecutor executor
+        ) = _deployStack();
+        address manager = address(executor.escalationManager());
+        address staleEvaluator = address(0xBEEF);
+        _writeManifestWithDependencyLinks(
+            vault,
+            executor,
+            evaluator,
+            registry,
+            staleEvaluator,
+            manager
+        );
+        VerifyDeployment verifyScript = new VerifyDeployment();
+        ConfigureVaultAuthority configureScript = new ConfigureVaultAuthority();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyDeployment.UnexpectedAddress.selector,
+                "manifest.escalationManager.evaluator",
+                address(evaluator),
+                staleEvaluator
+            )
+        );
+        verifyScript.run();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ScriptBase.ManifestAddressMismatch.selector,
+                "escalationManager.evaluator",
+                address(evaluator),
+                staleEvaluator
+            )
+        );
+        configureScript.run();
+
+        assert(vault.authority() == address(0));
+    }
+
+    function _assertRejectsManifestExecutorManagerMismatch() private {
+        (
+            Vault vault,
+            MandateRegistry registry,
+            MandateEvaluator evaluator,
+            VaultExecutor executor
+        ) = _deployStack();
+        address manager = address(executor.escalationManager());
+        address staleManager = address(0xBEEF);
+        _writeManifestWithDependencyLinks(
+            vault,
+            executor,
+            evaluator,
+            registry,
+            address(evaluator),
+            staleManager
+        );
+        VerifyDeployment verifyScript = new VerifyDeployment();
+        ConfigureVaultAuthority configureScript = new ConfigureVaultAuthority();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyDeployment.UnexpectedAddress.selector,
+                "manifest.vaultExecutor.escalationManager",
+                manager,
+                staleManager
+            )
+        );
+        verifyScript.run();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ScriptBase.ManifestAddressMismatch.selector,
+                "vaultExecutor.escalationManager",
+                manager,
+                staleManager
+            )
+        );
+        configureScript.run();
+
+        assert(vault.authority() == address(0));
+    }
+
     function _assertRejectsUnexpectedVaultOwner() private {
         MandateRegistry registry = new MandateRegistry();
         MandateEvaluator evaluator = new MandateEvaluator(
@@ -509,9 +597,39 @@ contract DeploymentScriptsTest {
             evaluator: address(evaluator),
             evaluatorCodeHash: address(evaluator).codehash,
             escalationManager: managerAddress,
+            escalationManagerEvaluator: address(evaluator),
             escalationManagerCodeHash: managerAddress.codehash,
             executor: address(executor),
+            executorEscalationManager: managerAddress,
             executorCodeHash: executorCodeHash
+        });
+        _writeManifest(config);
+    }
+
+    function _writeManifestWithDependencyLinks(
+        Vault vault,
+        VaultExecutor executor,
+        MandateEvaluator evaluator,
+        MandateRegistry registry,
+        address managerEvaluator,
+        address executorManager
+    ) private {
+        address managerAddress = address(executor.escalationManager());
+        ManifestConfig memory config = ManifestConfig({
+            vault: address(vault),
+            owner: vault.owner(),
+            authority: address(0),
+            vaultCodeHash: address(vault).codehash,
+            registry: address(registry),
+            registryCodeHash: address(registry).codehash,
+            evaluator: address(evaluator),
+            evaluatorCodeHash: address(evaluator).codehash,
+            escalationManager: managerAddress,
+            escalationManagerEvaluator: managerEvaluator,
+            escalationManagerCodeHash: managerAddress.codehash,
+            executor: address(executor),
+            executorEscalationManager: executorManager,
+            executorCodeHash: address(executor).codehash
         });
         _writeManifest(config);
     }
@@ -559,7 +677,7 @@ contract DeploymentScriptsTest {
             '","evaluator":"',
             vm.toString(config.evaluator),
             '","escalationManager":"',
-            vm.toString(config.escalationManager),
+            vm.toString(config.executorEscalationManager),
             '","deploymentTx":"0x',
             _zeroHex(64),
             '"}'
@@ -570,7 +688,7 @@ contract DeploymentScriptsTest {
             '","codeHash":"',
             vm.toString(config.escalationManagerCodeHash),
             '","evaluator":"',
-            vm.toString(config.evaluator),
+            vm.toString(config.escalationManagerEvaluator),
             '","deploymentTx":"0x',
             _zeroHex(64),
             '"}'

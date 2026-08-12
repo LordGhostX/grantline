@@ -8,6 +8,33 @@ interface RegistryTestVm {
     function prank(address sender) external;
 }
 
+contract RegistryAuthorityStub {
+    address public immutable escalationManager;
+
+    constructor(address manager) {
+        escalationManager = manager;
+    }
+
+    function consumeNonce(
+        MandateRegistry registry,
+        uint256 mandateId,
+        address agent,
+        uint256 nonce
+    ) external {
+        registry.consumeNonce(mandateId, agent, nonce);
+    }
+
+    function consumeReservedNonce(
+        MandateRegistry registry,
+        uint256 mandateId,
+        address agent,
+        uint256 nonce,
+        bytes32 digest
+    ) external {
+        registry.consumeReservedNonce(mandateId, agent, nonce, digest);
+    }
+}
+
 contract MandateRegistryTest {
     RegistryTestVm private constant vm =
         RegistryTestVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
@@ -164,6 +191,80 @@ contract MandateRegistryTest {
         assert(wrongAgentReverted);
         assert(nonAuthorityReverted);
         assert(!registry.nonceUsed(mandateId, agent, 1));
+    }
+
+    function test_reservationSurvivesAuthorityReplacementAndRequiresDigest()
+        public
+    {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address agent = address(0xA11CE);
+        uint256 mandateId = registry.createMandate(
+            address(vault),
+            agent,
+            _rules(0, 0)
+        );
+        RegistryAuthorityStub firstAuthority = new RegistryAuthorityStub(
+            address(this)
+        );
+        vault.setAuthority(address(firstAuthority));
+        bytes32 digest = keccak256("reserved-plan");
+
+        registry.reserveNonce(mandateId, agent, 7, digest);
+
+        bool normalConsumptionReverted;
+        try
+            firstAuthority.consumeNonce(registry, mandateId, agent, 7)
+        {} catch {
+            normalConsumptionReverted = true;
+        }
+        assert(normalConsumptionReverted);
+        assert(registry.reservedDigest(mandateId, agent, 7) == digest);
+        assert(!registry.nonceUsed(mandateId, agent, 7));
+
+        RegistryAuthorityStub replacementAuthority = new RegistryAuthorityStub(
+            address(0xB0B)
+        );
+        vault.setAuthority(address(replacementAuthority));
+
+        bool formerManagerReverted;
+        try
+            registry.reserveNonce(
+                mandateId,
+                agent,
+                8,
+                keccak256("stale-manager-plan")
+            )
+        {} catch {
+            formerManagerReverted = true;
+        }
+        bool wrongDigestReverted;
+        try
+            replacementAuthority.consumeReservedNonce(
+                registry,
+                mandateId,
+                agent,
+                7,
+                keccak256("different-plan")
+            )
+        {} catch {
+            wrongDigestReverted = true;
+        }
+
+        assert(formerManagerReverted);
+        assert(wrongDigestReverted);
+        assert(registry.reservedDigest(mandateId, agent, 7) == digest);
+        assert(!registry.nonceUsed(mandateId, agent, 7));
+
+        replacementAuthority.consumeReservedNonce(
+            registry,
+            mandateId,
+            agent,
+            7,
+            digest
+        );
+        assert(registry.reservedDigest(mandateId, agent, 7) == bytes32(0));
+        assert(registry.nonceUsed(mandateId, agent, 7));
     }
 
     function test_vaultOwnershipTransferMovesMandateAdministration() public {
