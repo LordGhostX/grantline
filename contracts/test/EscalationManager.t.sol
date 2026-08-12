@@ -105,6 +105,40 @@ contract EscalationManagerTest {
         assert(manager.statusOf(digest) == EscalationManager.Status.DENIED);
     }
 
+    function test_ownerApprovesEscalatedMinimumAndExecutorExecutes() public {
+        (
+            Vault vault,
+            MandateRegistry registry,
+            MandateEvaluator evaluator,
+            EscalationManager manager,
+            VaultExecutor executor,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(0, true);
+        address recipient = address(0xBEEF);
+        plan.actions[0] = _transferAction(address(0), recipient, 1 ether);
+        registry.updateMandate(
+            plan.mandateId,
+            MandateRegistry.MandateRules({
+                minNativeAmount: 2 ether,
+                maxNativeAmount: 0,
+                escalateNativeAmount: true,
+                minUsdAmount: 0,
+                maxUsdAmount: 0,
+                escalateUsdAmount: false
+            })
+        );
+        bytes memory signature = _sign(evaluator, plan, privateKey);
+        bytes32 digest = manager.submit(plan, signature);
+        manager.approve(digest);
+
+        vm.deal(address(vault), 2 ether);
+        assert(executor.executeEscalated(digest) == digest);
+        assert(recipient.balance == 1 ether);
+        assert(address(vault).balance == 1 ether);
+        assert(manager.statusOf(digest) == EscalationManager.Status.EXECUTED);
+    }
+
     function test_executionReevaluatesUpdatedMandateAfterApproval() public {
         (
             Vault vault,
@@ -163,8 +197,8 @@ contract EscalationManagerTest {
     }
 
     function _setup(
-        uint256 transactionLimit,
-        bool escalateTransactionLimit
+        uint256 maxNativeAmount,
+        bool escalateNativeAmount
     )
         private
         returns (
@@ -184,7 +218,7 @@ contract EscalationManagerTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            _rules(transactionLimit, escalateTransactionLimit, 0, false)
+            _rules(maxNativeAmount, escalateNativeAmount, 0, false)
         );
         evaluator = new MandateEvaluator(address(registry), address(0), true);
         manager = new EscalationManager(address(evaluator));
@@ -201,17 +235,19 @@ contract EscalationManagerTest {
     }
 
     function _rules(
-        uint256 transactionLimit,
-        bool escalateTransactionLimit,
-        uint256 usdTransactionLimit,
-        bool escalateUsdTransactionLimit
+        uint256 maxNativeAmount,
+        bool escalateNativeAmount,
+        uint256 maxUsdAmount,
+        bool escalateUsdAmount
     ) private pure returns (MandateRegistry.MandateRules memory) {
         return
             MandateRegistry.MandateRules({
-                transactionLimit: transactionLimit,
-                escalateTransactionLimit: escalateTransactionLimit,
-                usdTransactionLimit: usdTransactionLimit,
-                escalateUsdTransactionLimit: escalateUsdTransactionLimit
+                minNativeAmount: 0,
+                maxNativeAmount: maxNativeAmount,
+                escalateNativeAmount: escalateNativeAmount,
+                minUsdAmount: 0,
+                maxUsdAmount: maxUsdAmount,
+                escalateUsdAmount: escalateUsdAmount
             });
     }
 

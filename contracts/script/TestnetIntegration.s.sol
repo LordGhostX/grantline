@@ -71,10 +71,12 @@ contract TestnetIntegration is ScriptBase {
             address(stack.vault),
             agent,
             MandateRegistry.MandateRules({
-                transactionLimit: TRANSACTION_LIMIT,
-                usdTransactionLimit: 0,
-                escalateTransactionLimit: false,
-                escalateUsdTransactionLimit: false
+                minNativeAmount: 0,
+                maxNativeAmount: TRANSACTION_LIMIT,
+                escalateNativeAmount: false,
+                minUsdAmount: 0,
+                maxUsdAmount: 0,
+                escalateUsdAmount: false
             })
         );
         vm.stopBroadcast();

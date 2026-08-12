@@ -16,10 +16,12 @@ contract MandateRegistry {
     }
 
     struct MandateRules {
-        uint256 transactionLimit;
-        bool escalateTransactionLimit;
-        uint256 usdTransactionLimit;
-        bool escalateUsdTransactionLimit;
+        uint256 minNativeAmount;
+        uint256 maxNativeAmount;
+        bool escalateNativeAmount;
+        uint256 minUsdAmount;
+        uint256 maxUsdAmount;
+        bool escalateUsdAmount;
     }
 
     struct Mandate {
@@ -39,6 +41,8 @@ contract MandateRegistry {
     error MandateNotFound(uint256 mandateId);
     error MandateAgentMismatch(uint256 mandateId, address agent);
     error NonceAlreadyUsed(uint256 mandateId, address agent, uint256 nonce);
+    error InvalidNativeAmountRange(uint256 minimum, uint256 maximum);
+    error InvalidUsdAmountRange(uint256 minimum, uint256 maximum);
     error NotVaultAuthority(address caller);
     error NotVaultOwner(address caller);
 
@@ -74,21 +78,6 @@ contract MandateRegistry {
         mandateId = _createMandate(vault, agent, rules);
     }
 
-    function createMandate(
-        address vault,
-        address agent,
-        uint256 transactionLimit,
-        uint256 usdTransactionLimit
-    ) external returns (uint256 mandateId) {
-        MandateRules memory rules = MandateRules({
-            transactionLimit: transactionLimit,
-            usdTransactionLimit: usdTransactionLimit,
-            escalateTransactionLimit: false,
-            escalateUsdTransactionLimit: false
-        });
-        mandateId = _createMandate(vault, agent, rules);
-    }
-
     function _createMandate(
         address vault,
         address agent,
@@ -96,6 +85,7 @@ contract MandateRegistry {
     ) private returns (uint256 mandateId) {
         _requireValidAddresses(vault, agent);
         _requireVaultOwner(vault, msg.sender);
+        _validateRules(rules);
 
         mandateId = ++mandateCount;
         uint64 createdAt = uint64(block.timestamp);
@@ -127,26 +117,13 @@ contract MandateRegistry {
         _updateMandate(mandateId, rules);
     }
 
-    function updateMandate(
-        uint256 mandateId,
-        uint256 transactionLimit,
-        uint256 usdTransactionLimit
-    ) external {
-        MandateRules memory rules = MandateRules({
-            transactionLimit: transactionLimit,
-            usdTransactionLimit: usdTransactionLimit,
-            escalateTransactionLimit: false,
-            escalateUsdTransactionLimit: false
-        });
-        _updateMandate(mandateId, rules);
-    }
-
     function _updateMandate(
         uint256 mandateId,
         MandateRules memory rules
     ) private {
         Mandate storage mandate = _activeMandate(mandateId);
         _requireVaultOwner(mandate.vault, msg.sender);
+        _validateRules(rules);
 
         mandate.rules = rules;
 
@@ -235,5 +212,28 @@ contract MandateRegistry {
 
     function _requireValidAddresses(address vault, address agent) private pure {
         if (vault == address(0) || agent == address(0)) revert InvalidAddress();
+    }
+
+    function _validateRules(MandateRules memory rules) private pure {
+        if (
+            rules.minNativeAmount != 0 &&
+            rules.maxNativeAmount != 0 &&
+            rules.minNativeAmount > rules.maxNativeAmount
+        ) {
+            revert InvalidNativeAmountRange(
+                rules.minNativeAmount,
+                rules.maxNativeAmount
+            );
+        }
+        if (
+            rules.minUsdAmount != 0 &&
+            rules.maxUsdAmount != 0 &&
+            rules.minUsdAmount > rules.maxUsdAmount
+        ) {
+            revert InvalidUsdAmountRange(
+                rules.minUsdAmount,
+                rules.maxUsdAmount
+            );
+        }
     }
 }

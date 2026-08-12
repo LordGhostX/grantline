@@ -609,7 +609,7 @@ contract VaultExecutorTest {
     }
 
     function _setup(
-        uint256 transactionLimit
+        uint256 maxNativeAmount
     )
         private
         returns (
@@ -626,8 +626,7 @@ contract VaultExecutorTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            transactionLimit,
-            0
+            _rules(maxNativeAmount, 0)
         );
         MandateEvaluator evaluator = new MandateEvaluator(
             address(registry),
@@ -648,8 +647,8 @@ contract VaultExecutorTest {
     }
 
     function _setupWithUsd(
-        uint256 transactionLimit,
-        uint256 usdTransactionLimit,
+        uint256 maxNativeAmount,
+        uint256 maxUsdAmount,
         uint256 usdAmount
     )
         private
@@ -667,8 +666,7 @@ contract VaultExecutorTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            transactionLimit,
-            usdTransactionLimit
+            _rules(maxNativeAmount, maxUsdAmount)
         );
         ExecutorMockUsdValueProvider provider = new ExecutorMockUsdValueProvider(
                 usdAmount,
@@ -690,6 +688,21 @@ contract VaultExecutorTest {
             actions: new ActionTypes.Action[](1)
         });
         plan.actions[0] = _transferAction(address(0), address(0xBEEF), 1 ether);
+    }
+
+    function _rules(
+        uint256 maxNativeAmount,
+        uint256 maxUsdAmount
+    ) private pure returns (MandateRegistry.MandateRules memory) {
+        return
+            MandateRegistry.MandateRules({
+                minNativeAmount: 0,
+                maxNativeAmount: maxNativeAmount,
+                escalateNativeAmount: false,
+                minUsdAmount: 0,
+                maxUsdAmount: maxUsdAmount,
+                escalateUsdAmount: false
+            });
     }
 
     function _transferAction(

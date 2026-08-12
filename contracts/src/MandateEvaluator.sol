@@ -32,9 +32,11 @@ contract MandateEvaluator {
         INVALID_RECIPIENT,
         INVALID_AMOUNT,
         AMOUNT_OVERFLOW,
-        TRANSACTION_LIMIT_EXCEEDED,
+        NATIVE_AMOUNT_BELOW_MINIMUM,
+        NATIVE_AMOUNT_ABOVE_MAXIMUM,
         USD_AMOUNT_OVERFLOW,
-        USD_LIMIT_EXCEEDED,
+        USD_AMOUNT_BELOW_MINIMUM,
+        USD_AMOUNT_ABOVE_MAXIMUM,
         USD_VALUATION_UNAVAILABLE
     }
 
@@ -45,6 +47,13 @@ contract MandateEvaluator {
         uint256 nativeAmount;
         uint256 usdAmount;
         bool usdLimitSkipped;
+    }
+
+    struct Totals {
+        uint256 nativeAmount;
+        uint256 usdAmount;
+        bool usdLimitSkipped;
+        bool usdValuationPresent;
     }
 
     error InvalidRegistry();
@@ -149,128 +158,76 @@ contract MandateEvaluator {
                 );
         }
 
-        uint256 nativeAmount;
-        uint256 usdAmount;
-        bool usdLimitSkipped;
-        for (uint256 index; index < plan.actions.length; index++) {
-            (
-                bool valid,
-                uint256 updatedNativeAmount,
-                uint256 updatedUsdAmount,
-                bool updatedUsdLimitSkipped,
-                FailureCode failureCode
-            ) = _validateAction(
-                    plan.actions[index],
-                    nativeAmount,
-                    usdAmount,
-                    usdLimitSkipped,
-                    mandate.rules.usdTransactionLimit != 0
-                );
-            if (!valid) {
-                return
-                    _failure(
-                        failureCode,
-                        index,
-                        updatedNativeAmount,
-                        updatedUsdAmount,
-                        updatedUsdLimitSkipped
-                    );
-            }
-            nativeAmount = updatedNativeAmount;
-            usdAmount = updatedUsdAmount;
-            usdLimitSkipped = updatedUsdLimitSkipped;
-        }
-
-        bool nativeLimitExceeded = mandate.rules.transactionLimit != 0 &&
-            nativeAmount > mandate.rules.transactionLimit;
-        bool usdLimitExceeded = mandate.rules.usdTransactionLimit != 0 &&
-            usdAmount > mandate.rules.usdTransactionLimit;
-
-        if (nativeLimitExceeded && !mandate.rules.escalateTransactionLimit) {
+        (
+            bool valid,
+            Totals memory totals,
+            FailureCode validationFailure,
+            uint256 failedActionIndex
+        ) = _validatePlan(plan, mandate.rules);
+        if (!valid) {
             return
-                _decision(
-                    Decision.DENY,
-                    FailureCode.TRANSACTION_LIMIT_EXCEEDED,
-                    nativeAmount,
-                    usdAmount,
-                    usdLimitSkipped
-                );
-        }
-        if (usdLimitExceeded && !mandate.rules.escalateUsdTransactionLimit) {
-            return
-                _decision(
-                    Decision.DENY,
-                    FailureCode.USD_LIMIT_EXCEEDED,
-                    nativeAmount,
-                    usdAmount,
-                    usdLimitSkipped
-                );
-        }
-        if (nativeLimitExceeded || usdLimitExceeded) {
-            return
-                _decision(
-                    Decision.ESCALATE,
-                    nativeLimitExceeded
-                        ? FailureCode.TRANSACTION_LIMIT_EXCEEDED
-                        : FailureCode.USD_LIMIT_EXCEEDED,
-                    nativeAmount,
-                    usdAmount,
-                    usdLimitSkipped
+                _failure(
+                    validationFailure,
+                    failedActionIndex,
+                    totals.nativeAmount,
+                    totals.usdAmount,
+                    totals.usdLimitSkipped
                 );
         }
 
-        return
-            _decision(
-                Decision.ALLOW,
-                FailureCode.NONE,
-                nativeAmount,
-                usdAmount,
-                usdLimitSkipped
-            );
+        return _applyRules(mandate.rules, totals);
     }
 
-    function _validateAction(
-        ActionTypes.Action calldata action,
-        uint256 currentNativeAmount,
-        uint256 currentUsdAmount,
-        bool currentUsdLimitSkipped,
-        bool usdLimitEnabled
+    function _validatePlan(
+        ActionTypes.ActionPlan calldata plan,
+        MandateRegistry.MandateRules memory rules
     )
         private
         view
         returns (
             bool valid,
-            uint256 nativeAmount,
-            uint256 usdAmount,
-            bool usdLimitSkipped,
-            FailureCode failureCode
+            Totals memory totals,
+            FailureCode failureCode,
+            uint256 failedActionIndex
         )
     {
+        bool usdLimitEnabled = rules.minUsdAmount != 0 ||
+            rules.maxUsdAmount != 0;
+        failedActionIndex = type(uint256).max;
+        for (uint256 index; index < plan.actions.length; index++) {
+            (
+                bool actionValid,
+                Totals memory updatedTotals,
+                FailureCode actionFailure
+            ) = _validateAction(plan.actions[index], totals, usdLimitEnabled);
+            totals = updatedTotals;
+            if (!actionValid) {
+                return (false, totals, actionFailure, index);
+            }
+        }
+        return (true, totals, FailureCode.NONE, failedActionIndex);
+    }
+
+    function _validateAction(
+        ActionTypes.Action calldata action,
+        Totals memory currentTotals,
+        bool usdLimitEnabled
+    )
+        private
+        view
+        returns (bool valid, Totals memory totals, FailureCode failureCode)
+    {
+        totals = currentTotals;
         if (
             action.version != ActionTypes.TRANSFER_VERSION ||
             action.parameters.length == 0
         ) {
-            return (
-                false,
-                currentNativeAmount,
-                currentUsdAmount,
-                currentUsdLimitSkipped,
-                FailureCode.INVALID_ACTION
-            );
+            return (false, totals, FailureCode.INVALID_ACTION);
         }
 
-        nativeAmount = currentNativeAmount;
-        usdAmount = currentUsdAmount;
-        usdLimitSkipped = currentUsdLimitSkipped;
         if (action.actionType == ActionTypes.ActionType.TRANSFER) {
             if (action.parameters.length != 96) {
-                return (
-                    false,
-                    nativeAmount,
-                    usdAmount,
-                    usdLimitSkipped,
-                    FailureCode.INVALID_ACTION_PARAMETERS
-                );
+                return (false, totals, FailureCode.INVALID_ACTION_PARAMETERS);
             }
 
             ActionTypes.TransferParameters memory transfer = abi.decode(
@@ -278,35 +235,17 @@ contract MandateEvaluator {
                 (ActionTypes.TransferParameters)
             );
             if (transfer.recipient == address(0)) {
-                return (
-                    false,
-                    nativeAmount,
-                    usdAmount,
-                    usdLimitSkipped,
-                    FailureCode.INVALID_RECIPIENT
-                );
+                return (false, totals, FailureCode.INVALID_RECIPIENT);
             }
             if (transfer.amount == 0) {
-                return (
-                    false,
-                    nativeAmount,
-                    usdAmount,
-                    usdLimitSkipped,
-                    FailureCode.INVALID_AMOUNT
-                );
+                return (false, totals, FailureCode.INVALID_AMOUNT);
             }
 
             if (transfer.asset == address(0)) {
-                if (nativeAmount > type(uint256).max - transfer.amount) {
-                    return (
-                        false,
-                        nativeAmount,
-                        usdAmount,
-                        usdLimitSkipped,
-                        FailureCode.AMOUNT_OVERFLOW
-                    );
+                if (totals.nativeAmount > type(uint256).max - transfer.amount) {
+                    return (false, totals, FailureCode.AMOUNT_OVERFLOW);
                 }
-                nativeAmount += transfer.amount;
+                totals.nativeAmount += transfer.amount;
             }
 
             if (usdLimitEnabled) {
@@ -318,35 +257,89 @@ contract MandateEvaluator {
                     if (!skipUnavailableUsdValuation) {
                         return (
                             false,
-                            nativeAmount,
-                            usdAmount,
-                            usdLimitSkipped,
+                            totals,
                             FailureCode.USD_VALUATION_UNAVAILABLE
                         );
                     }
-                    usdLimitSkipped = true;
+                    totals.usdLimitSkipped = true;
                 } else {
-                    if (usdAmount > type(uint256).max - actionUsdAmount) {
-                        return (
-                            false,
-                            nativeAmount,
-                            usdAmount,
-                            usdLimitSkipped,
-                            FailureCode.USD_AMOUNT_OVERFLOW
-                        );
+                    if (
+                        totals.usdAmount > type(uint256).max - actionUsdAmount
+                    ) {
+                        return (false, totals, FailureCode.USD_AMOUNT_OVERFLOW);
                     }
-                    usdAmount += actionUsdAmount;
+                    totals.usdAmount += actionUsdAmount;
+                    totals.usdValuationPresent = true;
                 }
             }
         }
 
-        return (
-            true,
-            nativeAmount,
-            usdAmount,
-            usdLimitSkipped,
-            FailureCode.NONE
-        );
+        return (true, totals, FailureCode.NONE);
+    }
+
+    function _applyRules(
+        MandateRegistry.MandateRules memory rules,
+        Totals memory totals
+    ) private pure returns (EvaluationResult memory) {
+        bool nativeMinimumViolated = totals.nativeAmount != 0 &&
+            rules.minNativeAmount != 0 &&
+            totals.nativeAmount < rules.minNativeAmount;
+        bool nativeMaximumViolated = rules.maxNativeAmount != 0 &&
+            totals.nativeAmount > rules.maxNativeAmount;
+        bool usdMinimumViolated = totals.usdValuationPresent &&
+            !totals.usdLimitSkipped &&
+            rules.minUsdAmount != 0 &&
+            totals.usdAmount < rules.minUsdAmount;
+        bool usdMaximumViolated = rules.maxUsdAmount != 0 &&
+            totals.usdAmount > rules.maxUsdAmount;
+        bool nativeViolation = nativeMinimumViolated || nativeMaximumViolated;
+        bool usdViolation = usdMinimumViolated || usdMaximumViolated;
+        FailureCode nativeFailureCode = nativeMinimumViolated
+            ? FailureCode.NATIVE_AMOUNT_BELOW_MINIMUM
+            : FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM;
+        FailureCode usdFailureCode = usdMinimumViolated
+            ? FailureCode.USD_AMOUNT_BELOW_MINIMUM
+            : FailureCode.USD_AMOUNT_ABOVE_MAXIMUM;
+
+        if (nativeViolation && !rules.escalateNativeAmount) {
+            return
+                _decision(
+                    Decision.DENY,
+                    nativeFailureCode,
+                    totals.nativeAmount,
+                    totals.usdAmount,
+                    totals.usdLimitSkipped
+                );
+        }
+        if (usdViolation && !rules.escalateUsdAmount) {
+            return
+                _decision(
+                    Decision.DENY,
+                    usdFailureCode,
+                    totals.nativeAmount,
+                    totals.usdAmount,
+                    totals.usdLimitSkipped
+                );
+        }
+        if (nativeViolation || usdViolation) {
+            return
+                _decision(
+                    Decision.ESCALATE,
+                    nativeViolation ? nativeFailureCode : usdFailureCode,
+                    totals.nativeAmount,
+                    totals.usdAmount,
+                    totals.usdLimitSkipped
+                );
+        }
+
+        return
+            _decision(
+                Decision.ALLOW,
+                FailureCode.NONE,
+                totals.nativeAmount,
+                totals.usdAmount,
+                totals.usdLimitSkipped
+            );
     }
 
     function _quoteUsd(

@@ -82,7 +82,7 @@ contract MandateEvaluatorTest {
         assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
-                MandateEvaluator.FailureCode.TRANSACTION_LIMIT_EXCEEDED
+                MandateEvaluator.FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM
         );
         assert(result.failedActionIndex == type(uint256).max);
         assert(result.nativeAmount == 11 ether);
@@ -132,7 +132,7 @@ contract MandateEvaluatorTest {
         assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
-                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
+                MandateEvaluator.FailureCode.USD_AMOUNT_ABOVE_MAXIMUM
         );
         assert(result.failedActionIndex == type(uint256).max);
         assert(result.usdAmount == 4_000e18);
@@ -165,7 +165,7 @@ contract MandateEvaluatorTest {
         assert(nativeResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             nativeResult.failureCode ==
-                MandateEvaluator.FailureCode.TRANSACTION_LIMIT_EXCEEDED
+                MandateEvaluator.FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM
         );
 
         (
@@ -182,7 +182,7 @@ contract MandateEvaluatorTest {
         assert(usdResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             usdResult.failureCode ==
-                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
+                MandateEvaluator.FailureCode.USD_AMOUNT_ABOVE_MAXIMUM
         );
     }
 
@@ -230,11 +230,11 @@ contract MandateEvaluatorTest {
         assert(quotedFirst.decision == MandateEvaluator.Decision.DENY);
         assert(
             unavailableFirst.failureCode ==
-                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
+                MandateEvaluator.FailureCode.USD_AMOUNT_ABOVE_MAXIMUM
         );
         assert(
             quotedFirst.failureCode ==
-                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
+                MandateEvaluator.FailureCode.USD_AMOUNT_ABOVE_MAXIMUM
         );
         assert(unavailableFirst.usdAmount == 1_200e18);
         assert(quotedFirst.usdAmount == 1_200e18);
@@ -299,7 +299,7 @@ contract MandateEvaluatorTest {
         assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
-                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
+                MandateEvaluator.FailureCode.USD_AMOUNT_ABOVE_MAXIMUM
         );
         assert(result.failedActionIndex == type(uint256).max);
         assert(result.usdAmount == 1_100e18);
@@ -359,7 +359,7 @@ contract MandateEvaluatorTest {
         assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
-                MandateEvaluator.FailureCode.TRANSACTION_LIMIT_EXCEEDED
+                MandateEvaluator.FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM
         );
         assert(result.usdLimitSkipped);
     }
@@ -657,8 +657,14 @@ contract MandateEvaluatorTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             address(0xA11CE),
-            10 ether,
-            0
+            MandateRegistry.MandateRules({
+                minNativeAmount: 0,
+                maxNativeAmount: 10 ether,
+                escalateNativeAmount: false,
+                minUsdAmount: 0,
+                maxUsdAmount: 0,
+                escalateUsdAmount: false
+            })
         );
         registry.revokeMandate(mandateId);
         ActionTypes.ActionPlan memory revokedPlan = _plan(
@@ -684,10 +690,12 @@ contract MandateEvaluatorTest {
             uint256 privateKey
         ) = _setupWithRules(
                 MandateRegistry.MandateRules({
-                    transactionLimit: 1 ether,
-                    escalateTransactionLimit: true,
-                    usdTransactionLimit: 0,
-                    escalateUsdTransactionLimit: false
+                    minNativeAmount: 0,
+                    maxNativeAmount: 1 ether,
+                    escalateNativeAmount: true,
+                    minUsdAmount: 0,
+                    maxUsdAmount: 0,
+                    escalateUsdAmount: false
                 }),
                 address(0),
                 true
@@ -702,7 +710,7 @@ contract MandateEvaluatorTest {
         assert(result.decision == MandateEvaluator.Decision.ESCALATE);
         assert(
             result.failureCode ==
-                MandateEvaluator.FailureCode.TRANSACTION_LIMIT_EXCEEDED
+                MandateEvaluator.FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM
         );
         assert(result.nativeAmount == 2 ether);
     }
@@ -716,10 +724,12 @@ contract MandateEvaluatorTest {
             uint256 privateKey
         ) = _setupWithRules(
                 MandateRegistry.MandateRules({
-                    transactionLimit: 1 ether,
-                    escalateTransactionLimit: true,
-                    usdTransactionLimit: 1_000e18,
-                    escalateUsdTransactionLimit: false
+                    minNativeAmount: 0,
+                    maxNativeAmount: 1 ether,
+                    escalateNativeAmount: true,
+                    minUsdAmount: 0,
+                    maxUsdAmount: 1_000e18,
+                    escalateUsdAmount: false
                 }),
                 address(provider),
                 false
@@ -734,12 +744,288 @@ contract MandateEvaluatorTest {
         assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
-                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
+                MandateEvaluator.FailureCode.USD_AMOUNT_ABOVE_MAXIMUM
+        );
+    }
+
+    function test_rejectsNativeAmountBelowMinimum() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithRules(
+                MandateRegistry.MandateRules({
+                    minNativeAmount: 2 ether,
+                    maxNativeAmount: 0,
+                    escalateNativeAmount: false,
+                    minUsdAmount: 0,
+                    maxUsdAmount: 0,
+                    escalateUsdAmount: false
+                }),
+                address(0),
+                true
+            );
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.DENY);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.NATIVE_AMOUNT_BELOW_MINIMUM
+        );
+        assert(result.nativeAmount == 1 ether);
+    }
+
+    function test_nativeMinimumUsesAggregatePlanAmount() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithRules(
+                MandateRegistry.MandateRules({
+                    minNativeAmount: 7 ether,
+                    maxNativeAmount: 0,
+                    escalateNativeAmount: false,
+                    minUsdAmount: 0,
+                    maxUsdAmount: 0,
+                    escalateUsdAmount: false
+                }),
+                address(0),
+                true
+            );
+        plan.actions = new ActionTypes.Action[](2);
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 3 ether);
+        plan.actions[1] = _transferAction(address(0), address(0xD00D), 4 ether);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
+        assert(result.nativeAmount == 7 ether);
+    }
+
+    function test_escalatesConfiguredNativeMinimum() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithRules(
+                MandateRegistry.MandateRules({
+                    minNativeAmount: 2 ether,
+                    maxNativeAmount: 0,
+                    escalateNativeAmount: true,
+                    minUsdAmount: 0,
+                    maxUsdAmount: 0,
+                    escalateUsdAmount: false
+                }),
+                address(0),
+                true
+            );
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.ESCALATE);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.NATIVE_AMOUNT_BELOW_MINIMUM
+        );
+    }
+
+    function test_skipsNativeMinimumForTokenOnlyPlan() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithRules(
+                MandateRegistry.MandateRules({
+                    minNativeAmount: 2 ether,
+                    maxNativeAmount: 0,
+                    escalateNativeAmount: false,
+                    minUsdAmount: 0,
+                    maxUsdAmount: 0,
+                    escalateUsdAmount: false
+                }),
+                address(0),
+                true
+            );
+        plan.actions[0] = _transferAction(address(0xCAFE), address(0xBEEF), 1);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
+        assert(result.nativeAmount == 0);
+    }
+
+    function test_rejectsUsdAmountBelowMinimum() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        provider.setQuote(address(0), 500e18);
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithRules(
+                MandateRegistry.MandateRules({
+                    minNativeAmount: 0,
+                    maxNativeAmount: 0,
+                    escalateNativeAmount: false,
+                    minUsdAmount: 1_000e18,
+                    maxUsdAmount: 0,
+                    escalateUsdAmount: false
+                }),
+                address(provider),
+                false
+            );
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.DENY);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.USD_AMOUNT_BELOW_MINIMUM
+        );
+        assert(result.usdAmount == 500e18);
+    }
+
+    function test_usdMinimumUsesAggregateQuotedAmount() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        address firstToken = address(0xCAFE);
+        address secondToken = address(0xF00D);
+        provider.setQuote(firstToken, 400e18);
+        provider.setQuote(secondToken, 600e18);
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithRules(
+                MandateRegistry.MandateRules({
+                    minNativeAmount: 0,
+                    maxNativeAmount: 0,
+                    escalateNativeAmount: false,
+                    minUsdAmount: 1_000e18,
+                    maxUsdAmount: 0,
+                    escalateUsdAmount: false
+                }),
+                address(provider),
+                false
+            );
+        plan.actions = new ActionTypes.Action[](2);
+        plan.actions[0] = _transferAction(firstToken, address(0xBEEF), 1);
+        plan.actions[1] = _transferAction(secondToken, address(0xD00D), 1);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
+        assert(result.usdAmount == 1_000e18);
+    }
+
+    function test_skipsUsdMinimumWhenValuationUnavailable() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithRules(
+                MandateRegistry.MandateRules({
+                    minNativeAmount: 0,
+                    maxNativeAmount: 0,
+                    escalateNativeAmount: false,
+                    minUsdAmount: 1_000e18,
+                    maxUsdAmount: 0,
+                    escalateUsdAmount: false
+                }),
+                address(provider),
+                true
+            );
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
+        assert(result.usdAmount == 0);
+        assert(result.usdLimitSkipped);
+    }
+
+    function test_exactAggregateBoundsAreAllowed() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithRules(
+                MandateRegistry.MandateRules({
+                    minNativeAmount: 1 ether,
+                    maxNativeAmount: 2 ether,
+                    escalateNativeAmount: false,
+                    minUsdAmount: 0,
+                    maxUsdAmount: 0,
+                    escalateUsdAmount: false
+                }),
+                address(0),
+                true
+            );
+
+        MandateEvaluator.EvaluationResult memory minimumResult = evaluator
+            .evaluate(plan, _sign(evaluator, plan, privateKey));
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 2 ether);
+        MandateEvaluator.EvaluationResult memory maximumResult = evaluator
+            .evaluate(plan, _sign(evaluator, plan, privateKey));
+
+        assert(minimumResult.decision == MandateEvaluator.Decision.ALLOW);
+        assert(maximumResult.decision == MandateEvaluator.Decision.ALLOW);
+    }
+
+    function test_hardMinimumCannotBeEscalatedThroughOtherFlag() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        provider.setQuote(address(0), 500e18);
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithRules(
+                MandateRegistry.MandateRules({
+                    minNativeAmount: 2 ether,
+                    maxNativeAmount: 0,
+                    escalateNativeAmount: true,
+                    minUsdAmount: 1_000e18,
+                    maxUsdAmount: 0,
+                    escalateUsdAmount: false
+                }),
+                address(provider),
+                false
+            );
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.DENY);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.USD_AMOUNT_BELOW_MINIMUM
         );
     }
 
     function _setup(
-        uint256 transactionLimit
+        uint256 maxNativeAmount
     )
         private
         returns (
@@ -748,12 +1034,12 @@ contract MandateEvaluatorTest {
             uint256 privateKey
         )
     {
-        return _setupWithUsd(transactionLimit, 0, address(0), true);
+        return _setupWithUsd(maxNativeAmount, 0, address(0), true);
     }
 
     function _setupWithUsd(
-        uint256 transactionLimit,
-        uint256 usdTransactionLimit,
+        uint256 maxNativeAmount,
+        uint256 maxUsdAmount,
         address usdValueProvider,
         bool skipUnavailableUsdValuation
     )
@@ -767,10 +1053,12 @@ contract MandateEvaluatorTest {
         return
             _setupWithRules(
                 MandateRegistry.MandateRules({
-                    transactionLimit: transactionLimit,
-                    escalateTransactionLimit: false,
-                    usdTransactionLimit: usdTransactionLimit,
-                    escalateUsdTransactionLimit: false
+                    minNativeAmount: 0,
+                    maxNativeAmount: maxNativeAmount,
+                    escalateNativeAmount: false,
+                    minUsdAmount: 0,
+                    maxUsdAmount: maxUsdAmount,
+                    escalateUsdAmount: false
                 }),
                 usdValueProvider,
                 skipUnavailableUsdValuation
