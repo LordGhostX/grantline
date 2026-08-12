@@ -1,6 +1,6 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 import GrantlineMark from "@/components/grantline-mark";
-import { repositoryUrl, xUrl } from "@/lib/site";
+import { repositoryUrl, xUrl } from "@/lib/site-links";
 
 export function baseOptions(): BaseLayoutProps {
   return {

@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Lenis from "lenis";
 import GrantlineMark from "@/components/grantline-mark";
-import { repositoryUrl, xUrl } from "@/lib/site";
+import { repositoryUrl, xUrl } from "@/lib/site-links";
 
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
