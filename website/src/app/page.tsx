@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Lenis from "lenis";
 import GrantlineMark from "@/components/grantline-mark";
-import { xUrl } from "@/lib/site";
+import { repositoryUrl, xUrl } from "@/lib/site";
 
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -123,39 +123,41 @@ export default function Home() {
     }
   > = {
     allow: {
-      request: "Allocate $3,000 to approved tokenised Treasury asset",
+      request: "Allocate $25,000 within an active Mandate",
       rows: [
-        ["Transaction limit", "PASS", "ok"],
-        ["Approved asset", "PASS", "ok"],
-        ["Minimum liquidity", "PASS", "ok"],
+        ["Mandate boundary", "PASS", "ok"],
+        ["Required conditions", "PASS", "ok"],
+        ["Owner approval", "NOT REQUIRED", "muted"],
       ],
       decision: "ALLOW",
       tone: "allow",
-      reason: "Authority and required conditions are satisfied.",
-      meta: '<a href="#">Executed \u00B7 X Layer Testnet \u2197</a>',
+      reason: "The action is within the authority granted to the agent.",
+      meta: "Illustrative product scenario",
     },
     escalate: {
-      request: "Allocate $8,500 to approved tokenised Treasury asset",
+      request: "Allocate $100,000 above the agent's approval threshold",
       rows: [
-        ["Transaction limit", "PASS", "ok"],
-        ["Approved asset", "PASS", "ok"],
-        ["Human approval", "REQUIRED", "warn"],
+        ["Mandate boundary", "REVIEW", "warn"],
+        ["Required conditions", "PASS", "ok"],
+        ["Owner approval", "REQUIRED", "warn"],
       ],
       decision: "ESCALATE",
       tone: "escalate",
-      reason: "Human approval is required above the $7,500 threshold.",
-      meta: "",
+      reason:
+        "The Mandate allows the request to continue only after owner approval.",
+      meta: "Illustrative product scenario",
     },
     deny: {
-      request: "Borrow $20,000 against Treasury Vault",
+      request: "Move $250,000 outside the active Mandate",
       rows: [
-        ["Transaction limit", "OUTSIDE", "bad"],
-        ["Borrowing", "NOT PERMITTED", "bad"],
-        ["Mandate authority", "FAIL", "bad"],
+        ["Mandate boundary", "FAIL", "bad"],
+        ["Authority", "EXCEEDED", "bad"],
+        ["Execution", "NOT SUBMITTED", "bad"],
       ],
       decision: "DENY",
       tone: "deny",
-      reason: "Borrowing is outside the delegated Mandate.",
+      reason:
+        "The requested action is outside the authority granted to the agent.",
       meta: "No execution submitted.",
     },
   };
@@ -190,10 +192,10 @@ export default function Home() {
             <a href="#mechanism">How it works</a>
             <a href="#platform">Platform</a>
             <a href="#vision">Vision</a>
-            <Link href="/docs">Docs</Link>
-            <a className="btn" href="#">
-              Try Grantline
-            </a>
+            <Link href="/docs">Documentation</Link>
+            <span className="btn coming-soon" aria-disabled="true">
+              Demo coming soon
+            </span>
           </div>
           <button
             className="menu-toggle"
@@ -221,11 +223,11 @@ export default function Home() {
               Vision
             </a>
             <Link href="/docs" onClick={closeMenu}>
-              Docs
+              Documentation
             </Link>
-            <a className="mobile-demo" href="#" onClick={closeMenu}>
-              Try Grantline
-            </a>
+            <span className="mobile-demo" aria-disabled="true">
+              Demo coming soon
+            </span>
           </div>
         </div>
       </div>
@@ -241,9 +243,11 @@ export default function Home() {
                 Give AI agents capital without giving them unlimited authority.
               </h1>
               <p className="hero-copy">
-                Grantline lets people and organisations define exactly what an
-                agent can do, under what conditions, and when another authority
-                needs to step in.
+                Grantline lets people and organisations define what an agent is
+                allowed to do, under what conditions, and when another authority
+                needs to step in. The result is autonomy with a defined
+                boundary, owner control, and an auditable path from intent to
+                execution.
               </p>
               <div className="hero-principle">
                 Your AI agent proposes. Grantline authorises.
@@ -252,18 +256,20 @@ export default function Home() {
                 <a className="btn primary" href="#mechanism">
                   See how Grantline works
                 </a>
-                <a className="btn" href="#">
-                  Try Grantline
-                </a>
+                <span className="btn coming-soon" aria-disabled="true">
+                  Demo coming soon
+                </span>
               </div>
             </div>
 
             <div
               className="auth-console reveal"
-              aria-label="Example Grantline authorisation event"
+              aria-label="Illustrative Grantline authorisation scenarios"
             >
               <div className="console-top">
-                <span className="console-title">Authorisation event</span>
+                <span className="console-title">
+                  Illustrative authorisation scenarios
+                </span>
                 <span className="console-status">MANDATE ACTIVE</span>
               </div>
               <div className="decision-explore-label">
@@ -320,10 +326,7 @@ export default function Home() {
                   <div>
                     <div className="label">Decision</div>
                     <div className="decision-word">{current.decision}</div>
-                    <div
-                      className="decision-meta"
-                      dangerouslySetInnerHTML={{ __html: current.meta }}
-                    />
+                    <div className="decision-meta">{current.meta}</div>
                   </div>
                   <div className="decision-reason">{current.reason}</div>
                 </div>
@@ -339,7 +342,10 @@ export default function Home() {
               <h2>A wallet proves access. Grantline defines authority.</h2>
               <p className="section-copy">
                 Autonomous systems need more than permission to sign. They need
-                a precise answer to what an agent can do with that access.
+                a precise answer to what an agent is allowed to do with that
+                access. Signing proves that an agent made the proposal;
+                Grantline determines whether that proposal can use the capital
+                and under what conditions.
               </p>
             </div>
             <div className="question-frame reveal">
@@ -396,25 +402,27 @@ export default function Home() {
               <h2>Authority sits between intent and execution.</h2>
               <p className="section-copy">
                 An agent chooses what it wants to do. Grantline evaluates
-                whether it has authority to do it, runs the conditions selected
-                by the owner, and returns a decision before capital moves.
+                whether it has authority to do it, checks the configured safety
+                conditions, and returns <code>ALLOW</code>,{" "}
+                <code>ESCALATE</code>, or <code>DENY</code> before capital
+                moves.
               </p>
             </div>
             <div className="flow-track reveal">
               <div className="flow-step">
                 <div className="flow-node">Agent</div>
                 <h3>Proposes</h3>
-                <p>Chooses an action.</p>
+                <p>Turns intent into an action.</p>
               </div>
               <div className="flow-step control">
                 <div className="flow-node">Mandate</div>
                 <h3>Authorises</h3>
-                <p>Checks delegated authority.</p>
+                <p>Defines what the agent is allowed to do.</p>
               </div>
               <div className="flow-step control">
                 <div className="flow-node">Conditions</div>
-                <h3>Verify</h3>
-                <p>Runs required checks.</p>
+                <h3>Checks</h3>
+                <p>Runs the configured safety checks.</p>
               </div>
               <div className="flow-step control">
                 <div className="flow-node">Decision</div>
@@ -424,12 +432,12 @@ export default function Home() {
               <div className="flow-step">
                 <div className="flow-node">X Layer</div>
                 <h3>Executes</h3>
-                <p>Moves capital only when authorised.</p>
+                <p>Moves capital only after authorisation.</p>
               </div>
               <div className="flow-step control">
                 <div className="flow-node">Record</div>
                 <h3>Traces</h3>
-                <p>Links the authorisation decision to its onchain outcome.</p>
+                <p>Records successful outcomes onchain.</p>
               </div>
             </div>
             <div
@@ -437,18 +445,24 @@ export default function Home() {
               aria-label="Optional authorisation conditions"
             >
               <div className="condition-item">
-                <strong>Guardian</strong>
-                <p>Checks relevant external conditions.</p>
+                <strong>Guardians</strong>
+                <p>
+                  Checks outside context, like asset eligibility, markets, or
+                  counterparties.
+                </p>
               </div>
               <div className="sep"></div>
               <div className="condition-item">
                 <strong>Preflight</strong>
-                <p>Tests the resulting financial state.</p>
+                <p>Checks that the Vault stays inside its safety boundary.</p>
               </div>
               <div className="sep"></div>
               <div className="condition-item">
                 <strong>Escalation</strong>
-                <p>Defers execution requiring human approval.</p>
+                <p>
+                  Brings an owner into the decision when more authority is
+                  needed.
+                </p>
               </div>
             </div>
           </div>
@@ -469,9 +483,9 @@ export default function Home() {
               <article className="model-cell">
                 <div className="model-num">01 / AUTHORITY</div>
                 <div className="model-topic">Mandates + Delegation</div>
-                <h3>Define exactly what an agent can do.</h3>
+                <h3>Define exactly what an agent may do.</h3>
                 <p>
-                  Set limits, actions, approvals, and delegation rights, then
+                  Define limits, actions, approvals, and delegation rights, then
                   preserve the source of that authority as it moves between
                   agents.
                 </p>
@@ -487,9 +501,9 @@ export default function Home() {
                 <div className="model-topic">Vaults</div>
                 <h3>Limit the capital that authority applies to.</h3>
                 <p>
-                  Keep delegated capital separate from unrestricted funds so an
-                  agent operates only against what has been made available to
-                  it.
+                  Keep capital behind a controlled Vault, so agents receive
+                  authority to act without receiving unrestricted ownership of
+                  the funds.
                 </p>
                 <div className="model-tags">
                   <span className="tag">Capital scope</span>
@@ -498,30 +512,32 @@ export default function Home() {
               </article>
               <article className="model-cell">
                 <div className="model-num">03 / CONDITIONS</div>
-                <div className="model-topic">Guardians + Preflight</div>
+                <div className="model-topic">Checks + Approval</div>
                 <h3>
-                  Make authority conditional on the state around the action.
+                  Make authority conditional on what surrounds the action.
                 </h3>
                 <p>
-                  Require external condition checks and test whether the
-                  proposed resulting state stays inside configured boundaries.
+                  Preflight checks the Vault’s safety boundary after an action.
+                  Guardians will add context such as asset eligibility, markets,
+                  counterparties, or organisation policies.
                 </p>
                 <div className="model-tags">
-                  <span className="tag">External checks</span>
-                  <span className="tag">Stress limits</span>
-                  <span className="tag">Liquidity floor</span>
+                  <span className="tag">Preflight</span>
+                  <span className="tag">Owner approval</span>
+                  <span className="tag">Guardians planned</span>
                 </div>
               </article>
               <article className="model-cell">
                 <div className="model-num">04 / ACCOUNTABILITY</div>
                 <div className="model-topic">Records</div>
-                <h3>Trace every proposal, decision, and execution.</h3>
+                <h3>Connect authority to outcome.</h3>
                 <p>
-                  Show what was proposed, which authority applied, what checks
-                  ran, which decision was returned, and what was executed.
+                  Successful Mandate, approval, custody, and execution changes
+                  leave an onchain record, connecting the authority behind an
+                  action to its outcome.
                 </p>
                 <div className="model-tags">
-                  <span className="tag">Decision receipt</span>
+                  <span className="tag">Onchain records</span>
                   <span className="tag">Traceability</span>
                 </div>
               </article>
@@ -546,47 +562,50 @@ export default function Home() {
         <section>
           <div className="shell delegation-wrap">
             <div className="delegation-copy reveal">
-              <div className="section-kicker">Delegated authority</div>
+              <div className="section-kicker">Illustrative delegation</div>
               <h2>
                 Delegation passes authority down, but never beyond its source.
               </h2>
               <p>
-                Each handoff inherits an upper bound from the authority above
-                it. An agent can delegate less capital, fewer actions, fewer
-                assets, shorter duration, or stricter approvals. It cannot
-                create authority it was never granted.
+                Every delegation passes down a narrower version of the authority
+                above it: a smaller budget, fewer permitted actions, tighter
+                conditions, or less ability to delegate. Every sub-agent remains
+                tied to the authority above it and to the original source of
+                control.
               </p>
               <div className="delegation-principle">
                 Every delegation stays inside its parent Mandate and remains
                 traceable to the original authority.
               </div>
             </div>
-            <div className="tree reveal" aria-label="Delegation graph example">
+            <div
+              className="tree reveal"
+              aria-label="Illustrative delegation hierarchy"
+            >
               <div className="tree-card">
                 <strong>Company</strong>
-                <small>$500,000 treasury authority</small>
+                <small>$5M treasury authority</small>
               </div>
               <div className="authority-line" aria-hidden="true" />
               <div className="tree-card">
                 <strong>Treasury Agent</strong>
-                <small>$50,000 execution authority &middot; no borrowing</small>
+                <small>$500k operating authority</small>
               </div>
               <div className="authority-line" aria-hidden="true" />
               <div className="tree-card">
                 <strong>Execution Agent</strong>
                 <small>
-                  $5,000 payments &middot; approved assets &middot; no further
-                  delegation
+                  $50k action authority &middot; no further delegation
                 </small>
               </div>
               <div className="denied-branch">
                 <div className="branch-item good">
-                  $3,000 PAYMENT
+                  $25k ACTION
                   <br />
                   <span className="ok">WITHIN AUTHORITY</span>
                 </div>
                 <div className="branch-item bad">
-                  $100,000 BORROW
+                  $250k ACTION
                   <br />
                   <span className="bad">AUTHORITY STOPS</span>
                 </div>
@@ -601,18 +620,21 @@ export default function Home() {
               <div className="section-kicker">Conditional authority</div>
               <h2>One proposal can require more than a spending limit.</h2>
               <p className="section-copy">
-                A Mandate can require external condition checks, resulting state
-                checks, and human approval thresholds before an action is
-                authorised.
+                A Mandate can combine authority limits with resulting-state
+                checks and owner approval, so an action is evaluated against
+                both what the agent is allowed to do and what the action would
+                leave behind.
               </p>
             </div>
 
             <div
               className="proof-artifact reveal"
-              aria-label="Grantline authorisation proof example"
+              aria-label="Illustrative Grantline authorisation trace"
             >
               <div className="proof-head">
-                <span className="proof-head-title">Authorisation trace</span>
+                <span className="proof-head-title">
+                  Illustrative authorisation trace
+                </span>
                 <span className="proof-head-status">MANDATE ACTIVE</span>
               </div>
               <div className="proof-body">
@@ -623,7 +645,7 @@ export default function Home() {
                 <div className="proof-row">
                   <div className="proof-label">Action</div>
                   <div className="proof-value">
-                    Allocate $3,000 to approved tokenised Treasury asset
+                    Signed action plan for a $25,000 allocation
                   </div>
                 </div>
                 <div className="proof-row">
@@ -631,15 +653,11 @@ export default function Home() {
                   <div className="proof-value mono ok">PASS</div>
                 </div>
                 <div className="proof-row">
-                  <div className="proof-label">Guardian</div>
-                  <div className="proof-value mono ok">PASS</div>
-                </div>
-                <div className="proof-row">
                   <div className="proof-label">Preflight</div>
                   <div className="proof-value mono ok">PASS</div>
                 </div>
                 <div className="proof-row">
-                  <div className="proof-label">Human approval</div>
+                  <div className="proof-label">Owner approval</div>
                   <div className="proof-value mono muted">NOT REQUIRED</div>
                 </div>
                 <div className="proof-row emphasis">
@@ -648,29 +666,37 @@ export default function Home() {
                 </div>
                 <div className="proof-row evidence">
                   <div className="proof-label">Execution</div>
-                  <div className="proof-value mono">
-                    <a className="proof-link" href="#">
-                      X LAYER TESTNET &middot; CONFIRMED &#8599;
-                    </a>
+                  <div className="proof-value mono muted">
+                    X LAYER TESTNET &middot; CONFIRMED
                   </div>
                 </div>
                 <div className="proof-row evidence">
-                  <div className="proof-label">Receipt</div>
-                  <div className="proof-value mono">
-                    <a className="proof-link" href="#">
-                      VIEW DECISION RECEIPT &#8599;
-                    </a>
+                  <div className="proof-label">Record</div>
+                  <div className="proof-value mono muted">
+                    EXECUTION RECORDED
                   </div>
                 </div>
               </div>
             </div>
 
+            <p className="proof-note reveal">
+              Guardians will extend this decision with context from outside the
+              action itself, helping determine whether an otherwise permitted
+              action should still proceed. Guardian checks are planned for a
+              future release.
+            </p>
+
             <div className="proof-cta reveal" aria-label="Proof and next steps">
-              <a className="btn" href="#">
-                View contract &#8599;
+              <a
+                className="btn"
+                href={`${repositoryUrl}/tree/main/contracts`}
+                target="_blank"
+                rel="noreferrer nofollow"
+              >
+                View the implementation
               </a>
               <Link className="btn" href="/docs">
-                Read how enforcement works &#8599;
+                Read how enforcement works
               </Link>
             </div>
           </div>
@@ -690,22 +716,34 @@ export default function Home() {
             </div>
             <div className="future-track reveal">
               <div className="future-item">
-                <div className="future-phase">Now / MVP</div>
+                <div className="future-phase">Now / Proven MVP</div>
                 <div className="future-card">
                   <h3>Bounded agent authority</h3>
                   <p>
-                    Prove that an agent can operate autonomously with capital
-                    without receiving unrestricted control over it.
+                    Prove that agents can operate autonomously with capital,
+                    then delegate narrower authority to sub-agents without
+                    giving them unrestricted control over it.
                   </p>
                   <div className="model-tags">
                     <span className="tag">Vaults</span>
                     <span className="tag">Mandates</span>
                     <span className="tag">Delegation</span>
-                    <span className="tag">Guardian</span>
                     <span className="tag">Preflight</span>
                     <span className="tag">Revocation</span>
                     <span className="tag">Records</span>
                   </div>
+                </div>
+              </div>
+              <div className="future-item">
+                <div className="future-phase">Planned</div>
+                <div className="future-card">
+                  <h3>Guardian conditions</h3>
+                  <p>
+                    Guardians bring outside context into an authorisation
+                    decision, such as asset eligibility, market conditions,
+                    counterparty status, or organisation policy, so an action is
+                    judged on more than the Mandate alone.
+                  </p>
                 </div>
               </div>
               <div className="future-item">
@@ -724,8 +762,9 @@ export default function Home() {
                 <div className="future-card">
                   <h3>Agent organisations</h3>
                   <p>
-                    Treasury, payments, procurement, execution, and risk agents
-                    operating through connected but bounded authority graphs.
+                    Extend today’s bounded delegation into connected treasury,
+                    payments, procurement, execution, and risk agents, each
+                    operating within its own authority boundary.
                   </p>
                 </div>
               </div>
@@ -734,9 +773,8 @@ export default function Home() {
                 <div className="future-card">
                   <h3>Authorisation infrastructure</h3>
                   <p>
-                    Guardian ecosystems, reusable policy templates,
-                    organisation-specific preflight, and agent-to-agent
-                    delegation.
+                    Guardian ecosystems, reusable policy templates, and
+                    organisation-specific preflight.
                   </p>
                 </div>
               </div>
@@ -769,13 +807,13 @@ export default function Home() {
             </div>
             <h2>Give agents autonomy. Keep authority bounded.</h2>
             <p>
-              Grantline governs the authority between autonomous intent and
-              financial execution.
+              Define the authority before the action, then let agents act within
+              clear boundaries and owner control.
             </p>
             <div className="cta-actions">
-              <a className="btn primary" href="#">
-                See Grantline in action
-              </a>
+              <span className="btn primary coming-soon" aria-disabled="true">
+                Demo coming soon
+              </span>
               <Link className="btn" href="/docs">
                 Read the documentation
               </Link>
@@ -804,9 +842,9 @@ export default function Home() {
               <a href="#mechanism">How it works</a>
               <a href="#platform">Platform</a>
               <a href="#vision">Vision</a>
-              <Link href="/docs">Docs</Link>
-              <a href="#">Try Grantline</a>
-              <a href={xUrl} target="_blank" rel="noreferrer">
+              <Link href="/docs">Documentation</Link>
+              <span className="footer-demo">Demo coming soon</span>
+              <a href={xUrl} target="_blank" rel="noreferrer nofollow">
                 X / @usegrantline &#8599;
               </a>
             </div>

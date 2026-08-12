@@ -34,7 +34,7 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
         <MarkdownCopyButton markdownUrl={markdownUrl} />
         <ViewOptionsPopover
           markdownUrl={markdownUrl}
-          githubUrl={`${repositoryUrl}/blob/main${page.url === "/docs" ? "/content/docs/index.mdx" : `/content/docs${page.url}.mdx`}`}
+          githubUrl={`${repositoryUrl}/blob/main/website/content/docs/${page.url === "/docs" ? "index.mdx" : `${page.url}.mdx`}`}
         />
       </div>
       <hr
