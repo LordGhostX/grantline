@@ -51,6 +51,7 @@ Phase 2 ESCALATE is implemented and locally verified. The next operational step 
 | 2026-08-12 | Store mandate policy in nested rules and make limit overruns optionally escalatable. | Native and USD limits stay adjacent to their flags, while the evaluator can route configured overruns through explicit owner approval without weakening hard-deny rules. |
 | 2026-08-12 | Store complete escalated plans in a dedicated manager.                               | Approval and later execution remain decoupled from the original submitting process, while the executor re-evaluates current mandate state before moving capital.         |
 | 2026-08-12 | Use aggregate native/USD amount ranges for mandate transaction bounds.               | Minimums and maximums are denomination-aware, each bound can be disabled with zero, and transaction minimums remain separate from future Vault liquidity rules.          |
+| 2026-08-12 | Keep Mandate updates live and allow denial after revocation.                         | Current rules are checked at execution, revocation blocks approval and execution, while the Vault owner can still close pending revoked escalations with a denial.       |
 
 ## Working-memory rules
 

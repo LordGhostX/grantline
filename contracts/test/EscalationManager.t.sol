@@ -173,6 +173,116 @@ contract EscalationManagerTest {
         assert(manager.statusOf(digest) == EscalationManager.Status.APPROVED);
     }
 
+    function test_executionReevaluatesLoosenedMandateAfterApproval() public {
+        (
+            Vault vault,
+            MandateRegistry registry,
+            MandateEvaluator evaluator,
+            EscalationManager manager,
+            VaultExecutor executor,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(1 ether, true);
+        address recipient = address(0xBEEF);
+        plan.actions[0] = _transferAction(address(0), recipient, 2 ether);
+        bytes memory signature = _sign(evaluator, plan, privateKey);
+        bytes32 digest = manager.submit(plan, signature);
+        manager.approve(digest);
+
+        registry.updateMandate(
+            plan.mandateId,
+            _rules(3 ether, false, 0, false)
+        );
+        vm.deal(address(vault), 3 ether);
+
+        assert(executor.executeEscalated(digest) == digest);
+        assert(recipient.balance == 2 ether);
+        assert(address(vault).balance == 1 ether);
+        assert(registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+        assert(manager.statusOf(digest) == EscalationManager.Status.EXECUTED);
+    }
+
+    function test_revocationBlocksNormalAndApprovedExecution() public {
+        (
+            Vault vault,
+            MandateRegistry registry,
+            MandateEvaluator evaluator,
+            EscalationManager manager,
+            VaultExecutor executor,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(1 ether, true);
+        address recipient = address(0xBEEF);
+        plan.actions[0] = _transferAction(address(0), recipient, 2 ether);
+        bytes memory signature = _sign(evaluator, plan, privateKey);
+        bytes32 digest = manager.submit(plan, signature);
+        manager.approve(digest);
+        registry.revokeMandate(plan.mandateId);
+        vm.deal(address(vault), 3 ether);
+
+        bool escalatedReverted;
+        try executor.executeEscalated(digest) {} catch {
+            escalatedReverted = true;
+        }
+
+        ActionTypes.ActionPlan memory normalPlan = plan;
+        normalPlan.nonce = 2;
+        normalPlan.actions[0] = _transferAction(address(0), recipient, 1 ether);
+        bool normalReverted;
+        try
+            executor.execute(
+                vault,
+                normalPlan,
+                _sign(evaluator, normalPlan, privateKey)
+            )
+        {} catch {
+            normalReverted = true;
+        }
+
+        assert(escalatedReverted);
+        assert(normalReverted);
+        assert(!registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+        assert(
+            !registry.nonceUsed(
+                normalPlan.mandateId,
+                normalPlan.agent,
+                normalPlan.nonce
+            )
+        );
+        assert(recipient.balance == 0);
+        assert(address(vault).balance == 3 ether);
+        assert(manager.statusOf(digest) == EscalationManager.Status.APPROVED);
+    }
+
+    function test_revokedPendingEscalationCannotApproveButCanBeDenied() public {
+        (
+            ,
+            MandateRegistry registry,
+            MandateEvaluator evaluator,
+            EscalationManager manager,
+            ,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(1 ether, true);
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 2 ether);
+        bytes memory signature = _sign(evaluator, plan, privateKey);
+        bytes32 digest = manager.submit(plan, signature);
+        registry.revokeMandate(plan.mandateId);
+
+        bool approveReverted;
+        try manager.approve(digest) {} catch {
+            approveReverted = true;
+        }
+        manager.deny(digest);
+
+        assert(approveReverted);
+        assert(manager.statusOf(digest) == EscalationManager.Status.DENIED);
+        assert(
+            manager.reservedDigest(plan.mandateId, plan.agent, plan.nonce) ==
+                digest
+        );
+    }
+
     function test_unconfiguredLimitOverrunCannotBeSubmittedForEscalation()
         public
     {

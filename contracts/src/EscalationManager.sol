@@ -27,6 +27,7 @@ contract EscalationManager {
     error EscalationAlreadyExists(bytes32 digest);
     error EscalationNotPending(bytes32 digest, Status status);
     error EscalationNotApproved(bytes32 digest, Status status);
+    error MandateInactive(uint256 mandateId);
     error NotEscalatable(
         MandateEvaluator.Decision decision,
         MandateEvaluator.FailureCode failureCode
@@ -162,6 +163,9 @@ contract EscalationManager {
         MandateRegistry.Mandate memory mandate = evaluator
             .registry()
             .getMandate(escalation.plan.mandateId);
+        if (mandate.status != MandateRegistry.MandateStatus.ACTIVE) {
+            revert MandateInactive(escalation.plan.mandateId);
+        }
         _requireVaultOwner(mandate.vault, msg.sender);
 
         escalation.status = Status.APPROVED;
@@ -201,6 +205,9 @@ contract EscalationManager {
         MandateRegistry.Mandate memory mandate = evaluator
             .registry()
             .getMandate(escalation.plan.mandateId);
+        if (mandate.status != MandateRegistry.MandateStatus.ACTIVE) {
+            revert MandateInactive(escalation.plan.mandateId);
+        }
         _requireVaultAuthority(mandate.vault, msg.sender);
         if (
             !evaluator.registry().nonceUsed(

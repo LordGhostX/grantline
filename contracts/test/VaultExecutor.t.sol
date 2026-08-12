@@ -425,6 +425,57 @@ contract VaultExecutorTest {
         assert(address(vault).balance == 1 ether);
     }
 
+    function test_normalExecutionUsesTightenedAndLoosenedMandateRules() public {
+        (
+            Vault vault,
+            VaultExecutor executor,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(0);
+        MandateRegistry registry = executor.evaluator().registry();
+        registry.updateMandate(plan.mandateId, _rules(0.5 ether, 0));
+        vm.deal(address(vault), 1 ether);
+
+        bool tightenedReverted;
+        try
+            executor.execute(vault, plan, _sign(executor, plan, privateKey))
+        {} catch {
+            tightenedReverted = true;
+        }
+
+        registry.updateMandate(plan.mandateId, _rules(1 ether, 0));
+        executor.execute(vault, plan, _sign(executor, plan, privateKey));
+
+        assert(tightenedReverted);
+        assert(address(0xBEEF).balance == 1 ether);
+        assert(address(vault).balance == 0);
+        assert(registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+    }
+
+    function test_normalExecutionIsBlockedAfterMandateRevocation() public {
+        (
+            Vault vault,
+            VaultExecutor executor,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(0);
+        MandateRegistry registry = executor.evaluator().registry();
+        registry.revokeMandate(plan.mandateId);
+        vm.deal(address(vault), 1 ether);
+
+        bool reverted;
+        try
+            executor.execute(vault, plan, _sign(executor, plan, privateKey))
+        {} catch {
+            reverted = true;
+        }
+
+        assert(reverted);
+        assert(!registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+        assert(address(0xBEEF).balance == 0);
+        assert(address(vault).balance == 1 ether);
+    }
+
     function test_acceptsTokenCallWithNoReturnData() public {
         (
             Vault vault,
