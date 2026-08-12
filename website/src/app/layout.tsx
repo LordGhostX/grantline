@@ -1,4 +1,5 @@
 import { RootProvider } from "fumadocs-ui/provider/next";
+import { Analytics } from "@vercel/analytics/next";
 import { Geist, Geist_Mono } from "next/font/google";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
@@ -31,6 +32,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     >
       <body className="flex flex-col min-h-screen">
         <RootProvider theme={{ enabled: false }}>{children}</RootProvider>
+        <Analytics />
       </body>
     </html>
   );
