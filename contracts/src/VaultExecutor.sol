@@ -7,6 +7,7 @@ import {EscalationManager} from "./EscalationManager.sol";
 import {MandateEvaluator} from "./MandateEvaluator.sol";
 import {MandateRegistry} from "./MandateRegistry.sol";
 import {Vault} from "./Vault.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IERC20TransferLike {
     function transfer(
@@ -15,7 +16,7 @@ interface IERC20TransferLike {
     ) external returns (bool);
 }
 
-contract VaultExecutor {
+contract VaultExecutor is ReentrancyGuard {
     error ActionExecutionFailed(uint256 actionIndex);
     error EvaluationDenied(
         MandateEvaluator.Decision decision,
@@ -81,7 +82,7 @@ contract VaultExecutor {
         Vault vault,
         ActionTypes.ActionPlan calldata plan,
         bytes calldata signature
-    ) external returns (bytes32 actionDigest) {
+    ) external nonReentrant returns (bytes32 actionDigest) {
         MandateEvaluator.EvaluationResult memory evaluation = evaluator
             .evaluate(plan, signature);
         if (evaluation.decision != MandateEvaluator.Decision.ALLOW) {
@@ -110,7 +111,7 @@ contract VaultExecutor {
 
     function executeEscalated(
         bytes32 actionDigest
-    ) external returns (bytes32 executedDigest) {
+    ) external nonReentrant returns (bytes32 executedDigest) {
         EscalationManager.Escalation memory escalation = escalationManager
             .getEscalation(actionDigest);
         if (escalation.status != EscalationManager.Status.APPROVED) {

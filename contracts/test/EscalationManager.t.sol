@@ -22,6 +22,29 @@ interface EscalationVm {
     ) external returns (uint8 v, bytes32 r, bytes32 s);
 }
 
+contract ReentrantEscalationRecipient {
+    address public executor;
+    bytes32 public nestedDigest;
+    bool public attempted;
+    bool public blocked;
+
+    function configure(address executor_, bytes32 nestedDigest_) external {
+        executor = executor_;
+        nestedDigest = nestedDigest_;
+    }
+
+    receive() external payable {
+        attempted = true;
+        (bool success, ) = executor.call(
+            abi.encodeWithSelector(
+                VaultExecutor.executeEscalated.selector,
+                nestedDigest
+            )
+        );
+        blocked = !success;
+    }
+}
+
 contract EscalationManagerTest {
     EscalationVm private constant vm =
         EscalationVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
@@ -99,6 +122,78 @@ contract EscalationManagerTest {
                 bytes32(0)
         );
         assert(manager.statusOf(digest) == EscalationManager.Status.EXECUTED);
+    }
+
+    function test_reentrantApprovedEscalationCannotBypassPreflightReserve()
+        public
+    {
+        (
+            Vault vault,
+            MandateRegistry registry,
+            MandateEvaluator evaluator,
+            EscalationManager manager,
+            VaultExecutor executor,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(500_000_000_000_000, true);
+        registry.updateMandate(
+            plan.mandateId,
+            _rules(500_000_000_000_000, true, 0, false),
+            _preflight(1 ether, true)
+        );
+
+        uint256 nestedMandateId = registry.createMandate(
+            address(vault),
+            plan.agent,
+            _rules(500_000_000_000_000, true, 0, false),
+            _preflight(0, false)
+        );
+        ActionTypes.ActionPlan memory nestedPlan = _copyPlanWithNonce(plan, 2);
+        nestedPlan.mandateId = nestedMandateId;
+        nestedPlan.actions[0] = _transferAction(
+            address(0),
+            address(0xCAFE),
+            1 ether
+        );
+
+        ReentrantEscalationRecipient recipient = new ReentrantEscalationRecipient();
+        plan.actions[0] = _transferAction(
+            address(0),
+            address(recipient),
+            1 ether
+        );
+
+        bytes32 nestedDigest = manager.submit(
+            nestedPlan,
+            _sign(evaluator, nestedPlan, privateKey)
+        );
+        bytes32 digest = manager.submit(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+        manager.approve(nestedDigest);
+        manager.approve(digest);
+        recipient.configure(address(executor), nestedDigest);
+        vm.deal(address(vault), 2 ether);
+
+        assert(executor.executeEscalated(digest) == digest);
+
+        assert(recipient.attempted());
+        assert(recipient.blocked());
+        assert(address(0xCAFE).balance == 0);
+        assert(address(vault).balance == 1 ether);
+        assert(registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+        assert(
+            !registry.nonceUsed(
+                nestedPlan.mandateId,
+                nestedPlan.agent,
+                nestedPlan.nonce
+            )
+        );
+        assert(manager.statusOf(digest) == EscalationManager.Status.EXECUTED);
+        assert(
+            manager.statusOf(nestedDigest) == EscalationManager.Status.APPROVED
+        );
     }
 
     function test_deniedEscalationReservesNonceAndBlocksNormalBypass() public {

@@ -70,6 +70,27 @@ contract RevertingReceiver {
     }
 }
 
+contract ReentrantNativeRecipient {
+    address public executor;
+    bytes public nestedCallData;
+    bool public attempted;
+    bool public blocked;
+
+    function configure(
+        address executor_,
+        bytes calldata nestedCallData_
+    ) external {
+        executor = executor_;
+        nestedCallData = nestedCallData_;
+    }
+
+    receive() external payable {
+        attempted = true;
+        (bool success, ) = executor.call(nestedCallData);
+        blocked = !success;
+    }
+}
+
 contract ExecutorMockUsdValueProvider is IUsdValueProvider {
     uint256 private immutable _usdAmount;
     bool private immutable _available;
@@ -499,6 +520,68 @@ contract VaultExecutorTest {
         assert(!registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
         assert(address(vault).balance == 2 ether);
         assert(address(0xBEEF).balance == 0);
+    }
+
+    function test_reentrantNormalPlanCannotBypassPreflightReserve() public {
+        (
+            Vault vault,
+            VaultExecutor executor,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(0);
+        MandateRegistry registry = executor.evaluator().registry();
+        registry.updateMandate(
+            plan.mandateId,
+            _rules(0, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 1 ether,
+                escalateNativeBalance: false
+            })
+        );
+
+        ReentrantNativeRecipient recipient = new ReentrantNativeRecipient();
+        ActionTypes.ActionPlan memory nestedPlan = ActionTypes.ActionPlan({
+            mandateId: plan.mandateId,
+            agent: plan.agent,
+            nonce: 2,
+            deadline: plan.deadline,
+            actions: new ActionTypes.Action[](1)
+        });
+        nestedPlan.actions[0] = _transferAction(
+            address(0),
+            address(0xCAFE),
+            1 ether
+        );
+        bytes memory nestedSignature = _sign(executor, nestedPlan, privateKey);
+        recipient.configure(
+            address(executor),
+            abi.encodeCall(
+                VaultExecutor.execute,
+                (vault, nestedPlan, nestedSignature)
+            )
+        );
+
+        plan.actions[0] = _transferAction(
+            address(0),
+            address(recipient),
+            1 ether
+        );
+        vm.deal(address(vault), 2 ether);
+
+        executor.execute(vault, plan, _sign(executor, plan, privateKey));
+
+        assert(recipient.attempted());
+        assert(recipient.blocked());
+        assert(address(0xCAFE).balance == 0);
+        assert(address(vault).balance == 1 ether);
+        assert(registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+        assert(
+            !registry.nonceUsed(
+                nestedPlan.mandateId,
+                nestedPlan.agent,
+                nestedPlan.nonce
+            )
+        );
     }
 
     function test_normalExecutionIsBlockedAfterMandateRevocation() public {
