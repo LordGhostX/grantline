@@ -20,16 +20,24 @@ interface TestnetIntegrationVm {
 }
 
 contract TestnetIntegration is ScriptBase {
-    uint256 internal constant DEPOSIT_AMOUNT = 6_000_000_000_000_000;
+    uint256 internal constant DEPOSIT_AMOUNT = 20_000_000_000_000_000;
     uint256 internal constant TRANSACTION_LIMIT = 1_000_000_000_000_000;
     uint256 internal constant SUCCESS_AMOUNT = 1_000_000_000_000_000;
     uint256 internal constant DENIED_AMOUNT = 1_100_000_000_000_000;
     uint256 internal constant REUSED_NONCE_AMOUNT = 500_000_000_000_000;
     uint256 internal constant ESCALATED_AMOUNT = 2_000_000_000_000_000;
     uint256 internal constant SECOND_ESCALATED_AMOUNT = 2_100_000_000_000_000;
+    uint256 internal constant ROOT_PREFLIGHT_FLOOR = 15_500_000_000_000_000;
+    uint256 internal constant CHILD_TRANSACTION_LIMIT = 1_500_000_000_000_000;
+    uint256 internal constant CHILD_SUCCESS_AMOUNT = 500_000_000_000_000;
+    uint256 internal constant GRANDCHILD_TRANSACTION_LIMIT =
+        1_400_000_000_000_000;
+    uint256 internal constant ROOT_LOOSENED_LIMIT = 3_000_000_000_000_000;
+    uint256 internal constant ROOT_TIGHTENED_LIMIT = 1_200_000_000_000_000;
     uint256 internal constant SUCCESS_NONCE = 1;
     uint256 internal constant DENIED_NONCE = 2;
     uint256 internal constant FIRST_ESCALATION_NONCE = 3;
+    uint256 internal constant CHILD_PREFLIGHT_NONCE = 2;
 
     TestnetIntegrationVm private constant integrationVm =
         TestnetIntegrationVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
@@ -76,19 +84,8 @@ contract TestnetIntegration is ScriptBase {
         stack.registry.createMandate(
             address(stack.vault),
             agent,
-            MandateRegistry.MandateRules({
-                minNativeAmount: 0,
-                maxNativeAmount: TRANSACTION_LIMIT,
-                escalateNativeAmount: false,
-                minUsdAmount: 0,
-                maxUsdAmount: 0,
-                escalateUsdAmount: false,
-                canDelegate: false
-            }),
-            MandateRegistry.PreflightRules({
-                minNativeBalance: 0,
-                escalateNativeBalance: false
-            })
+            _rules(TRANSACTION_LIMIT, true, true),
+            _preflight(ROOT_PREFLIGHT_FLOOR, true)
         );
         vm.stopBroadcast();
     }
@@ -97,13 +94,12 @@ contract TestnetIntegration is ScriptBase {
         uint256 mandateId
     ) external returns (bytes32 actionDigest) {
         Stack memory stack = _stack();
-        uint256 agentKey = vm.envUint("BURNER_AGENT_PRIVATE_KEY");
-        address recipient = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
+        uint256 agentKey = _primaryKey();
         ActionTypes.ActionPlan memory plan = _plan(
             mandateId,
             SUCCESS_NONCE,
             SUCCESS_AMOUNT,
-            recipient
+            _ownerAddress()
         );
         bytes memory signature = _sign(plan, stack.evaluator, agentKey);
 
@@ -116,13 +112,12 @@ contract TestnetIntegration is ScriptBase {
         uint256 mandateId
     ) external returns (bytes32 actionDigest) {
         Stack memory stack = _stack();
-        uint256 agentKey = vm.envUint("BURNER_AGENT_PRIVATE_KEY");
-        address recipient = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
+        uint256 agentKey = _primaryKey();
         ActionTypes.ActionPlan memory plan = _plan(
             mandateId,
             DENIED_NONCE,
             REUSED_NONCE_AMOUNT,
-            recipient
+            _ownerAddress()
         );
         bytes memory signature = _sign(plan, stack.evaluator, agentKey);
 
@@ -135,13 +130,12 @@ contract TestnetIntegration is ScriptBase {
         uint256 mandateId
     ) external returns (bytes memory callData) {
         Stack memory stack = _stack();
-        uint256 agentKey = vm.envUint("BURNER_AGENT_PRIVATE_KEY");
-        address recipient = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
+        uint256 agentKey = _primaryKey();
         ActionTypes.ActionPlan memory plan = _plan(
             mandateId,
             DENIED_NONCE,
             DENIED_AMOUNT,
-            recipient
+            _ownerAddress()
         );
         bytes memory signature = _sign(plan, stack.evaluator, agentKey);
         callData = _callData(stack.vault, plan, signature);
@@ -151,13 +145,12 @@ contract TestnetIntegration is ScriptBase {
         uint256 mandateId
     ) external returns (bytes memory callData) {
         Stack memory stack = _stack();
-        uint256 agentKey = vm.envUint("BURNER_AGENT_PRIVATE_KEY");
-        address recipient = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
+        uint256 agentKey = _primaryKey();
         ActionTypes.ActionPlan memory plan = _plan(
             mandateId,
             SUCCESS_NONCE,
             SUCCESS_AMOUNT,
-            recipient
+            _ownerAddress()
         );
         bytes memory signature = _sign(plan, stack.evaluator, agentKey);
         callData = _callData(stack.vault, plan, signature);
@@ -179,44 +172,35 @@ contract TestnetIntegration is ScriptBase {
         uint256 amount
     ) public returns (bytes memory callData) {
         Stack memory stack = _stack();
-        uint256 agentKey = vm.envUint("BURNER_AGENT_PRIVATE_KEY");
-        address recipient = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
+        uint256 agentKey = _primaryKey();
         ActionTypes.ActionPlan memory plan = _plan(
             mandateId,
             nonce,
             amount,
-            recipient
+            _ownerAddress()
         );
         bytes memory signature = _sign(plan, stack.evaluator, agentKey);
         callData = _callData(stack.vault, plan, signature);
     }
 
-    function updateMandate(
+    function updateRootMandate(
         uint256 mandateId,
         uint256 maxNativeAmount,
         bool escalateNativeAmount
     ) external {
-        Stack memory stack = _stack();
-        uint256 ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-
-        vm.startBroadcast(ownerKey);
-        stack.registry.updateMandate(
+        _updateMandate(
             mandateId,
-            MandateRegistry.MandateRules({
-                minNativeAmount: 0,
-                maxNativeAmount: maxNativeAmount,
-                escalateNativeAmount: escalateNativeAmount,
-                minUsdAmount: 0,
-                maxUsdAmount: 0,
-                escalateUsdAmount: false,
-                canDelegate: false
-            }),
-            MandateRegistry.PreflightRules({
-                minNativeBalance: 0,
-                escalateNativeBalance: false
-            })
+            _rules(maxNativeAmount, escalateNativeAmount, true),
+            _preflight(ROOT_PREFLIGHT_FLOOR, true)
         );
-        vm.stopBroadcast();
+    }
+
+    function loosenRoot(uint256 mandateId) external {
+        _updateMandate(
+            mandateId,
+            _rules(ROOT_LOOSENED_LIMIT, true, true),
+            _preflight(ROOT_PREFLIGHT_FLOOR, true)
+        );
     }
 
     function submitEscalation(
@@ -225,7 +209,7 @@ contract TestnetIntegration is ScriptBase {
         uint256 amount
     ) external returns (bytes32 actionDigest) {
         Stack memory stack = _stack();
-        uint256 agentKey = vm.envUint("BURNER_AGENT_PRIVATE_KEY");
+        uint256 agentKey = _primaryKey();
         (
             ActionTypes.ActionPlan memory plan,
             bytes memory signature
@@ -313,32 +297,13 @@ contract TestnetIntegration is ScriptBase {
         );
     }
 
-    function denyEscalation(
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount
-    ) external {
-        Stack memory stack = _stack();
-        uint256 ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        bytes32 actionDigest = _digest(
-            stack.evaluator,
-            mandateId,
-            nonce,
-            amount
-        );
-
-        vm.startBroadcast(ownerKey);
-        stack.manager.deny(actionDigest);
-        vm.stopBroadcast();
-    }
-
     function executeEscalated(
         uint256 mandateId,
         uint256 nonce,
         uint256 amount
     ) external returns (bytes32 actionDigest) {
         Stack memory stack = _stack();
-        uint256 agentKey = vm.envUint("BURNER_AGENT_PRIVATE_KEY");
+        uint256 agentKey = _primaryKey();
         actionDigest = _digest(stack.evaluator, mandateId, nonce, amount);
 
         vm.startBroadcast(agentKey);
@@ -346,48 +311,159 @@ contract TestnetIntegration is ScriptBase {
         vm.stopBroadcast();
     }
 
-    function executeEscalatedCalldata(
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount
+    function createChildMandate(
+        uint256 parentMandateId
+    ) external returns (uint256 mandateId) {
+        Stack memory stack = _stack();
+        uint256 agentKey = _primaryKey();
+        address delegatedAgent = _delegatedAgentAddress();
+
+        vm.startBroadcast(agentKey);
+        mandateId = stack.registry.createChildMandate(
+            parentMandateId,
+            delegatedAgent,
+            _rules(CHILD_TRANSACTION_LIMIT, false, true),
+            _preflight(ROOT_PREFLIGHT_FLOOR, false)
+        );
+        vm.stopBroadcast();
+    }
+
+    function childSuccess(
+        uint256 childMandateId
+    ) external returns (bytes32 actionDigest) {
+        Stack memory stack = _stack();
+        uint256 agentKey = _delegatedKey();
+        ActionTypes.ActionPlan memory plan = _delegatedPlan(
+            childMandateId,
+            SUCCESS_NONCE,
+            CHILD_SUCCESS_AMOUNT,
+            _ownerAddress()
+        );
+        bytes memory signature = _sign(plan, stack.evaluator, agentKey);
+
+        vm.startBroadcast(agentKey);
+        actionDigest = stack.executor.execute(stack.vault, plan, signature);
+        vm.stopBroadcast();
+    }
+
+    function childPreflightCalldata(
+        uint256 childMandateId
     ) external returns (bytes memory callData) {
         Stack memory stack = _stack();
-        bytes32 actionDigest = _digest(
-            stack.evaluator,
-            mandateId,
-            nonce,
-            amount
+        uint256 agentKey = _delegatedKey();
+        ActionTypes.ActionPlan memory plan = _delegatedPlan(
+            childMandateId,
+            CHILD_PREFLIGHT_NONCE,
+            CHILD_TRANSACTION_LIMIT,
+            _ownerAddress()
         );
-        callData = abi.encodeWithSelector(
-            VaultExecutor.executeEscalated.selector,
-            actionDigest
+        bytes memory signature = _sign(plan, stack.evaluator, agentKey);
+        callData = _callData(stack.vault, plan, signature);
+    }
+
+    function updateChildPreflight(
+        uint256 childMandateId,
+        bool escalateNativeBalance
+    ) external {
+        _updateMandate(
+            childMandateId,
+            _rules(CHILD_TRANSACTION_LIMIT, false, true),
+            _preflight(ROOT_PREFLIGHT_FLOOR, escalateNativeBalance)
         );
     }
 
-    function createRevocationMandate() external returns (uint256 mandateId) {
+    function submitDelegatedEscalation(
+        uint256 childMandateId,
+        uint256 nonce,
+        uint256 amount
+    ) external returns (bytes32 actionDigest) {
+        Stack memory stack = _stack();
+        uint256 agentKey = _delegatedKey();
+        (
+            ActionTypes.ActionPlan memory plan,
+            bytes memory signature
+        ) = _signedDelegatedPlan(
+                stack.evaluator,
+                childMandateId,
+                nonce,
+                amount
+            );
+
+        vm.startBroadcast(agentKey);
+        actionDigest = stack.manager.submit(plan, signature);
+        vm.stopBroadcast();
+    }
+
+    function approveDelegatedEscalation(
+        uint256 childMandateId,
+        uint256 nonce,
+        uint256 amount
+    ) external {
         Stack memory stack = _stack();
         uint256 ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        address agent = _agentAddress();
+        bytes32 actionDigest = _delegatedDigest(
+            stack.evaluator,
+            childMandateId,
+            nonce,
+            amount
+        );
 
         vm.startBroadcast(ownerKey);
-        mandateId = stack.registry.createMandate(
-            address(stack.vault),
-            agent,
-            MandateRegistry.MandateRules({
-                minNativeAmount: 0,
-                maxNativeAmount: TRANSACTION_LIMIT,
-                escalateNativeAmount: true,
-                minUsdAmount: 0,
-                maxUsdAmount: 0,
-                escalateUsdAmount: false,
-                canDelegate: false
-            }),
-            MandateRegistry.PreflightRules({
-                minNativeBalance: 0,
-                escalateNativeBalance: false
-            })
+        stack.manager.approve(actionDigest);
+        vm.stopBroadcast();
+    }
+
+    function executeDelegatedEscalated(
+        uint256 childMandateId,
+        uint256 nonce,
+        uint256 amount
+    ) external returns (bytes32 actionDigest) {
+        Stack memory stack = _stack();
+        uint256 agentKey = _delegatedKey();
+        actionDigest = _delegatedDigest(
+            stack.evaluator,
+            childMandateId,
+            nonce,
+            amount
+        );
+
+        vm.startBroadcast(agentKey);
+        stack.executor.executeEscalated(actionDigest);
+        vm.stopBroadcast();
+    }
+
+    function createGrandchildMandate(
+        uint256 childMandateId
+    ) external returns (uint256 mandateId) {
+        Stack memory stack = _stack();
+        uint256 agentKey = _delegatedKey();
+
+        vm.startBroadcast(agentKey);
+        mandateId = stack.registry.createChildMandate(
+            childMandateId,
+            _agentAddress(),
+            _rules(GRANDCHILD_TRANSACTION_LIMIT, false, false),
+            _preflight(ROOT_PREFLIGHT_FLOOR, false)
         );
         vm.stopBroadcast();
+    }
+
+    function tightenRoot(uint256 rootMandateId) external {
+        _updateMandate(
+            rootMandateId,
+            _rules(ROOT_TIGHTENED_LIMIT, false, true),
+            _preflight(ROOT_PREFLIGHT_FLOOR, true)
+        );
+    }
+
+    function grandchildRevokeCalldata(
+        uint256 grandchildMandateId
+    ) external returns (bytes memory callData) {
+        _delegatedKey();
+        callData = abi.encodeWithSelector(
+            MandateRegistry.revokeMandate.selector,
+            grandchildMandateId
+        );
     }
 
     function revokeMandate(uint256 mandateId) external {
@@ -429,15 +505,52 @@ contract TestnetIntegration is ScriptBase {
         );
     }
 
-    function _agentAddress() private returns (address agent) {
-        uint256 agentKey = vm.envUint("BURNER_AGENT_PRIVATE_KEY");
-        agent = vm.addr(agentKey);
-        address expectedAgent = integrationVm.envAddress(
-            "BURNER_AGENT_PUBLIC_KEY"
-        );
-        if (agent != expectedAgent) {
-            revert AgentKeyMismatch(expectedAgent, agent);
+    function _updateMandate(
+        uint256 mandateId,
+        MandateRegistry.MandateRules memory rules,
+        MandateRegistry.PreflightRules memory preflightRules
+    ) private {
+        Stack memory stack = _stack();
+        uint256 ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+
+        vm.startBroadcast(ownerKey);
+        stack.registry.updateMandate(mandateId, rules, preflightRules);
+        vm.stopBroadcast();
+    }
+
+    function _primaryKey() private returns (uint256 key) {
+        key = vm.envUint("AGENT_PRIVATE_KEY");
+        _requireAgentAddress(key, "AGENT_PUBLIC_KEY");
+    }
+
+    function _delegatedKey() private returns (uint256 key) {
+        key = vm.envUint("DELEGATED_AGENT_PRIVATE_KEY");
+        _requireAgentAddress(key, "DELEGATED_AGENT_PUBLIC_KEY");
+    }
+
+    function _requireAgentAddress(
+        uint256 agentKey,
+        string memory publicKeyName
+    ) private {
+        address actualAgent = vm.addr(agentKey);
+        address expectedAgent = integrationVm.envAddress(publicKeyName);
+        if (actualAgent != expectedAgent) {
+            revert AgentKeyMismatch(expectedAgent, actualAgent);
         }
+    }
+
+    function _ownerAddress() private returns (address) {
+        return vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
+    }
+
+    function _agentAddress() private returns (address agent) {
+        uint256 agentKey = _primaryKey();
+        agent = vm.addr(agentKey);
+    }
+
+    function _delegatedAgentAddress() private returns (address agent) {
+        uint256 agentKey = _delegatedKey();
+        agent = vm.addr(agentKey);
     }
 
     function _plan(
@@ -446,6 +559,37 @@ contract TestnetIntegration is ScriptBase {
         uint256 amount,
         address recipient
     ) private returns (ActionTypes.ActionPlan memory plan) {
+        plan = _planForAgent(
+            mandateId,
+            nonce,
+            amount,
+            recipient,
+            _agentAddress()
+        );
+    }
+
+    function _delegatedPlan(
+        uint256 mandateId,
+        uint256 nonce,
+        uint256 amount,
+        address recipient
+    ) private returns (ActionTypes.ActionPlan memory plan) {
+        plan = _planForAgent(
+            mandateId,
+            nonce,
+            amount,
+            recipient,
+            _delegatedAgentAddress()
+        );
+    }
+
+    function _planForAgent(
+        uint256 mandateId,
+        uint256 nonce,
+        uint256 amount,
+        address recipient,
+        address agent
+    ) private pure returns (ActionTypes.ActionPlan memory plan) {
         ActionTypes.TransferParameters memory transfer = ActionTypes
             .TransferParameters({
                 asset: address(0),
@@ -460,7 +604,7 @@ contract TestnetIntegration is ScriptBase {
         });
         plan = ActionTypes.ActionPlan({
             mandateId: mandateId,
-            agent: _agentAddress(),
+            agent: agent,
             nonce: nonce,
             deadline: 0,
             actions: actions
@@ -503,9 +647,22 @@ contract TestnetIntegration is ScriptBase {
         private
         returns (ActionTypes.ActionPlan memory plan, bytes memory signature)
     {
-        uint256 agentKey = vm.envUint("BURNER_AGENT_PRIVATE_KEY");
-        address recipient = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
-        plan = _plan(mandateId, nonce, amount, recipient);
+        uint256 agentKey = _primaryKey();
+        plan = _plan(mandateId, nonce, amount, _ownerAddress());
+        signature = _sign(plan, evaluator, agentKey);
+    }
+
+    function _signedDelegatedPlan(
+        MandateEvaluator evaluator,
+        uint256 mandateId,
+        uint256 nonce,
+        uint256 amount
+    )
+        private
+        returns (ActionTypes.ActionPlan memory plan, bytes memory signature)
+    {
+        uint256 agentKey = _delegatedKey();
+        plan = _delegatedPlan(mandateId, nonce, amount, _ownerAddress());
         signature = _sign(plan, evaluator, agentKey);
     }
 
@@ -515,16 +672,76 @@ contract TestnetIntegration is ScriptBase {
         uint256 nonce,
         uint256 amount
     ) private returns (bytes32 actionDigest) {
-        ActionTypes.ActionPlan memory plan = _plan(
+        actionDigest = _digestForAgent(
+            evaluator,
             mandateId,
             nonce,
             amount,
-            vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"))
+            _agentAddress()
+        );
+    }
+
+    function _delegatedDigest(
+        MandateEvaluator evaluator,
+        uint256 mandateId,
+        uint256 nonce,
+        uint256 amount
+    ) private returns (bytes32 actionDigest) {
+        actionDigest = _digestForAgent(
+            evaluator,
+            mandateId,
+            nonce,
+            amount,
+            _delegatedAgentAddress()
+        );
+    }
+
+    function _digestForAgent(
+        MandateEvaluator evaluator,
+        uint256 mandateId,
+        uint256 nonce,
+        uint256 amount,
+        address agent
+    ) private returns (bytes32 actionDigest) {
+        ActionTypes.ActionPlan memory plan = _planForAgent(
+            mandateId,
+            nonce,
+            amount,
+            _ownerAddress(),
+            agent
         );
         actionDigest = ActionSignature.digest(
             plan,
             address(evaluator),
             block.chainid
         );
+    }
+
+    function _rules(
+        uint256 maxNativeAmount,
+        bool escalateNativeAmount,
+        bool canDelegate
+    ) private pure returns (MandateRegistry.MandateRules memory) {
+        return
+            MandateRegistry.MandateRules({
+                canDelegate: canDelegate,
+                minNativeAmount: 0,
+                maxNativeAmount: maxNativeAmount,
+                escalateNativeAmount: escalateNativeAmount,
+                minUsdAmount: 0,
+                maxUsdAmount: 0,
+                escalateUsdAmount: false
+            });
+    }
+
+    function _preflight(
+        uint256 minNativeBalance,
+        bool escalateNativeBalance
+    ) private pure returns (MandateRegistry.PreflightRules memory) {
+        return
+            MandateRegistry.PreflightRules({
+                minNativeBalance: minNativeBalance,
+                escalateNativeBalance: escalateNativeBalance
+            });
     }
 }
