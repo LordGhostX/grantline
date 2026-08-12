@@ -5,6 +5,8 @@ import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {Vault} from "../src/Vault.sol";
 
 interface RegistryTestVm {
+    function expectRevert(bytes calldata revertData) external;
+
     function prank(address sender) external;
 }
 
@@ -1033,6 +1035,72 @@ contract MandateRegistryTest {
             registry.getMandate(childId).status ==
                 MandateRegistry.MandateStatus.REVOKED
         );
+    }
+
+    function test_inactiveParentAgentCannotRevokeGrandchild() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address rootAgent = address(0xA11CE);
+        address childAgent = address(0xB0B);
+        uint256 rootId = registry.createMandate(
+            address(vault),
+            rootAgent,
+            _delegatableRules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
+
+        vm.prank(rootAgent);
+        uint256 childId = registry.createChildMandate(
+            rootId,
+            childAgent,
+            _delegatableRules(8 ether, 800e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
+
+        vm.prank(childAgent);
+        uint256 grandchildId = registry.createChildMandate(
+            childId,
+            address(0xCAFE),
+            _rules(5 ether, 500e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
+
+        registry.revokeMandate(rootId);
+        assert(
+            registry.getMandate(childId).status ==
+                MandateRegistry.MandateStatus.ACTIVE
+        );
+        assert(!registry.isLineageActive(grandchildId));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MandateRegistry.MandateLineageInactive.selector,
+                childId,
+                rootId
+            )
+        );
+        vm.prank(childAgent);
+        registry.revokeMandate(grandchildId);
+
+        MandateRegistry.Mandate memory grandchild = registry.getMandate(
+            grandchildId
+        );
+        assert(grandchild.status == MandateRegistry.MandateStatus.ACTIVE);
+        assert(grandchild.revokedAt == 0);
+
+        registry.revokeMandate(grandchildId);
+        grandchild = registry.getMandate(grandchildId);
+        assert(grandchild.status == MandateRegistry.MandateStatus.REVOKED);
+        assert(grandchild.revokedAt > 0);
     }
 
     function test_rejectsInvalidAmountRanges() public {

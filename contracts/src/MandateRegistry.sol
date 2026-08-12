@@ -577,10 +577,8 @@ contract MandateRegistry {
         if (_isVaultOwner(mandate.vault, msg.sender)) return;
         if (mandate.parentMandateId != 0) {
             Mandate storage parent = _mandates[mandate.parentMandateId];
-            if (
-                parent.status == MandateStatus.ACTIVE &&
-                parent.agent == msg.sender
-            ) {
+            if (parent.agent == msg.sender) {
+                _requireActiveLineage(mandate.parentMandateId);
                 return;
             }
         }
