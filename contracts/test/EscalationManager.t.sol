@@ -55,6 +55,14 @@ contract EscalationManagerTest {
         ) = _setup(1 ether, true);
         address recipient = address(0xBEEF);
         plan.actions[0] = _transferAction(address(0), recipient, 2 ether);
+        registry.updateMandate(
+            plan.mandateId,
+            _rules(1 ether, true, 0, false),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 1 ether,
+                escalateNativeBalance: true
+            })
+        );
         bytes memory signature = _sign(evaluator, plan, privateKey);
         bytes32 digest = manager.submit(plan, signature);
 
@@ -109,7 +117,14 @@ contract EscalationManagerTest {
         bytes32 digest = manager.submit(plan, signature);
         manager.deny(digest);
 
-        registry.updateMandate(plan.mandateId, _rules(0, false, 0, false));
+        registry.updateMandate(
+            plan.mandateId,
+            _rules(0, false, 0, false),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
         vm.deal(address(vault), 3 ether);
 
         bool reverted;
@@ -131,7 +146,11 @@ contract EscalationManagerTest {
         address recipient = address(0xBEEF);
         state.registry.updateMandate(
             state.pendingPlan.mandateId,
-            _rules(0, false, 0, false)
+            _rules(0, false, 0, false),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         vm.deal(address(state.vault), 5 ether);
 
@@ -211,6 +230,10 @@ contract EscalationManagerTest {
                 maxUsdAmount: 0,
                 escalateUsdAmount: false,
                 canDelegate: false
+            }),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
             })
         );
         bytes memory signature = _sign(evaluator, plan, privateKey);
@@ -242,7 +265,11 @@ contract EscalationManagerTest {
 
         registry.updateMandate(
             plan.mandateId,
-            _rules(1 ether, false, 0, false)
+            _rules(1 ether, false, 0, false),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         vm.deal(address(vault), 3 ether);
 
@@ -276,7 +303,11 @@ contract EscalationManagerTest {
 
         registry.updateMandate(
             plan.mandateId,
-            _rules(3 ether, false, 0, false)
+            _rules(3 ether, false, 0, false),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         vm.deal(address(vault), 3 ether);
 
@@ -380,14 +411,22 @@ contract EscalationManagerTest {
         uint256 parentId = registry.createMandate(
             address(vault),
             parentAgent,
-            _delegatableEscalationRules(1 ether)
+            _delegatableEscalationRules(1 ether),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         vm.prank(parentAgent);
         uint256 childId = registry.createChildMandate(
             parentId,
             childAgent,
-            _childEscalationRules(500_000_000_000_000)
+            _childEscalationRules(500_000_000_000_000),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         MandateEvaluator evaluator = new MandateEvaluator(
             address(registry),
@@ -474,7 +513,11 @@ contract EscalationManagerTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            _rules(maxNativeAmount, escalateNativeAmount, 0, false)
+            _rules(maxNativeAmount, escalateNativeAmount, 0, false),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         evaluator = new MandateEvaluator(address(registry), address(0), true);
         manager = new EscalationManager(address(evaluator));
@@ -505,6 +548,17 @@ contract EscalationManagerTest {
                 maxUsdAmount: maxUsdAmount,
                 escalateUsdAmount: escalateUsdAmount,
                 canDelegate: false
+            });
+    }
+
+    function _preflight(
+        uint256 minNativeBalance,
+        bool escalateNativeBalance
+    ) private pure returns (MandateRegistry.PreflightRules memory) {
+        return
+            MandateRegistry.PreflightRules({
+                minNativeBalance: minNativeBalance,
+                escalateNativeBalance: escalateNativeBalance
             });
     }
 

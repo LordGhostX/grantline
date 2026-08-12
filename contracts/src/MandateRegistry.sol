@@ -31,6 +31,11 @@ contract MandateRegistry {
         bool escalateUsdAmount;
     }
 
+    struct PreflightRules {
+        uint256 minNativeBalance;
+        bool escalateNativeBalance;
+    }
+
     struct Mandate {
         uint256 id;
         address owner;
@@ -40,6 +45,7 @@ contract MandateRegistry {
         uint8 delegationDepth;
         MandateStatus status;
         MandateRules rules;
+        PreflightRules preflightRules;
         uint64 createdAt;
         uint64 revokedAt;
     }
@@ -77,6 +83,7 @@ contract MandateRegistry {
     error NotMandateAdministrator(uint256 mandateId, address caller);
     error MandateLineageInactive(uint256 mandateId, uint256 inactiveAncestorId);
     error ChildRulesExceedParent(uint256 parentMandateId);
+    error ChildPreflightRulesExceedParent(uint256 parentMandateId);
 
     event MandateCreated(
         uint256 indexed mandateId,
@@ -86,12 +93,14 @@ contract MandateRegistry {
         uint256 parentMandateId,
         uint8 delegationDepth,
         MandateRules rules,
+        PreflightRules preflightRules,
         address createdBy,
         uint64 createdAt
     );
     event MandateUpdated(
         uint256 indexed mandateId,
         MandateRules rules,
+        PreflightRules preflightRules,
         address indexed updatedBy,
         uint64 updatedAt
     );
@@ -123,19 +132,22 @@ contract MandateRegistry {
     function createMandate(
         address vault,
         address agent,
-        MandateRules calldata rules
+        MandateRules calldata rules,
+        PreflightRules calldata preflightRules
     ) external returns (uint256 mandateId) {
-        mandateId = _createMandate(vault, agent, rules);
+        mandateId = _createMandate(vault, agent, rules, preflightRules);
     }
 
     function _createMandate(
         address vault,
         address agent,
-        MandateRules memory rules
+        MandateRules memory rules,
+        PreflightRules memory preflightRules
     ) private returns (uint256 mandateId) {
         _requireValidAddresses(vault, agent);
         _requireVaultOwner(vault, msg.sender);
         _validateRules(rules);
+        _validatePreflightRules(preflightRules);
 
         mandateId = ++mandateCount;
         uint64 createdAt = uint64(block.timestamp);
@@ -148,6 +160,7 @@ contract MandateRegistry {
             delegationDepth: 0,
             status: MandateStatus.ACTIVE,
             rules: rules,
+            preflightRules: preflightRules,
             createdAt: createdAt,
             revokedAt: 0
         });
@@ -160,6 +173,7 @@ contract MandateRegistry {
             0,
             0,
             rules,
+            preflightRules,
             msg.sender,
             createdAt
         );
@@ -168,7 +182,8 @@ contract MandateRegistry {
     function createChildMandate(
         uint256 parentMandateId,
         address childAgent,
-        MandateRules calldata rules
+        MandateRules calldata rules,
+        PreflightRules calldata preflightRules
     ) external returns (uint256 mandateId) {
         Mandate storage parent = _activeMandate(parentMandateId);
         if (parent.agent != msg.sender) {
@@ -177,6 +192,9 @@ contract MandateRegistry {
 
         _requireActiveLineage(parentMandateId);
         MandateRules memory parentRules = _effectiveRules(parentMandateId);
+        PreflightRules memory parentPreflightRules = _effectivePreflightRules(
+            parentMandateId
+        );
         if (!parentRules.canDelegate) {
             revert MandateNotDelegatable(parentMandateId);
         }
@@ -194,7 +212,13 @@ contract MandateRegistry {
         }
 
         _validateRules(rules);
+        _validatePreflightRules(preflightRules);
         _validateChildRules(parentMandateId, parentRules, rules);
+        _validateChildPreflightRules(
+            parentMandateId,
+            parentPreflightRules,
+            preflightRules
+        );
         address vaultOwner = _vaultOwner(parent.vault);
 
         mandateId = ++mandateCount;
@@ -208,6 +232,7 @@ contract MandateRegistry {
             delegationDepth: childDepth,
             status: MandateStatus.ACTIVE,
             rules: rules,
+            preflightRules: preflightRules,
             createdAt: createdAt,
             revokedAt: 0
         });
@@ -220,6 +245,7 @@ contract MandateRegistry {
             parentMandateId,
             childDepth,
             rules,
+            preflightRules,
             msg.sender,
             createdAt
         );
@@ -227,14 +253,16 @@ contract MandateRegistry {
 
     function updateMandate(
         uint256 mandateId,
-        MandateRules calldata rules
+        MandateRules calldata rules,
+        PreflightRules calldata preflightRules
     ) external {
-        _updateMandate(mandateId, rules);
+        _updateMandate(mandateId, rules, preflightRules);
     }
 
     function _updateMandate(
         uint256 mandateId,
-        MandateRules memory rules
+        MandateRules memory rules,
+        PreflightRules memory preflightRules
     ) private {
         Mandate storage mandate = _activeMandate(mandateId);
         _requireMandateAdministrator(mandateId, mandate);
@@ -242,6 +270,7 @@ contract MandateRegistry {
             rules.canDelegate = false;
         }
         _validateRules(rules);
+        _validatePreflightRules(preflightRules);
         if (mandate.parentMandateId != 0) {
             _requireActiveLineage(mandate.parentMandateId);
             _validateChildRules(
@@ -249,13 +278,20 @@ contract MandateRegistry {
                 _effectiveRules(mandate.parentMandateId),
                 rules
             );
+            _validateChildPreflightRules(
+                mandate.parentMandateId,
+                _effectivePreflightRules(mandate.parentMandateId),
+                preflightRules
+            );
         }
 
         mandate.rules = rules;
+        mandate.preflightRules = preflightRules;
 
         emit MandateUpdated(
             mandateId,
             rules,
+            preflightRules,
             msg.sender,
             uint64(block.timestamp)
         );
@@ -371,6 +407,13 @@ contract MandateRegistry {
         return _effectiveRules(mandateId);
     }
 
+    function getEffectivePreflightRules(
+        uint256 mandateId
+    ) external view returns (PreflightRules memory) {
+        _requireActiveLineage(mandateId);
+        return _effectivePreflightRules(mandateId);
+    }
+
     function isActive(uint256 mandateId) external view returns (bool) {
         if (mandateId == 0 || mandateId > mandateCount) return false;
         return _mandates[mandateId].status == MandateStatus.ACTIVE;
@@ -463,6 +506,24 @@ contract MandateRegistry {
         }
     }
 
+    function _effectivePreflightRules(
+        uint256 mandateId
+    ) private view returns (PreflightRules memory effective) {
+        effective = _mandates[mandateId].preflightRules;
+        uint256 currentMandateId = _mandates[mandateId].parentMandateId;
+        while (currentMandateId != 0) {
+            PreflightRules storage parentRules = _mandates[currentMandateId]
+                .preflightRules;
+            if (parentRules.minNativeBalance > effective.minNativeBalance) {
+                effective.minNativeBalance = parentRules.minNativeBalance;
+            }
+            effective.escalateNativeBalance =
+                effective.escalateNativeBalance &&
+                parentRules.escalateNativeBalance;
+            currentMandateId = _mandates[currentMandateId].parentMandateId;
+        }
+    }
+
     function _validateChildRules(
         uint256 parentMandateId,
         MandateRules memory parentRules,
@@ -489,6 +550,23 @@ contract MandateRegistry {
             (childRules.canDelegate && !parentRules.canDelegate)
         ) {
             revert ChildRulesExceedParent(parentMandateId);
+        }
+    }
+
+    function _validateChildPreflightRules(
+        uint256 parentMandateId,
+        PreflightRules memory parentRules,
+        PreflightRules memory childRules
+    ) private pure {
+        if (
+            (parentRules.minNativeBalance != 0 &&
+                (childRules.minNativeBalance == 0 ||
+                    childRules.minNativeBalance <
+                    parentRules.minNativeBalance)) ||
+            (childRules.escalateNativeBalance &&
+                !parentRules.escalateNativeBalance)
+        ) {
+            revert ChildPreflightRulesExceedParent(parentMandateId);
         }
     }
 
@@ -626,4 +704,6 @@ contract MandateRegistry {
             );
         }
     }
+
+    function _validatePreflightRules(PreflightRules memory) private pure {}
 }

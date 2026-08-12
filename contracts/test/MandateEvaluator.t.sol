@@ -18,6 +18,8 @@ interface EvaluatorVm {
     function warp(uint256 timestamp) external;
 
     function prank(address sender) external;
+
+    function deal(address account, uint256 newBalance) external;
 }
 
 contract MockUsdValueProvider is IUsdValueProvider {
@@ -64,6 +66,7 @@ contract MandateEvaluatorTest {
         assert(result.failureCode == MandateEvaluator.FailureCode.NONE);
         assert(result.failedActionIndex == type(uint256).max);
         assert(result.nativeAmount == 7 ether);
+        assert(result.nativeBalanceAfter == 0);
     }
 
     function test_childEvaluationUsesInheritedRulesAndRevocation() public {
@@ -76,14 +79,22 @@ contract MandateEvaluatorTest {
         uint256 parentId = registry.createMandate(
             address(vault),
             parentAgent,
-            _delegatableRules(10 ether)
+            _delegatableRules(10 ether),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         vm.prank(parentAgent);
         uint256 childId = registry.createChildMandate(
             parentId,
             childAgent,
-            _rules(5 ether, 0)
+            _rules(5 ether, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         MandateEvaluator evaluator = new MandateEvaluator(
             address(registry),
@@ -717,6 +728,10 @@ contract MandateEvaluatorTest {
                 maxUsdAmount: 0,
                 escalateUsdAmount: false,
                 canDelegate: false
+            }),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
             })
         );
         registry.revokeMandate(mandateId);
@@ -924,6 +939,128 @@ contract MandateEvaluatorTest {
 
         assert(result.decision == MandateEvaluator.Decision.ALLOW);
         assert(result.nativeAmount == 0);
+    }
+
+    function test_preflightAllowsExactProjectedNativeBalanceFloor() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithPreflight(1 ether, false, 2 ether);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
+        assert(result.failureCode == MandateEvaluator.FailureCode.NONE);
+        assert(result.nativeBalanceAfter == 1 ether);
+    }
+
+    function test_preflightDeniesProjectedBalanceBelowFloor() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithPreflight(2 ether, false, 2 ether);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.DENY);
+        assert(
+            result.failureCode ==
+                MandateEvaluator
+                    .FailureCode
+                    .PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM
+        );
+        assert(result.nativeBalanceAfter == 1 ether);
+    }
+
+    function test_preflightEscalatesProjectedBalanceBelowFloor() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithPreflight(2 ether, true, 2 ether);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.ESCALATE);
+        assert(
+            result.failureCode ==
+                MandateEvaluator
+                    .FailureCode
+                    .PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM
+        );
+    }
+
+    function test_preflightDeniesWhenCurrentBalanceCannotFundNativePlan()
+        public
+    {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithPreflight(1 ether, false, 0);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.DENY);
+        assert(
+            result.failureCode ==
+                MandateEvaluator
+                    .FailureCode
+                    .PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM
+        );
+        assert(result.nativeBalanceAfter == 0);
+    }
+
+    function test_preflightUsesAggregateNativeOutflow() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithPreflight(1 ether, false, 3 ether);
+        plan.actions = new ActionTypes.Action[](2);
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 1 ether);
+        plan.actions[1] = _transferAction(address(0), address(0xD00D), 1 ether);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
+        assert(result.nativeAmount == 2 ether);
+        assert(result.nativeBalanceAfter == 1 ether);
+    }
+
+    function test_preflightChecksReserveForTokenOnlyPlan() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithPreflight(1 ether, false, 1 ether);
+        plan.actions[0] = _transferAction(address(0xCAFE), address(0xBEEF), 1);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
+        assert(result.nativeAmount == 0);
+        assert(result.nativeBalanceAfter == 1 ether);
     }
 
     function test_rejectsUsdAmountBelowMinimum() public {
@@ -1180,7 +1317,11 @@ contract MandateEvaluatorTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            rules
+            rules,
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         evaluator = new MandateEvaluator(
             address(registry),
@@ -1188,6 +1329,44 @@ contract MandateEvaluatorTest {
             skipUnavailableUsdValuation
         );
         plan = _plan(mandateId, agent, 1 ether, 0);
+    }
+
+    function _setupWithPreflight(
+        uint256 minNativeBalance,
+        bool escalateNativeBalance,
+        uint256 vaultBalance
+    )
+        private
+        returns (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        )
+    {
+        privateKey = 0xA11CE;
+        address agent = vm.addr(privateKey);
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        uint256 mandateId = registry.createMandate(
+            address(vault),
+            agent,
+            _rules(0, 0),
+            _preflight(minNativeBalance, escalateNativeBalance)
+        );
+        evaluator = new MandateEvaluator(address(registry), address(0), true);
+        vm.deal(address(vault), vaultBalance);
+        plan = _plan(mandateId, agent, 1 ether, 0);
+    }
+
+    function _preflight(
+        uint256 minNativeBalance,
+        bool escalateNativeBalance
+    ) private pure returns (MandateRegistry.PreflightRules memory) {
+        return
+            MandateRegistry.PreflightRules({
+                minNativeBalance: minNativeBalance,
+                escalateNativeBalance: escalateNativeBalance
+            });
     }
 
     function _plan(

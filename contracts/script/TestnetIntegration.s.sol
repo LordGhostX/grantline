@@ -84,6 +84,10 @@ contract TestnetIntegration is ScriptBase {
                 maxUsdAmount: 0,
                 escalateUsdAmount: false,
                 canDelegate: false
+            }),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
             })
         );
         vm.stopBroadcast();
@@ -206,6 +210,10 @@ contract TestnetIntegration is ScriptBase {
                 maxUsdAmount: 0,
                 escalateUsdAmount: false,
                 canDelegate: false
+            }),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
             })
         );
         vm.stopBroadcast();
@@ -373,6 +381,10 @@ contract TestnetIntegration is ScriptBase {
                 maxUsdAmount: 0,
                 escalateUsdAmount: false,
                 canDelegate: false
+            }),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
             })
         );
         vm.stopBroadcast();

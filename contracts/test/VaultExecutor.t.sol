@@ -97,7 +97,8 @@ contract VaultExecutorTest {
         uint256 nativeAmount,
         uint256 usdAmount,
         bool usdLimitSkipped,
-        uint256 actionCount
+        uint256 actionCount,
+        uint256 nativeBalanceAfter
     );
 
     ExecutorVm private constant vm =
@@ -129,7 +130,8 @@ contract VaultExecutorTest {
             1 ether,
             0,
             false,
-            1
+            1,
+            1 ether
         );
         bytes32 actionDigest = executor.execute(
             vault,
@@ -200,7 +202,8 @@ contract VaultExecutorTest {
             0,
             0,
             false,
-            1
+            1,
+            0
         );
         executor.execute(vault, plan, _sign(executor, plan, privateKey));
 
@@ -233,7 +236,8 @@ contract VaultExecutorTest {
             1 ether,
             500e18,
             false,
-            1
+            1,
+            1 ether
         );
 
         executor.execute(vault, plan, _sign(executor, plan, privateKey));
@@ -433,7 +437,14 @@ contract VaultExecutorTest {
             uint256 privateKey
         ) = _setup(0);
         MandateRegistry registry = executor.evaluator().registry();
-        registry.updateMandate(plan.mandateId, _rules(0.5 ether, 0));
+        registry.updateMandate(
+            plan.mandateId,
+            _rules(0.5 ether, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
         vm.deal(address(vault), 1 ether);
 
         bool tightenedReverted;
@@ -443,13 +454,51 @@ contract VaultExecutorTest {
             tightenedReverted = true;
         }
 
-        registry.updateMandate(plan.mandateId, _rules(1 ether, 0));
+        registry.updateMandate(
+            plan.mandateId,
+            _rules(1 ether, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
         executor.execute(vault, plan, _sign(executor, plan, privateKey));
 
         assert(tightenedReverted);
         assert(address(0xBEEF).balance == 1 ether);
         assert(address(vault).balance == 0);
         assert(registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+    }
+
+    function test_normalExecutionPreflightDenyDoesNotConsumeNonce() public {
+        (
+            Vault vault,
+            VaultExecutor executor,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setup(0);
+        MandateRegistry registry = executor.evaluator().registry();
+        registry.updateMandate(
+            plan.mandateId,
+            _rules(0, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 2 ether,
+                escalateNativeBalance: false
+            })
+        );
+        vm.deal(address(vault), 2 ether);
+
+        bool reverted;
+        try
+            executor.execute(vault, plan, _sign(executor, plan, privateKey))
+        {} catch {
+            reverted = true;
+        }
+
+        assert(reverted);
+        assert(!registry.nonceUsed(plan.mandateId, plan.agent, plan.nonce));
+        assert(address(vault).balance == 2 ether);
+        assert(address(0xBEEF).balance == 0);
     }
 
     function test_normalExecutionIsBlockedAfterMandateRevocation() public {
@@ -677,7 +726,11 @@ contract VaultExecutorTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            _rules(maxNativeAmount, 0)
+            _rules(maxNativeAmount, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         MandateEvaluator evaluator = new MandateEvaluator(
             address(registry),
@@ -717,7 +770,11 @@ contract VaultExecutorTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            _rules(maxNativeAmount, maxUsdAmount)
+            _rules(maxNativeAmount, maxUsdAmount),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         ExecutorMockUsdValueProvider provider = new ExecutorMockUsdValueProvider(
                 usdAmount,

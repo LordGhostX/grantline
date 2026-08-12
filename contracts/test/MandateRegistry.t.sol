@@ -47,7 +47,11 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            _rules(10 ether, 1_000e18)
+            _rules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         MandateRegistry.Mandate memory mandate = registry.getMandate(mandateId);
 
@@ -74,7 +78,11 @@ contract MandateRegistryTest {
             registry.createMandate(
                 address(0),
                 address(0xA11CE),
-                _rules(1 ether, 0)
+                _rules(1 ether, 0),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
             )
         {} catch {
             zeroAddressReverted = true;
@@ -83,7 +91,11 @@ contract MandateRegistryTest {
             registry.createMandate(
                 address(vault),
                 address(0xA11CE),
-                _rules(0, 0)
+                _rules(0, 0),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
             )
         {
             zeroTransactionLimitAllowed = true;
@@ -92,7 +104,11 @@ contract MandateRegistryTest {
             registry.createMandate(
                 address(0xBEEF),
                 address(0xA11CE),
-                _rules(1 ether, 0)
+                _rules(1 ether, 0),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
             )
         {} catch {
             unknownVaultReverted = true;
@@ -114,7 +130,11 @@ contract MandateRegistryTest {
             registry.createMandate(
                 address(vault),
                 address(0xA11CE),
-                _rules(1 ether, 0)
+                _rules(1 ether, 0),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
             )
         {} catch {
             reverted = true;
@@ -130,17 +150,35 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             address(0xA11CE),
-            _rules(10 ether, 1_000e18)
+            _rules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
-        registry.updateMandate(mandateId, _rules(20 ether, 2_000e18));
+        registry.updateMandate(
+            mandateId,
+            _rules(20 ether, 2_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
         MandateRegistry.Mandate memory mandate = registry.getMandate(mandateId);
 
         assert(mandate.rules.maxNativeAmount == 20 ether);
         assert(mandate.rules.maxUsdAmount == 2_000e18);
         assert(mandate.status == MandateRegistry.MandateStatus.ACTIVE);
 
-        registry.updateMandate(mandateId, _rules(0, 0));
+        registry.updateMandate(
+            mandateId,
+            _rules(0, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
         assert(registry.getMandate(mandateId).rules.maxNativeAmount == 0);
         assert(registry.getMandate(mandateId).rules.maxUsdAmount == 0);
     }
@@ -152,7 +190,11 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            _rules(0, 0)
+            _rules(0, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         vault.setAuthority(address(this));
 
@@ -174,7 +216,11 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            _rules(0, 0)
+            _rules(0, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         vault.setAuthority(address(this));
 
@@ -202,7 +248,11 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            _rules(0, 0)
+            _rules(0, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         RegistryAuthorityStub firstAuthority = new RegistryAuthorityStub(
             address(this)
@@ -274,16 +324,34 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             address(0xA11CE),
-            _rules(10 ether, 1_000e18)
+            _rules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         vault.transferOwnership(newOwner);
 
         vm.prank(newOwner);
-        registry.updateMandate(mandateId, _rules(20 ether, 2_000e18));
+        registry.updateMandate(
+            mandateId,
+            _rules(20 ether, 2_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
 
         bool formerOwnerReverted;
         try
-            registry.updateMandate(mandateId, _rules(30 ether, 3_000e18))
+            registry.updateMandate(
+                mandateId,
+                _rules(30 ether, 3_000e18),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
+            )
         {} catch {
             formerOwnerReverted = true;
         }
@@ -302,7 +370,11 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            _rules(10 ether, 1_000e18)
+            _rules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         registry.revokeMandate(mandateId);
@@ -321,14 +393,25 @@ contract MandateRegistryTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             address(0xA11CE),
-            _rules(10 ether, 1_000e18)
+            _rules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         registry.revokeMandate(mandateId);
         bool updateReverted;
         bool revokeReverted;
 
         try
-            registry.updateMandate(mandateId, _rules(20 ether, 2_000e18))
+            registry.updateMandate(
+                mandateId,
+                _rules(20 ether, 2_000e18),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
+            )
         {} catch {
             updateReverted = true;
         }
@@ -346,13 +429,21 @@ contract MandateRegistryTest {
         uint256 firstId = registry.createMandate(
             address(vault),
             address(0xA11CE),
-            _rules(10 ether, 1_000e18)
+            _rules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         registry.revokeMandate(firstId);
         uint256 secondId = registry.createMandate(
             address(vault),
             address(0xB0B),
-            _rules(5 ether, 500e18)
+            _rules(5 ether, 500e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         assert(firstId == 1);
@@ -384,21 +475,33 @@ contract MandateRegistryTest {
         uint256 rootId = registry.createMandate(
             address(vault),
             treasuryAgent,
-            _delegatableRules(10 ether, 1_000e18)
+            _delegatableRules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         vm.prank(treasuryAgent);
         uint256 childId = registry.createChildMandate(
             rootId,
             executionAgent,
-            _delegatableRules(8 ether, 800e18)
+            _delegatableRules(8 ether, 800e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         vm.prank(executionAgent);
         uint256 grandchildId = registry.createChildMandate(
             childId,
             paymentAgent,
-            _rules(5 ether, 500e18)
+            _rules(5 ether, 500e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         MandateRegistry.Mandate memory child = registry.getMandate(childId);
@@ -431,26 +534,178 @@ contract MandateRegistryTest {
         uint256 rootId = registry.createMandate(
             address(vault),
             parentAgent,
-            _delegatableRules(10 ether, 1_000e18)
+            _delegatableRules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         vm.prank(parentAgent);
         uint256 childId = registry.createChildMandate(
             rootId,
             address(0xB0B),
-            _rules(8 ether, 800e18)
+            _rules(8 ether, 800e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         assert(registry.getEffectiveRules(childId).maxNativeAmount == 8 ether);
 
-        registry.updateMandate(rootId, _delegatableRules(5 ether, 500e18));
+        registry.updateMandate(
+            rootId,
+            _delegatableRules(5 ether, 500e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
         assert(registry.getEffectiveRules(childId).maxNativeAmount == 5 ether);
 
-        registry.updateMandate(rootId, _delegatableRules(9 ether, 900e18));
+        registry.updateMandate(
+            rootId,
+            _delegatableRules(9 ether, 900e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
         assert(registry.getEffectiveRules(childId).maxNativeAmount == 8 ether);
 
-        registry.updateMandate(rootId, _rules(9 ether, 900e18));
+        registry.updateMandate(
+            rootId,
+            _rules(9 ether, 900e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
         assert(!registry.getEffectiveRules(childId).canDelegate);
+    }
+
+    function test_inheritsStrictestPreflightRulesAndEscalationPermission()
+        public
+    {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address rootAgent = address(0xA11CE);
+        address childAgent = address(0xB0B);
+        address grandchildAgent = address(0xCAFE);
+
+        uint256 rootId = registry.createMandate(
+            address(vault),
+            rootAgent,
+            _delegatableRules(10 ether, 0),
+            _preflight(3 ether, true)
+        );
+
+        vm.prank(rootAgent);
+        uint256 childId = registry.createChildMandate(
+            rootId,
+            childAgent,
+            _delegatableRules(8 ether, 0),
+            _preflight(5 ether, true)
+        );
+
+        vm.prank(childAgent);
+        uint256 grandchildId = registry.createChildMandate(
+            childId,
+            grandchildAgent,
+            _rules(5 ether, 0),
+            _preflight(7 ether, false)
+        );
+
+        MandateRegistry.PreflightRules memory childEffective = registry
+            .getEffectivePreflightRules(childId);
+        MandateRegistry.PreflightRules memory grandchildEffective = registry
+            .getEffectivePreflightRules(grandchildId);
+        assert(childEffective.minNativeBalance == 5 ether);
+        assert(childEffective.escalateNativeBalance);
+        assert(grandchildEffective.minNativeBalance == 7 ether);
+        assert(!grandchildEffective.escalateNativeBalance);
+    }
+
+    function test_rejectsBroaderChildPreflightRules() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address parentAgent = address(0xA11CE);
+        uint256 rootId = registry.createMandate(
+            address(vault),
+            parentAgent,
+            _delegatableRules(10 ether, 0),
+            _preflight(5 ether, false)
+        );
+
+        bool lowerMinimumReverted;
+        vm.prank(parentAgent);
+        try
+            registry.createChildMandate(
+                rootId,
+                address(0xB0B),
+                _rules(8 ether, 0),
+                _preflight(4 ether, false)
+            )
+        {} catch {
+            lowerMinimumReverted = true;
+        }
+
+        bool broaderEscalationReverted;
+        vm.prank(parentAgent);
+        try
+            registry.createChildMandate(
+                rootId,
+                address(0xCAFE),
+                _rules(8 ether, 0),
+                _preflight(5 ether, true)
+            )
+        {} catch {
+            broaderEscalationReverted = true;
+        }
+
+        assert(lowerMinimumReverted);
+        assert(broaderEscalationReverted);
+    }
+
+    function test_parentPreflightTighteningChangesChildEffectiveFloor() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address parentAgent = address(0xA11CE);
+        uint256 rootId = registry.createMandate(
+            address(vault),
+            parentAgent,
+            _delegatableRules(10 ether, 0),
+            _preflight(3 ether, true)
+        );
+
+        vm.prank(parentAgent);
+        uint256 childId = registry.createChildMandate(
+            rootId,
+            address(0xB0B),
+            _rules(8 ether, 0),
+            _preflight(5 ether, true)
+        );
+
+        registry.updateMandate(
+            rootId,
+            _delegatableRules(10 ether, 0),
+            _preflight(8 ether, true)
+        );
+        assert(
+            registry.getEffectivePreflightRules(childId).minNativeBalance ==
+                8 ether
+        );
+
+        registry.updateMandate(
+            rootId,
+            _delegatableRules(10 ether, 0),
+            _preflight(4 ether, true)
+        );
+        assert(
+            registry.getEffectivePreflightRules(childId).minNativeBalance ==
+                5 ether
+        );
     }
 
     function test_capsDelegationDepthAndRejectsDelegatableGrandchild() public {
@@ -462,14 +717,22 @@ contract MandateRegistryTest {
         uint256 rootId = registry.createMandate(
             address(vault),
             rootAgent,
-            _delegatableRules(10 ether, 0)
+            _delegatableRules(10 ether, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         vm.prank(rootAgent);
         uint256 childId = registry.createChildMandate(
             rootId,
             childAgent,
-            _delegatableRules(8 ether, 0)
+            _delegatableRules(8 ether, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         bool grandchildReverted;
@@ -478,7 +741,11 @@ contract MandateRegistryTest {
             registry.createChildMandate(
                 childId,
                 grandchildAgent,
-                _delegatableRules(5 ether, 0)
+                _delegatableRules(5 ether, 0),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
             )
         {} catch {
             grandchildReverted = true;
@@ -495,20 +762,32 @@ contract MandateRegistryTest {
         uint256 rootId = registry.createMandate(
             address(vault),
             rootAgent,
-            _delegatableRules(10 ether, 0)
+            _delegatableRules(10 ether, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         vm.prank(rootAgent);
         uint256 childId = registry.createChildMandate(
             rootId,
             childAgent,
-            _delegatableRules(8 ether, 0)
+            _delegatableRules(8 ether, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         vm.prank(childAgent);
         uint256 grandchildId = registry.createChildMandate(
             childId,
             grandchildAgent,
-            _rules(5 ether, 0)
+            _rules(5 ether, 0),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         registry.updateMandate(
@@ -521,6 +800,10 @@ contract MandateRegistryTest {
                 minUsdAmount: 0,
                 maxUsdAmount: 0,
                 escalateUsdAmount: false
+            }),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
             })
         );
 
@@ -536,7 +819,11 @@ contract MandateRegistryTest {
             registry.createChildMandate(
                 grandchildId,
                 address(0xD00D),
-                _rules(3 ether, 0)
+                _rules(3 ether, 0),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
             )
         {} catch {
             childCreationReverted = true;
@@ -551,26 +838,57 @@ contract MandateRegistryTest {
         uint256 rootId = registry.createMandate(
             address(vault),
             parentAgent,
-            _delegatableRules(10 ether, 1_000e18)
+            _delegatableRules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         vm.prank(parentAgent);
         uint256 childId = registry.createChildMandate(
             rootId,
             address(0xB0B),
-            _rules(8 ether, 800e18)
+            _rules(8 ether, 800e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         vm.prank(parentAgent);
-        registry.updateMandate(childId, _rules(7 ether, 700e18));
+        registry.updateMandate(
+            childId,
+            _rules(7 ether, 700e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
         assert(registry.getMandate(childId).rules.maxNativeAmount == 7 ether);
 
-        registry.updateMandate(childId, _rules(6 ether, 600e18));
+        registry.updateMandate(
+            childId,
+            _rules(6 ether, 600e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
+        );
         assert(registry.getMandate(childId).rules.maxNativeAmount == 6 ether);
 
         bool childAgentReverted;
         vm.prank(address(0xB0B));
-        try registry.updateMandate(childId, _rules(5 ether, 500e18)) {} catch {
+        try
+            registry.updateMandate(
+                childId,
+                _rules(5 ether, 500e18),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
+            )
+        {} catch {
             childAgentReverted = true;
         }
         assert(childAgentReverted);
@@ -590,7 +908,11 @@ contract MandateRegistryTest {
         uint256 rootId = registry.createMandate(
             address(vault),
             parentAgent,
-            _rules(10 ether, 1_000e18)
+            _rules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         bool disabledReverted;
@@ -599,7 +921,11 @@ contract MandateRegistryTest {
             registry.createChildMandate(
                 rootId,
                 address(0xB0B),
-                _rules(5 ether, 500e18)
+                _rules(5 ether, 500e18),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
             )
         {} catch {
             disabledReverted = true;
@@ -609,7 +935,11 @@ contract MandateRegistryTest {
         uint256 delegatableRootId = registry.createMandate(
             address(vault),
             parentAgent,
-            _delegatableRules(10 ether, 1_000e18)
+            _delegatableRules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
         bool callerReverted;
         vm.prank(address(0xD00D));
@@ -617,7 +947,11 @@ contract MandateRegistryTest {
             registry.createChildMandate(
                 delegatableRootId,
                 address(0xB0B),
-                _rules(5 ether, 500e18)
+                _rules(5 ether, 500e18),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
             )
         {} catch {
             callerReverted = true;
@@ -630,7 +964,11 @@ contract MandateRegistryTest {
             registry.createChildMandate(
                 delegatableRootId,
                 address(0xCAFE),
-                _rules(11 ether, 1_000e18)
+                _rules(11 ether, 1_000e18),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
             )
         {} catch {
             broaderReverted = true;
@@ -647,14 +985,22 @@ contract MandateRegistryTest {
         uint256 rootId = registry.createMandate(
             address(vault),
             parentAgent,
-            _delegatableRules(10 ether, 1_000e18)
+            _delegatableRules(10 ether, 1_000e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         vm.prank(parentAgent);
         uint256 childId = registry.createChildMandate(
             rootId,
             address(0xB0B),
-            _rules(5 ether, 500e18)
+            _rules(5 ether, 500e18),
+            MandateRegistry.PreflightRules({
+                minNativeBalance: 0,
+                escalateNativeBalance: false
+            })
         );
 
         registry.revokeMandate(rootId);
@@ -668,7 +1014,16 @@ contract MandateRegistryTest {
 
         bool parentUpdateReverted;
         vm.prank(parentAgent);
-        try registry.updateMandate(childId, _rules(4 ether, 400e18)) {} catch {
+        try
+            registry.updateMandate(
+                childId,
+                _rules(4 ether, 400e18),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
+                })
+            )
+        {} catch {
             parentUpdateReverted = true;
         }
         assert(parentUpdateReverted);
@@ -698,6 +1053,10 @@ contract MandateRegistryTest {
                     maxUsdAmount: 0,
                     escalateUsdAmount: false,
                     canDelegate: false
+                }),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
                 })
             )
         {} catch {
@@ -715,6 +1074,10 @@ contract MandateRegistryTest {
                     maxUsdAmount: 1_000e18,
                     escalateUsdAmount: false,
                     canDelegate: false
+                }),
+                MandateRegistry.PreflightRules({
+                    minNativeBalance: 0,
+                    escalateNativeBalance: false
                 })
             )
         {} catch {
@@ -755,6 +1118,17 @@ contract MandateRegistryTest {
                 maxUsdAmount: maxUsdAmount,
                 escalateUsdAmount: false,
                 canDelegate: true
+            });
+    }
+
+    function _preflight(
+        uint256 minNativeBalance,
+        bool escalateNativeBalance
+    ) private pure returns (MandateRegistry.PreflightRules memory) {
+        return
+            MandateRegistry.PreflightRules({
+                minNativeBalance: minNativeBalance,
+                escalateNativeBalance: escalateNativeBalance
             });
     }
 }

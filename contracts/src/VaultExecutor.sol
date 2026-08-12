@@ -44,7 +44,8 @@ contract VaultExecutor {
         uint256 nativeAmount,
         uint256 usdAmount,
         bool usdLimitSkipped,
-        uint256 actionCount
+        uint256 actionCount,
+        uint256 nativeBalanceAfter
     );
 
     MandateEvaluator public immutable evaluator;
@@ -186,7 +187,8 @@ contract VaultExecutor {
             evaluation.nativeAmount,
             evaluation.usdAmount,
             evaluation.usdLimitSkipped,
-            plan.actions.length
+            plan.actions.length,
+            evaluation.nativeBalanceAfter
         );
     }
 

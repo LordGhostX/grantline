@@ -37,7 +37,8 @@ contract MandateEvaluator {
         USD_AMOUNT_OVERFLOW,
         USD_AMOUNT_BELOW_MINIMUM,
         USD_AMOUNT_ABOVE_MAXIMUM,
-        USD_VALUATION_UNAVAILABLE
+        USD_VALUATION_UNAVAILABLE,
+        PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM
     }
 
     struct EvaluationResult {
@@ -47,6 +48,7 @@ contract MandateEvaluator {
         uint256 nativeAmount;
         uint256 usdAmount;
         bool usdLimitSkipped;
+        uint256 nativeBalanceAfter;
     }
 
     struct Totals {
@@ -54,6 +56,14 @@ contract MandateEvaluator {
         uint256 usdAmount;
         bool usdLimitSkipped;
         bool usdValuationPresent;
+    }
+
+    struct RuleViolations {
+        bool nativeMinimum;
+        bool nativeMaximum;
+        bool usdMinimum;
+        bool usdMaximum;
+        bool preflightNativeBalance;
     }
 
     error InvalidRegistry();
@@ -99,7 +109,8 @@ contract MandateEvaluator {
                     type(uint256).max,
                     0,
                     0,
-                    false
+                    false,
+                    0
                 );
         }
 
@@ -113,7 +124,8 @@ contract MandateEvaluator {
                     type(uint256).max,
                     0,
                     0,
-                    false
+                    false,
+                    0
                 );
         }
         if (!registry.isLineageActive(plan.mandateId)) {
@@ -123,7 +135,8 @@ contract MandateEvaluator {
                     type(uint256).max,
                     0,
                     0,
-                    false
+                    false,
+                    0
                 );
         }
         MandateRegistry.MandateRules memory effectiveRules = registry
@@ -135,7 +148,8 @@ contract MandateEvaluator {
                     type(uint256).max,
                     0,
                     0,
-                    false
+                    false,
+                    0
                 );
         }
         if (
@@ -152,12 +166,20 @@ contract MandateEvaluator {
                     type(uint256).max,
                     0,
                     0,
-                    false
+                    false,
+                    0
                 );
         }
         if (plan.deadline != 0 && block.timestamp > plan.deadline) {
             return
-                _failure(FailureCode.EXPIRED, type(uint256).max, 0, 0, false);
+                _failure(
+                    FailureCode.EXPIRED,
+                    type(uint256).max,
+                    0,
+                    0,
+                    false,
+                    0
+                );
         }
         if (plan.actions.length == 0) {
             return
@@ -166,7 +188,8 @@ contract MandateEvaluator {
                     type(uint256).max,
                     0,
                     0,
-                    false
+                    false,
+                    0
                 );
         }
 
@@ -183,11 +206,25 @@ contract MandateEvaluator {
                     failedActionIndex,
                     totals.nativeAmount,
                     totals.usdAmount,
-                    totals.usdLimitSkipped
+                    totals.usdLimitSkipped,
+                    0
                 );
         }
 
-        return _applyRules(effectiveRules, totals);
+        MandateRegistry.PreflightRules memory preflightRules = registry
+            .getEffectivePreflightRules(plan.mandateId);
+        uint256 currentNativeBalance = mandate.vault.balance;
+        uint256 nativeBalanceAfter = currentNativeBalance >= totals.nativeAmount
+            ? currentNativeBalance - totals.nativeAmount
+            : 0;
+
+        return
+            _applyRules(
+                effectiveRules,
+                preflightRules,
+                totals,
+                nativeBalanceAfter
+            );
     }
 
     function _validatePlan(
@@ -291,25 +328,23 @@ contract MandateEvaluator {
 
     function _applyRules(
         MandateRegistry.MandateRules memory rules,
-        Totals memory totals
+        MandateRegistry.PreflightRules memory preflightRules,
+        Totals memory totals,
+        uint256 nativeBalanceAfter
     ) private pure returns (EvaluationResult memory) {
-        bool nativeMinimumViolated = totals.nativeAmount != 0 &&
-            rules.minNativeAmount != 0 &&
-            totals.nativeAmount < rules.minNativeAmount;
-        bool nativeMaximumViolated = rules.maxNativeAmount != 0 &&
-            totals.nativeAmount > rules.maxNativeAmount;
-        bool usdMinimumViolated = totals.usdValuationPresent &&
-            !totals.usdLimitSkipped &&
-            rules.minUsdAmount != 0 &&
-            totals.usdAmount < rules.minUsdAmount;
-        bool usdMaximumViolated = rules.maxUsdAmount != 0 &&
-            totals.usdAmount > rules.maxUsdAmount;
-        bool nativeViolation = nativeMinimumViolated || nativeMaximumViolated;
-        bool usdViolation = usdMinimumViolated || usdMaximumViolated;
-        FailureCode nativeFailureCode = nativeMinimumViolated
+        RuleViolations memory violations = _findRuleViolations(
+            rules,
+            preflightRules,
+            totals,
+            nativeBalanceAfter
+        );
+        bool nativeViolation = violations.nativeMinimum ||
+            violations.nativeMaximum;
+        bool usdViolation = violations.usdMinimum || violations.usdMaximum;
+        FailureCode nativeFailureCode = violations.nativeMinimum
             ? FailureCode.NATIVE_AMOUNT_BELOW_MINIMUM
             : FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM;
-        FailureCode usdFailureCode = usdMinimumViolated
+        FailureCode usdFailureCode = violations.usdMinimum
             ? FailureCode.USD_AMOUNT_BELOW_MINIMUM
             : FailureCode.USD_AMOUNT_ABOVE_MAXIMUM;
 
@@ -318,9 +353,8 @@ contract MandateEvaluator {
                 _decision(
                     Decision.DENY,
                     nativeFailureCode,
-                    totals.nativeAmount,
-                    totals.usdAmount,
-                    totals.usdLimitSkipped
+                    totals,
+                    nativeBalanceAfter
                 );
         }
         if (usdViolation && !rules.escalateUsdAmount) {
@@ -328,19 +362,33 @@ contract MandateEvaluator {
                 _decision(
                     Decision.DENY,
                     usdFailureCode,
-                    totals.nativeAmount,
-                    totals.usdAmount,
-                    totals.usdLimitSkipped
+                    totals,
+                    nativeBalanceAfter
                 );
         }
-        if (nativeViolation || usdViolation) {
+        if (
+            violations.preflightNativeBalance &&
+            !preflightRules.escalateNativeBalance
+        ) {
+            return
+                _decision(
+                    Decision.DENY,
+                    FailureCode.PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM,
+                    totals,
+                    nativeBalanceAfter
+                );
+        }
+        if (
+            nativeViolation || usdViolation || violations.preflightNativeBalance
+        ) {
             return
                 _decision(
                     Decision.ESCALATE,
-                    nativeViolation ? nativeFailureCode : usdFailureCode,
-                    totals.nativeAmount,
-                    totals.usdAmount,
-                    totals.usdLimitSkipped
+                    nativeViolation ? nativeFailureCode : usdViolation
+                        ? usdFailureCode
+                        : FailureCode.PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM,
+                    totals,
+                    nativeBalanceAfter
                 );
         }
 
@@ -348,10 +396,35 @@ contract MandateEvaluator {
             _decision(
                 Decision.ALLOW,
                 FailureCode.NONE,
-                totals.nativeAmount,
-                totals.usdAmount,
-                totals.usdLimitSkipped
+                totals,
+                nativeBalanceAfter
             );
+    }
+
+    function _findRuleViolations(
+        MandateRegistry.MandateRules memory rules,
+        MandateRegistry.PreflightRules memory preflightRules,
+        Totals memory totals,
+        uint256 nativeBalanceAfter
+    ) private pure returns (RuleViolations memory violations) {
+        violations.nativeMinimum =
+            totals.nativeAmount != 0 &&
+            rules.minNativeAmount != 0 &&
+            totals.nativeAmount < rules.minNativeAmount;
+        violations.nativeMaximum =
+            rules.maxNativeAmount != 0 &&
+            totals.nativeAmount > rules.maxNativeAmount;
+        violations.usdMinimum =
+            totals.usdValuationPresent &&
+            !totals.usdLimitSkipped &&
+            rules.minUsdAmount != 0 &&
+            totals.usdAmount < rules.minUsdAmount;
+        violations.usdMaximum =
+            rules.maxUsdAmount != 0 &&
+            totals.usdAmount > rules.maxUsdAmount;
+        violations.preflightNativeBalance =
+            preflightRules.minNativeBalance != 0 &&
+            nativeBalanceAfter < preflightRules.minNativeBalance;
     }
 
     function _quoteUsd(
@@ -377,7 +450,8 @@ contract MandateEvaluator {
         uint256 actionIndex,
         uint256 nativeAmount,
         uint256 usdAmount,
-        bool usdLimitSkipped
+        bool usdLimitSkipped,
+        uint256 nativeBalanceAfter
     ) private pure returns (EvaluationResult memory) {
         return
             EvaluationResult({
@@ -386,25 +460,26 @@ contract MandateEvaluator {
                 failedActionIndex: actionIndex,
                 nativeAmount: nativeAmount,
                 usdAmount: usdAmount,
-                usdLimitSkipped: usdLimitSkipped
+                usdLimitSkipped: usdLimitSkipped,
+                nativeBalanceAfter: nativeBalanceAfter
             });
     }
 
     function _decision(
         Decision decision,
         FailureCode failureCode,
-        uint256 nativeAmount,
-        uint256 usdAmount,
-        bool usdLimitSkipped
+        Totals memory totals,
+        uint256 nativeBalanceAfter
     ) private pure returns (EvaluationResult memory) {
         return
             EvaluationResult({
                 decision: decision,
                 failureCode: failureCode,
                 failedActionIndex: type(uint256).max,
-                nativeAmount: nativeAmount,
-                usdAmount: usdAmount,
-                usdLimitSkipped: usdLimitSkipped
+                nativeAmount: totals.nativeAmount,
+                usdAmount: totals.usdAmount,
+                usdLimitSkipped: totals.usdLimitSkipped,
+                nativeBalanceAfter: nativeBalanceAfter
             });
     }
 }
