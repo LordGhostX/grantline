@@ -374,6 +374,312 @@ contract MandateRegistryTest {
         assert(!registry.isActive(1));
     }
 
+    function test_createsNestedDelegationAndComputesEffectiveRules() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address treasuryAgent = address(0xA11CE);
+        address executionAgent = address(0xB0B);
+        address paymentAgent = address(0xCAFE);
+
+        uint256 rootId = registry.createMandate(
+            address(vault),
+            treasuryAgent,
+            _delegatableRules(10 ether, 1_000e18)
+        );
+
+        vm.prank(treasuryAgent);
+        uint256 childId = registry.createChildMandate(
+            rootId,
+            executionAgent,
+            _delegatableRules(8 ether, 800e18)
+        );
+
+        vm.prank(executionAgent);
+        uint256 grandchildId = registry.createChildMandate(
+            childId,
+            paymentAgent,
+            _rules(5 ether, 500e18)
+        );
+
+        MandateRegistry.Mandate memory child = registry.getMandate(childId);
+        MandateRegistry.Mandate memory grandchild = registry.getMandate(
+            grandchildId
+        );
+        uint256[] memory lineage = registry.getLineage(grandchildId);
+        MandateRegistry.MandateRules memory effective = registry
+            .getEffectiveRules(grandchildId);
+
+        assert(child.parentMandateId == rootId);
+        assert(child.delegationDepth == 1);
+        assert(grandchild.parentMandateId == childId);
+        assert(grandchild.delegationDepth == 2);
+        assert(lineage.length == 3);
+        assert(lineage[0] == rootId);
+        assert(lineage[1] == childId);
+        assert(lineage[2] == grandchildId);
+        assert(effective.minNativeAmount == 0);
+        assert(effective.maxNativeAmount == 5 ether);
+        assert(effective.maxUsdAmount == 500e18);
+        assert(!effective.canDelegate);
+        assert(registry.isLineageActive(grandchildId));
+    }
+
+    function test_parentTighteningChangesChildEffectiveRules() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address parentAgent = address(0xA11CE);
+        uint256 rootId = registry.createMandate(
+            address(vault),
+            parentAgent,
+            _delegatableRules(10 ether, 1_000e18)
+        );
+
+        vm.prank(parentAgent);
+        uint256 childId = registry.createChildMandate(
+            rootId,
+            address(0xB0B),
+            _rules(8 ether, 800e18)
+        );
+
+        assert(registry.getEffectiveRules(childId).maxNativeAmount == 8 ether);
+
+        registry.updateMandate(rootId, _delegatableRules(5 ether, 500e18));
+        assert(registry.getEffectiveRules(childId).maxNativeAmount == 5 ether);
+
+        registry.updateMandate(rootId, _delegatableRules(9 ether, 900e18));
+        assert(registry.getEffectiveRules(childId).maxNativeAmount == 8 ether);
+
+        registry.updateMandate(rootId, _rules(9 ether, 900e18));
+        assert(!registry.getEffectiveRules(childId).canDelegate);
+    }
+
+    function test_capsDelegationDepthAndRejectsDelegatableGrandchild() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address rootAgent = address(0xA11CE);
+        address childAgent = address(0xB0B);
+        address grandchildAgent = address(0xCAFE);
+        uint256 rootId = registry.createMandate(
+            address(vault),
+            rootAgent,
+            _delegatableRules(10 ether, 0)
+        );
+
+        vm.prank(rootAgent);
+        uint256 childId = registry.createChildMandate(
+            rootId,
+            childAgent,
+            _delegatableRules(8 ether, 0)
+        );
+
+        bool grandchildReverted;
+        vm.prank(childAgent);
+        try
+            registry.createChildMandate(
+                childId,
+                grandchildAgent,
+                _delegatableRules(5 ether, 0)
+            )
+        {} catch {
+            grandchildReverted = true;
+        }
+        assert(grandchildReverted);
+    }
+
+    function test_forcesDepthTwoUpdatesToRemainNonDelegatable() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address rootAgent = address(0xA11CE);
+        address childAgent = address(0xB0B);
+        address grandchildAgent = address(0xCAFE);
+        uint256 rootId = registry.createMandate(
+            address(vault),
+            rootAgent,
+            _delegatableRules(10 ether, 0)
+        );
+
+        vm.prank(rootAgent);
+        uint256 childId = registry.createChildMandate(
+            rootId,
+            childAgent,
+            _delegatableRules(8 ether, 0)
+        );
+        vm.prank(childAgent);
+        uint256 grandchildId = registry.createChildMandate(
+            childId,
+            grandchildAgent,
+            _rules(5 ether, 0)
+        );
+
+        registry.updateMandate(
+            grandchildId,
+            MandateRegistry.MandateRules({
+                canDelegate: true,
+                minNativeAmount: 0,
+                maxNativeAmount: 4 ether,
+                escalateNativeAmount: false,
+                minUsdAmount: 0,
+                maxUsdAmount: 0,
+                escalateUsdAmount: false
+            })
+        );
+
+        MandateRegistry.Mandate memory grandchild = registry.getMandate(
+            grandchildId
+        );
+        assert(!grandchild.rules.canDelegate);
+        assert(!registry.getEffectiveRules(grandchildId).canDelegate);
+
+        bool childCreationReverted;
+        vm.prank(grandchildAgent);
+        try
+            registry.createChildMandate(
+                grandchildId,
+                address(0xD00D),
+                _rules(3 ether, 0)
+            )
+        {} catch {
+            childCreationReverted = true;
+        }
+        assert(childCreationReverted);
+    }
+
+    function test_parentAndOwnerCanAdministerChildWithinInheritance() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address parentAgent = address(0xA11CE);
+        uint256 rootId = registry.createMandate(
+            address(vault),
+            parentAgent,
+            _delegatableRules(10 ether, 1_000e18)
+        );
+
+        vm.prank(parentAgent);
+        uint256 childId = registry.createChildMandate(
+            rootId,
+            address(0xB0B),
+            _rules(8 ether, 800e18)
+        );
+
+        vm.prank(parentAgent);
+        registry.updateMandate(childId, _rules(7 ether, 700e18));
+        assert(registry.getMandate(childId).rules.maxNativeAmount == 7 ether);
+
+        registry.updateMandate(childId, _rules(6 ether, 600e18));
+        assert(registry.getMandate(childId).rules.maxNativeAmount == 6 ether);
+
+        bool childAgentReverted;
+        vm.prank(address(0xB0B));
+        try registry.updateMandate(childId, _rules(5 ether, 500e18)) {} catch {
+            childAgentReverted = true;
+        }
+        assert(childAgentReverted);
+
+        vm.prank(parentAgent);
+        registry.revokeMandate(childId);
+        assert(
+            registry.getMandate(childId).status ==
+                MandateRegistry.MandateStatus.REVOKED
+        );
+    }
+
+    function test_rejectsInvalidDelegationAndBroaderChildRules() public {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address parentAgent = address(0xA11CE);
+        uint256 rootId = registry.createMandate(
+            address(vault),
+            parentAgent,
+            _rules(10 ether, 1_000e18)
+        );
+
+        bool disabledReverted;
+        vm.prank(parentAgent);
+        try
+            registry.createChildMandate(
+                rootId,
+                address(0xB0B),
+                _rules(5 ether, 500e18)
+            )
+        {} catch {
+            disabledReverted = true;
+        }
+        assert(disabledReverted);
+
+        uint256 delegatableRootId = registry.createMandate(
+            address(vault),
+            parentAgent,
+            _delegatableRules(10 ether, 1_000e18)
+        );
+        bool callerReverted;
+        vm.prank(address(0xD00D));
+        try
+            registry.createChildMandate(
+                delegatableRootId,
+                address(0xB0B),
+                _rules(5 ether, 500e18)
+            )
+        {} catch {
+            callerReverted = true;
+        }
+        assert(callerReverted);
+
+        bool broaderReverted;
+        vm.prank(parentAgent);
+        try
+            registry.createChildMandate(
+                delegatableRootId,
+                address(0xCAFE),
+                _rules(11 ether, 1_000e18)
+            )
+        {} catch {
+            broaderReverted = true;
+        }
+        assert(broaderReverted);
+    }
+
+    function test_revokedParentInvalidatesDescendantsButOwnerCanCloseThem()
+        public
+    {
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        address parentAgent = address(0xA11CE);
+        uint256 rootId = registry.createMandate(
+            address(vault),
+            parentAgent,
+            _delegatableRules(10 ether, 1_000e18)
+        );
+
+        vm.prank(parentAgent);
+        uint256 childId = registry.createChildMandate(
+            rootId,
+            address(0xB0B),
+            _rules(5 ether, 500e18)
+        );
+
+        registry.revokeMandate(rootId);
+        assert(!registry.isLineageActive(childId));
+
+        bool effectiveRulesReverted;
+        try registry.getEffectiveRules(childId) {} catch {
+            effectiveRulesReverted = true;
+        }
+        assert(effectiveRulesReverted);
+
+        bool parentUpdateReverted;
+        vm.prank(parentAgent);
+        try registry.updateMandate(childId, _rules(4 ether, 400e18)) {} catch {
+            parentUpdateReverted = true;
+        }
+        assert(parentUpdateReverted);
+
+        registry.revokeMandate(childId);
+        assert(
+            registry.getMandate(childId).status ==
+                MandateRegistry.MandateStatus.REVOKED
+        );
+    }
+
     function test_rejectsInvalidAmountRanges() public {
         Vault vault = new Vault();
         MandateRegistry registry = new MandateRegistry();
@@ -390,7 +696,8 @@ contract MandateRegistryTest {
                     escalateNativeAmount: false,
                     minUsdAmount: 0,
                     maxUsdAmount: 0,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 })
             )
         {} catch {
@@ -406,7 +713,8 @@ contract MandateRegistryTest {
                     escalateNativeAmount: false,
                     minUsdAmount: 2_000e18,
                     maxUsdAmount: 1_000e18,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 })
             )
         {} catch {
@@ -429,7 +737,24 @@ contract MandateRegistryTest {
                 escalateNativeAmount: false,
                 minUsdAmount: 0,
                 maxUsdAmount: maxUsdAmount,
-                escalateUsdAmount: false
+                escalateUsdAmount: false,
+                canDelegate: false
+            });
+    }
+
+    function _delegatableRules(
+        uint256 maxNativeAmount,
+        uint256 maxUsdAmount
+    ) private pure returns (MandateRegistry.MandateRules memory) {
+        return
+            MandateRegistry.MandateRules({
+                minNativeAmount: 0,
+                maxNativeAmount: maxNativeAmount,
+                escalateNativeAmount: false,
+                minUsdAmount: 0,
+                maxUsdAmount: maxUsdAmount,
+                escalateUsdAmount: false,
+                canDelegate: true
             });
     }
 }

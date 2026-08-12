@@ -148,6 +148,9 @@ contract EscalationManager {
         if (mandate.status != MandateRegistry.MandateStatus.ACTIVE) {
             revert MandateInactive(escalation.plan.mandateId);
         }
+        if (!evaluator.registry().isLineageActive(escalation.plan.mandateId)) {
+            revert MandateInactive(escalation.plan.mandateId);
+        }
         _requireVaultOwner(mandate.vault, msg.sender);
 
         escalation.status = Status.APPROVED;

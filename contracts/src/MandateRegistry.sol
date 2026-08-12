@@ -14,12 +14,15 @@ interface IVaultEscalationAuthority {
 }
 
 contract MandateRegistry {
+    uint8 public constant MAX_DELEGATION_DEPTH = 2;
+
     enum MandateStatus {
         ACTIVE,
         REVOKED
     }
 
     struct MandateRules {
+        bool canDelegate;
         uint256 minNativeAmount;
         uint256 maxNativeAmount;
         bool escalateNativeAmount;
@@ -33,6 +36,8 @@ contract MandateRegistry {
         address owner;
         address vault;
         address agent;
+        uint256 parentMandateId;
+        uint8 delegationDepth;
         MandateStatus status;
         MandateRules rules;
         uint64 createdAt;
@@ -65,23 +70,34 @@ contract MandateRegistry {
     error NotVaultEscalationManager(address caller);
     error NotVaultOwner(address caller);
     error InvalidVaultAuthority(address authority);
+    error MandateNotDelegatable(uint256 mandateId);
+    error DelegationDepthExceeded(uint256 parentMandateId, uint8 depth);
+    error InvalidDelegationAgent(address parentAgent, address childAgent);
+    error NotParentAgent(uint256 mandateId, address caller);
+    error NotMandateAdministrator(uint256 mandateId, address caller);
+    error MandateLineageInactive(uint256 mandateId, uint256 inactiveAncestorId);
+    error ChildRulesExceedParent(uint256 parentMandateId);
 
     event MandateCreated(
         uint256 indexed mandateId,
         address indexed owner,
         address indexed vault,
         address agent,
+        uint256 parentMandateId,
+        uint8 delegationDepth,
         MandateRules rules,
+        address createdBy,
         uint64 createdAt
     );
     event MandateUpdated(
         uint256 indexed mandateId,
         MandateRules rules,
+        address indexed updatedBy,
         uint64 updatedAt
     );
     event MandateRevoked(
         uint256 indexed mandateId,
-        address indexed owner,
+        address indexed revokedBy,
         uint64 revokedAt
     );
     event NonceReservationCreated(
@@ -128,6 +144,8 @@ contract MandateRegistry {
             owner: msg.sender,
             vault: vault,
             agent: agent,
+            parentMandateId: 0,
+            delegationDepth: 0,
             status: MandateStatus.ACTIVE,
             rules: rules,
             createdAt: createdAt,
@@ -139,7 +157,70 @@ contract MandateRegistry {
             msg.sender,
             vault,
             agent,
+            0,
+            0,
             rules,
+            msg.sender,
+            createdAt
+        );
+    }
+
+    function createChildMandate(
+        uint256 parentMandateId,
+        address childAgent,
+        MandateRules calldata rules
+    ) external returns (uint256 mandateId) {
+        Mandate storage parent = _activeMandate(parentMandateId);
+        if (parent.agent != msg.sender) {
+            revert NotParentAgent(parentMandateId, msg.sender);
+        }
+
+        _requireActiveLineage(parentMandateId);
+        MandateRules memory parentRules = _effectiveRules(parentMandateId);
+        if (!parentRules.canDelegate) {
+            revert MandateNotDelegatable(parentMandateId);
+        }
+        if (childAgent == address(0)) revert InvalidAddress();
+        if (childAgent == parent.agent) {
+            revert InvalidDelegationAgent(parent.agent, childAgent);
+        }
+
+        uint8 childDepth = parent.delegationDepth + 1;
+        if (childDepth > MAX_DELEGATION_DEPTH) {
+            revert DelegationDepthExceeded(parentMandateId, childDepth);
+        }
+        if (childDepth == MAX_DELEGATION_DEPTH && rules.canDelegate) {
+            revert DelegationDepthExceeded(parentMandateId, childDepth);
+        }
+
+        _validateRules(rules);
+        _validateChildRules(parentMandateId, parentRules, rules);
+        address vaultOwner = _vaultOwner(parent.vault);
+
+        mandateId = ++mandateCount;
+        uint64 createdAt = uint64(block.timestamp);
+        _mandates[mandateId] = Mandate({
+            id: mandateId,
+            owner: vaultOwner,
+            vault: parent.vault,
+            agent: childAgent,
+            parentMandateId: parentMandateId,
+            delegationDepth: childDepth,
+            status: MandateStatus.ACTIVE,
+            rules: rules,
+            createdAt: createdAt,
+            revokedAt: 0
+        });
+
+        emit MandateCreated(
+            mandateId,
+            vaultOwner,
+            parent.vault,
+            childAgent,
+            parentMandateId,
+            childDepth,
+            rules,
+            msg.sender,
             createdAt
         );
     }
@@ -156,17 +237,33 @@ contract MandateRegistry {
         MandateRules memory rules
     ) private {
         Mandate storage mandate = _activeMandate(mandateId);
-        _requireVaultOwner(mandate.vault, msg.sender);
+        _requireMandateAdministrator(mandateId, mandate);
+        if (mandate.delegationDepth == MAX_DELEGATION_DEPTH) {
+            rules.canDelegate = false;
+        }
         _validateRules(rules);
+        if (mandate.parentMandateId != 0) {
+            _requireActiveLineage(mandate.parentMandateId);
+            _validateChildRules(
+                mandate.parentMandateId,
+                _effectiveRules(mandate.parentMandateId),
+                rules
+            );
+        }
 
         mandate.rules = rules;
 
-        emit MandateUpdated(mandateId, rules, uint64(block.timestamp));
+        emit MandateUpdated(
+            mandateId,
+            rules,
+            msg.sender,
+            uint64(block.timestamp)
+        );
     }
 
     function revokeMandate(uint256 mandateId) external {
         Mandate storage mandate = _activeMandate(mandateId);
-        _requireVaultOwner(mandate.vault, msg.sender);
+        _requireMandateAdministrator(mandateId, mandate);
 
         uint64 revokedAt = uint64(block.timestamp);
         mandate.status = MandateStatus.REVOKED;
@@ -181,6 +278,7 @@ contract MandateRegistry {
         uint256 nonce
     ) external {
         Mandate storage mandate = _activeMandate(mandateId);
+        _requireActiveLineage(mandateId);
         _requireMandateAgent(mandate, mandateId, agent);
         _requireVaultAuthority(mandate.vault, msg.sender);
         _requireNonceUnused(mandateId, agent, nonce);
@@ -201,6 +299,7 @@ contract MandateRegistry {
         if (actionDigest == bytes32(0)) revert InvalidReservationDigest();
 
         Mandate storage mandate = _activeMandate(mandateId);
+        _requireActiveLineage(mandateId);
         _requireMandateAgent(mandate, mandateId, agent);
         _requireVaultEscalationManager(mandate.vault, msg.sender);
         _requireNonceUnused(mandateId, agent, nonce);
@@ -222,6 +321,7 @@ contract MandateRegistry {
         if (actionDigest == bytes32(0)) revert InvalidReservationDigest();
 
         Mandate storage mandate = _activeMandate(mandateId);
+        _requireActiveLineage(mandateId);
         _requireMandateAgent(mandate, mandateId, agent);
         _requireVaultAuthority(mandate.vault, msg.sender);
         _requireNonceUnused(mandateId, agent, nonce);
@@ -251,9 +351,41 @@ contract MandateRegistry {
         return _mandates[mandateId];
     }
 
+    function getLineage(
+        uint256 mandateId
+    ) external view returns (uint256[] memory lineage) {
+        _requireMandateExists(mandateId);
+        uint256 length = uint256(_mandates[mandateId].delegationDepth) + 1;
+        lineage = new uint256[](length);
+        uint256 currentMandateId = mandateId;
+        for (uint256 index = length; index > 0; index--) {
+            lineage[index - 1] = currentMandateId;
+            currentMandateId = _mandates[currentMandateId].parentMandateId;
+        }
+    }
+
+    function getEffectiveRules(
+        uint256 mandateId
+    ) external view returns (MandateRules memory) {
+        _requireActiveLineage(mandateId);
+        return _effectiveRules(mandateId);
+    }
+
     function isActive(uint256 mandateId) external view returns (bool) {
         if (mandateId == 0 || mandateId > mandateCount) return false;
         return _mandates[mandateId].status == MandateStatus.ACTIVE;
+    }
+
+    function isLineageActive(uint256 mandateId) external view returns (bool) {
+        if (mandateId == 0 || mandateId > mandateCount) return false;
+        uint256 currentMandateId = mandateId;
+        while (currentMandateId != 0) {
+            if (_mandates[currentMandateId].status != MandateStatus.ACTIVE) {
+                return false;
+            }
+            currentMandateId = _mandates[currentMandateId].parentMandateId;
+        }
+        return true;
     }
 
     function _activeMandate(
@@ -266,6 +398,135 @@ contract MandateRegistry {
         mandate = _mandates[mandateId];
         if (mandate.status != MandateStatus.ACTIVE) {
             revert MandateNotActive(mandateId);
+        }
+    }
+
+    function _requireMandateExists(
+        uint256 mandateId
+    ) private view returns (Mandate storage mandate) {
+        if (mandateId == 0 || mandateId > mandateCount) {
+            revert MandateNotFound(mandateId);
+        }
+        return _mandates[mandateId];
+    }
+
+    function _requireActiveLineage(uint256 mandateId) private view {
+        _requireMandateExists(mandateId);
+        uint256 currentMandateId = mandateId;
+        while (currentMandateId != 0) {
+            Mandate storage current = _mandates[currentMandateId];
+            if (current.status != MandateStatus.ACTIVE) {
+                revert MandateLineageInactive(mandateId, currentMandateId);
+            }
+            currentMandateId = current.parentMandateId;
+        }
+    }
+
+    function _effectiveRules(
+        uint256 mandateId
+    ) private view returns (MandateRules memory effective) {
+        effective = _mandates[mandateId].rules;
+        uint256 currentMandateId = _mandates[mandateId].parentMandateId;
+        while (currentMandateId != 0) {
+            MandateRules storage parentRules = _mandates[currentMandateId]
+                .rules;
+            if (parentRules.minNativeAmount > effective.minNativeAmount) {
+                effective.minNativeAmount = parentRules.minNativeAmount;
+            }
+            if (
+                parentRules.maxNativeAmount != 0 &&
+                (effective.maxNativeAmount == 0 ||
+                    parentRules.maxNativeAmount < effective.maxNativeAmount)
+            ) {
+                effective.maxNativeAmount = parentRules.maxNativeAmount;
+            }
+            if (parentRules.minUsdAmount > effective.minUsdAmount) {
+                effective.minUsdAmount = parentRules.minUsdAmount;
+            }
+            if (
+                parentRules.maxUsdAmount != 0 &&
+                (effective.maxUsdAmount == 0 ||
+                    parentRules.maxUsdAmount < effective.maxUsdAmount)
+            ) {
+                effective.maxUsdAmount = parentRules.maxUsdAmount;
+            }
+            effective.escalateNativeAmount =
+                effective.escalateNativeAmount &&
+                parentRules.escalateNativeAmount;
+            effective.escalateUsdAmount =
+                effective.escalateUsdAmount &&
+                parentRules.escalateUsdAmount;
+            effective.canDelegate =
+                effective.canDelegate &&
+                parentRules.canDelegate;
+            currentMandateId = _mandates[currentMandateId].parentMandateId;
+        }
+    }
+
+    function _validateChildRules(
+        uint256 parentMandateId,
+        MandateRules memory parentRules,
+        MandateRules memory childRules
+    ) private pure {
+        if (
+            (parentRules.minNativeAmount != 0 &&
+                (childRules.minNativeAmount == 0 ||
+                    childRules.minNativeAmount <
+                    parentRules.minNativeAmount)) ||
+            (parentRules.maxNativeAmount != 0 &&
+                (childRules.maxNativeAmount == 0 ||
+                    childRules.maxNativeAmount >
+                    parentRules.maxNativeAmount)) ||
+            (parentRules.minUsdAmount != 0 &&
+                (childRules.minUsdAmount == 0 ||
+                    childRules.minUsdAmount < parentRules.minUsdAmount)) ||
+            (parentRules.maxUsdAmount != 0 &&
+                (childRules.maxUsdAmount == 0 ||
+                    childRules.maxUsdAmount > parentRules.maxUsdAmount)) ||
+            (childRules.escalateNativeAmount &&
+                !parentRules.escalateNativeAmount) ||
+            (childRules.escalateUsdAmount && !parentRules.escalateUsdAmount) ||
+            (childRules.canDelegate && !parentRules.canDelegate)
+        ) {
+            revert ChildRulesExceedParent(parentMandateId);
+        }
+    }
+
+    function _requireMandateAdministrator(
+        uint256 mandateId,
+        Mandate storage mandate
+    ) private view {
+        if (_isVaultOwner(mandate.vault, msg.sender)) return;
+        if (mandate.parentMandateId != 0) {
+            Mandate storage parent = _mandates[mandate.parentMandateId];
+            if (
+                parent.status == MandateStatus.ACTIVE &&
+                parent.agent == msg.sender
+            ) {
+                return;
+            }
+        }
+        revert NotMandateAdministrator(mandateId, msg.sender);
+    }
+
+    function _isVaultOwner(
+        address vault,
+        address caller
+    ) private view returns (bool) {
+        if (vault.code.length == 0) revert InvalidVault();
+        try IVaultOwner(vault).owner() returns (address vaultOwner) {
+            return vaultOwner == caller;
+        } catch {
+            revert InvalidVault();
+        }
+    }
+
+    function _vaultOwner(address vault) private view returns (address owner) {
+        if (vault.code.length == 0) revert InvalidVault();
+        try IVaultOwner(vault).owner() returns (address vaultOwner) {
+            return vaultOwner;
+        } catch {
+            revert InvalidVault();
         }
     }
 

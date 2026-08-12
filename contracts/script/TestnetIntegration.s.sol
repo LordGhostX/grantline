@@ -82,7 +82,8 @@ contract TestnetIntegration is ScriptBase {
                 escalateNativeAmount: false,
                 minUsdAmount: 0,
                 maxUsdAmount: 0,
-                escalateUsdAmount: false
+                escalateUsdAmount: false,
+                canDelegate: false
             })
         );
         vm.stopBroadcast();
@@ -203,7 +204,8 @@ contract TestnetIntegration is ScriptBase {
                 escalateNativeAmount: escalateNativeAmount,
                 minUsdAmount: 0,
                 maxUsdAmount: 0,
-                escalateUsdAmount: false
+                escalateUsdAmount: false,
+                canDelegate: false
             })
         );
         vm.stopBroadcast();
@@ -216,12 +218,10 @@ contract TestnetIntegration is ScriptBase {
     ) external returns (bytes32 actionDigest) {
         Stack memory stack = _stack();
         uint256 agentKey = vm.envUint("BURNER_AGENT_PRIVATE_KEY");
-        (ActionTypes.ActionPlan memory plan, bytes memory signature) = _signedPlan(
-            stack.evaluator,
-            mandateId,
-            nonce,
-            amount
-        );
+        (
+            ActionTypes.ActionPlan memory plan,
+            bytes memory signature
+        ) = _signedPlan(stack.evaluator, mandateId, nonce, amount);
 
         vm.startBroadcast(agentKey);
         actionDigest = stack.manager.submit(plan, signature);
@@ -232,12 +232,15 @@ contract TestnetIntegration is ScriptBase {
         uint256 mandateId
     ) external returns (bytes memory callData) {
         Stack memory stack = _stack();
-        (ActionTypes.ActionPlan memory plan, bytes memory signature) = _signedPlan(
-            stack.evaluator,
-            mandateId,
-            FIRST_ESCALATION_NONCE,
-            ESCALATED_AMOUNT
-        );
+        (
+            ActionTypes.ActionPlan memory plan,
+            bytes memory signature
+        ) = _signedPlan(
+                stack.evaluator,
+                mandateId,
+                FIRST_ESCALATION_NONCE,
+                ESCALATED_AMOUNT
+            );
         callData = abi.encodeWithSelector(
             EscalationManager.submit.selector,
             plan,
@@ -249,12 +252,15 @@ contract TestnetIntegration is ScriptBase {
         uint256 mandateId
     ) external returns (bytes memory callData) {
         Stack memory stack = _stack();
-        (ActionTypes.ActionPlan memory plan, bytes memory signature) = _signedPlan(
-            stack.evaluator,
-            mandateId,
-            FIRST_ESCALATION_NONCE,
-            SECOND_ESCALATED_AMOUNT
-        );
+        (
+            ActionTypes.ActionPlan memory plan,
+            bytes memory signature
+        ) = _signedPlan(
+                stack.evaluator,
+                mandateId,
+                FIRST_ESCALATION_NONCE,
+                SECOND_ESCALATED_AMOUNT
+            );
         callData = abi.encodeWithSelector(
             EscalationManager.submit.selector,
             plan,
@@ -365,7 +371,8 @@ contract TestnetIntegration is ScriptBase {
                 escalateNativeAmount: true,
                 minUsdAmount: 0,
                 maxUsdAmount: 0,
-                escalateUsdAmount: false
+                escalateUsdAmount: false,
+                canDelegate: false
             })
         );
         vm.stopBroadcast();
@@ -480,7 +487,10 @@ contract TestnetIntegration is ScriptBase {
         uint256 mandateId,
         uint256 nonce,
         uint256 amount
-    ) private returns (ActionTypes.ActionPlan memory plan, bytes memory signature) {
+    )
+        private
+        returns (ActionTypes.ActionPlan memory plan, bytes memory signature)
+    {
         uint256 agentKey = vm.envUint("BURNER_AGENT_PRIVATE_KEY");
         address recipient = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
         plan = _plan(mandateId, nonce, amount, recipient);

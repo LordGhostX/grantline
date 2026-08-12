@@ -116,6 +116,18 @@ contract MandateEvaluator {
                     false
                 );
         }
+        if (!registry.isLineageActive(plan.mandateId)) {
+            return
+                _failure(
+                    FailureCode.MANDATE_INACTIVE,
+                    type(uint256).max,
+                    0,
+                    0,
+                    false
+                );
+        }
+        MandateRegistry.MandateRules memory effectiveRules = registry
+            .getEffectiveRules(plan.mandateId);
         if (plan.agent != mandate.agent) {
             return
                 _failure(
@@ -163,7 +175,7 @@ contract MandateEvaluator {
             Totals memory totals,
             FailureCode validationFailure,
             uint256 failedActionIndex
-        ) = _validatePlan(plan, mandate.rules);
+        ) = _validatePlan(plan, effectiveRules);
         if (!valid) {
             return
                 _failure(
@@ -175,7 +187,7 @@ contract MandateEvaluator {
                 );
         }
 
-        return _applyRules(mandate.rules, totals);
+        return _applyRules(effectiveRules, totals);
     }
 
     function _validatePlan(

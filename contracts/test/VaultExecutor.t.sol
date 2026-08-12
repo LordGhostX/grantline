@@ -752,7 +752,8 @@ contract VaultExecutorTest {
                 escalateNativeAmount: false,
                 minUsdAmount: 0,
                 maxUsdAmount: maxUsdAmount,
-                escalateUsdAmount: false
+                escalateUsdAmount: false,
+                canDelegate: false
             });
     }
 

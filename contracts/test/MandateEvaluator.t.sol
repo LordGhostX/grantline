@@ -16,6 +16,8 @@ interface EvaluatorVm {
     ) external returns (uint8 v, bytes32 r, bytes32 s);
 
     function warp(uint256 timestamp) external;
+
+    function prank(address sender) external;
 }
 
 contract MockUsdValueProvider is IUsdValueProvider {
@@ -62,6 +64,56 @@ contract MandateEvaluatorTest {
         assert(result.failureCode == MandateEvaluator.FailureCode.NONE);
         assert(result.failedActionIndex == type(uint256).max);
         assert(result.nativeAmount == 7 ether);
+    }
+
+    function test_childEvaluationUsesInheritedRulesAndRevocation() public {
+        uint256 parentKey = 0xA11CE;
+        uint256 childKey = 0xB0B;
+        address parentAgent = vm.addr(parentKey);
+        address childAgent = vm.addr(childKey);
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        uint256 parentId = registry.createMandate(
+            address(vault),
+            parentAgent,
+            _delegatableRules(10 ether)
+        );
+
+        vm.prank(parentAgent);
+        uint256 childId = registry.createChildMandate(
+            parentId,
+            childAgent,
+            _rules(5 ether, 0)
+        );
+        MandateEvaluator evaluator = new MandateEvaluator(
+            address(registry),
+            address(0),
+            true
+        );
+        ActionTypes.ActionPlan memory plan = _plan(
+            childId,
+            childAgent,
+            6 ether,
+            0
+        );
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, childKey)
+        );
+        assert(result.decision == MandateEvaluator.Decision.DENY);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM
+        );
+
+        registry.revokeMandate(parentId);
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 1 ether);
+        result = evaluator.evaluate(plan, _sign(evaluator, plan, childKey));
+        assert(result.decision == MandateEvaluator.Decision.DENY);
+        assert(
+            result.failureCode == MandateEvaluator.FailureCode.MANDATE_INACTIVE
+        );
     }
 
     function test_rejectsPlanWhenAggregateNativeAmountExceedsLimit() public {
@@ -663,7 +715,8 @@ contract MandateEvaluatorTest {
                 escalateNativeAmount: false,
                 minUsdAmount: 0,
                 maxUsdAmount: 0,
-                escalateUsdAmount: false
+                escalateUsdAmount: false,
+                canDelegate: false
             })
         );
         registry.revokeMandate(mandateId);
@@ -695,7 +748,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: true,
                     minUsdAmount: 0,
                     maxUsdAmount: 0,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 address(0),
                 true
@@ -729,7 +783,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: true,
                     minUsdAmount: 0,
                     maxUsdAmount: 1_000e18,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 address(provider),
                 false
@@ -760,7 +815,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: false,
                     minUsdAmount: 0,
                     maxUsdAmount: 0,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 address(0),
                 true
@@ -791,7 +847,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: false,
                     minUsdAmount: 0,
                     maxUsdAmount: 0,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 address(0),
                 true
@@ -821,7 +878,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: true,
                     minUsdAmount: 0,
                     maxUsdAmount: 0,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 address(0),
                 true
@@ -851,7 +909,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: false,
                     minUsdAmount: 0,
                     maxUsdAmount: 0,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 address(0),
                 true
@@ -881,7 +940,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: false,
                     minUsdAmount: 1_000e18,
                     maxUsdAmount: 0,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 address(provider),
                 false
@@ -917,7 +977,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: false,
                     minUsdAmount: 1_000e18,
                     maxUsdAmount: 0,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 address(provider),
                 false
@@ -948,7 +1009,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: false,
                     minUsdAmount: 1_000e18,
                     maxUsdAmount: 0,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 address(provider),
                 true
@@ -976,7 +1038,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: false,
                     minUsdAmount: 0,
                     maxUsdAmount: 0,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 address(0),
                 true
@@ -1006,7 +1069,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: true,
                     minUsdAmount: 1_000e18,
                     maxUsdAmount: 0,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 address(provider),
                 false
@@ -1037,6 +1101,37 @@ contract MandateEvaluatorTest {
         return _setupWithUsd(maxNativeAmount, 0, address(0), true);
     }
 
+    function _delegatableRules(
+        uint256 maxNativeAmount
+    ) private pure returns (MandateRegistry.MandateRules memory) {
+        return
+            MandateRegistry.MandateRules({
+                minNativeAmount: 0,
+                maxNativeAmount: maxNativeAmount,
+                escalateNativeAmount: false,
+                minUsdAmount: 0,
+                maxUsdAmount: 0,
+                escalateUsdAmount: false,
+                canDelegate: true
+            });
+    }
+
+    function _rules(
+        uint256 maxNativeAmount,
+        uint256 maxUsdAmount
+    ) private pure returns (MandateRegistry.MandateRules memory) {
+        return
+            MandateRegistry.MandateRules({
+                canDelegate: false,
+                minNativeAmount: 0,
+                maxNativeAmount: maxNativeAmount,
+                escalateNativeAmount: false,
+                minUsdAmount: 0,
+                maxUsdAmount: maxUsdAmount,
+                escalateUsdAmount: false
+            });
+    }
+
     function _setupWithUsd(
         uint256 maxNativeAmount,
         uint256 maxUsdAmount,
@@ -1058,7 +1153,8 @@ contract MandateEvaluatorTest {
                     escalateNativeAmount: false,
                     minUsdAmount: 0,
                     maxUsdAmount: maxUsdAmount,
-                    escalateUsdAmount: false
+                    escalateUsdAmount: false,
+                    canDelegate: false
                 }),
                 usdValueProvider,
                 skipUnavailableUsdValuation

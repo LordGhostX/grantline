@@ -209,7 +209,8 @@ contract EscalationManagerTest {
                 escalateNativeAmount: true,
                 minUsdAmount: 0,
                 maxUsdAmount: 0,
-                escalateUsdAmount: false
+                escalateUsdAmount: false,
+                canDelegate: false
             })
         );
         bytes memory signature = _sign(evaluator, plan, privateKey);
@@ -367,6 +368,67 @@ contract EscalationManagerTest {
         );
     }
 
+    function test_parentRevocationBlocksChildEscalationApprovalAndExecution()
+        public
+    {
+        uint256 parentKey = 0xA11CE;
+        uint256 childKey = 0xB0B;
+        address parentAgent = vm.addr(parentKey);
+        address childAgent = vm.addr(childKey);
+        Vault vault = new Vault();
+        MandateRegistry registry = new MandateRegistry();
+        uint256 parentId = registry.createMandate(
+            address(vault),
+            parentAgent,
+            _delegatableEscalationRules(1 ether)
+        );
+
+        vm.prank(parentAgent);
+        uint256 childId = registry.createChildMandate(
+            parentId,
+            childAgent,
+            _childEscalationRules(500_000_000_000_000)
+        );
+        MandateEvaluator evaluator = new MandateEvaluator(
+            address(registry),
+            address(0),
+            true
+        );
+        EscalationManager manager = new EscalationManager(address(evaluator));
+        VaultExecutor executor = new VaultExecutor(
+            address(evaluator),
+            address(manager)
+        );
+        vault.setAuthority(address(executor));
+
+        ActionTypes.ActionPlan memory plan = ActionTypes.ActionPlan({
+            mandateId: childId,
+            agent: childAgent,
+            nonce: 1,
+            deadline: 0,
+            actions: new ActionTypes.Action[](1)
+        });
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 1 ether);
+        bytes memory signature = _sign(evaluator, plan, childKey);
+        bytes32 digest = manager.submit(plan, signature);
+
+        registry.revokeMandate(parentId);
+
+        bool approveReverted;
+        try manager.approve(digest) {} catch {
+            approveReverted = true;
+        }
+        bool executeReverted;
+        try executor.executeEscalated(digest) {} catch {
+            executeReverted = true;
+        }
+        manager.deny(digest);
+
+        assert(approveReverted);
+        assert(executeReverted);
+        assert(manager.statusOf(digest) == EscalationManager.Status.DENIED);
+    }
+
     function test_unconfiguredLimitOverrunCannotBeSubmittedForEscalation()
         public
     {
@@ -441,7 +503,38 @@ contract EscalationManagerTest {
                 escalateNativeAmount: escalateNativeAmount,
                 minUsdAmount: 0,
                 maxUsdAmount: maxUsdAmount,
-                escalateUsdAmount: escalateUsdAmount
+                escalateUsdAmount: escalateUsdAmount,
+                canDelegate: false
+            });
+    }
+
+    function _delegatableEscalationRules(
+        uint256 maxNativeAmount
+    ) private pure returns (MandateRegistry.MandateRules memory) {
+        return
+            MandateRegistry.MandateRules({
+                minNativeAmount: 0,
+                maxNativeAmount: maxNativeAmount,
+                escalateNativeAmount: true,
+                minUsdAmount: 0,
+                maxUsdAmount: 0,
+                escalateUsdAmount: false,
+                canDelegate: true
+            });
+    }
+
+    function _childEscalationRules(
+        uint256 maxNativeAmount
+    ) private pure returns (MandateRegistry.MandateRules memory) {
+        return
+            MandateRegistry.MandateRules({
+                minNativeAmount: 0,
+                maxNativeAmount: maxNativeAmount,
+                escalateNativeAmount: true,
+                minUsdAmount: 0,
+                maxUsdAmount: 0,
+                escalateUsdAmount: false,
+                canDelegate: false
             });
     }
 
