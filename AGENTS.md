@@ -12,8 +12,9 @@ This file is the project-wide working memory for future agents and contributors.
 .
 ├── AGENTS.md                 # Project-wide working memory
 ├── BRIEF.md                  # Product brief
-├── index.html                # Temporary GitHub Pages landing page
 ├── plans/                    # Local, ignored planning documents
+├── website/                  # Next.js landing page and Fumadocs documentation
+│   └── AGENTS.md              # Website-local working memory
 └── contracts/                # Foundry workspace and future Grantline contracts
     ├── AGENTS.md
     ├── foundry.toml
@@ -23,7 +24,7 @@ This file is the project-wide working memory for future agents and contributors.
     └── lib/
 ```
 
-Future application boundaries are expected to be `website/` for the Next.js landing, demo, and docs surfaces, `sdk/` for agent-facing client libraries, and `api/` for backend orchestration and records. Create a local `AGENTS.md` when each package is introduced instead of putting package-specific details here.
+Future application boundaries are expected to be `sdk/` for agent-facing client libraries and `api/` for backend orchestration and records. The `website/` boundary now owns the Next.js landing, demo, and documentation surfaces; see `website/AGENTS.md` for package-local guidance. Create a local `AGENTS.md` when each additional package is introduced instead of putting package-specific details here.
 
 ## Product invariants
 
@@ -37,7 +38,7 @@ Future application boundaries are expected to be `website/` for the Next.js land
 
 ## Current status
 
-The repository contains the product brief, a static landing-page prototype, and the working contracts loop. The contracts workspace now has the Vault, nested mandate rules, typed ActionPlan and signatures, `ALLOW`/`ESCALATE`/`DENY` evaluation, full-plan escalation storage, owner approval or denial, shared nonce replay protection and escalation reservations, executor re-evaluation, native-balance Preflight checks, onchain execution records, deployment verification with runtime-hash validation, and parent/child delegation with inherited authority and lineage revocation. `VaultExecutor` also has one storage-backed reentrancy lock across normal and escalated entrypoints, so a recipient cannot start a nested plan against a stale balance snapshot. All local tests pass. A fresh X Layer Phase 3 stack is deployed, recorded in the tracked manifest, verified, and exercised end to end; the live evidence is in `contracts/AGENTS.md`. Sponsored transaction submission, offchain indexing, guardian conditions, production USD value resolution, behavioural history, and receipt assembly remain deferred.
+The repository contains the product brief, the Next.js/Fumadocs website foundation, and the working contracts loop. The website has the landing page, placeholder MDX docs, Fumadocs search and LLM routes, metadata, favicon, robots, sitemap, ESLint, and reproducible Bun setup; its package-local handoff is in `website/AGENTS.md`. The contracts workspace now has the Vault, nested mandate rules, typed ActionPlan and signatures, `ALLOW`/`ESCALATE`/`DENY` evaluation, full-plan escalation storage, owner approval or denial, shared nonce replay protection and escalation reservations, executor re-evaluation, native-balance Preflight checks, onchain execution records, deployment verification with runtime-hash validation, and parent/child delegation with inherited authority and lineage revocation. `VaultExecutor` also has one storage-backed reentrancy lock across normal and escalated entrypoints, so a recipient cannot start a nested plan against a stale balance snapshot. All local tests pass. A fresh X Layer Phase 3 stack is deployed, recorded in the tracked manifest, verified, and exercised end to end; the live evidence is in `contracts/AGENTS.md`. Sponsored transaction submission, offchain indexing, guardian conditions, production USD value resolution, behavioural history, and receipt assembly remain deferred.
 
 Sponsored submission remains deferred because the integration evidence uses the agent as the actual transaction submitter; users currently submit the transaction and pay its gas directly.
 
@@ -58,6 +59,7 @@ Sponsored submission remains deferred because the integration evidence uses the 
 | 2026-08-12 | Force `canDelegate` off on depth-two Mandate updates.                                | The delegation cap must remain true after policy updates, so a grandchild cannot report delegation enabled even though no further child can be created.                                                                       |
 | 2026-08-12 | Add native-balance Preflight as a separate inherited rule set.                       | The evaluator checks projected Vault balance after aggregate native outflow, including token-only plans, and routes a configured reserve breach to `DENY` or `ESCALATE`.                                                      |
 | 2026-08-12 | Guard both executor entrypoints with OpenZeppelin `ReentrancyGuard`.                 | Normal and escalated plans share one lock, so external calls made by a recipient cannot re-enter `VaultExecutor` while the active plan is executing against its point-in-time balance evaluation.                             |
+| 2026-08-12 | Place the public landing page and documentation foundation under `website/`.         | Next.js owns the public presentation layer while Fumadocs owns MDX content, search, and LLM exports; package-local commands, deployment configuration, and deferred website work remain in `website/AGENTS.md`.               |
 
 ## Working-memory rules
 

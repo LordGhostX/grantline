@@ -1,0 +1,62 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/lib/default-colors.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* Shared base styles */
+* {
+    box-sizing: border-box;
+}
+body {
+    margin: 0;
+    font-family: var(--font-geist), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+/* Sidebar font weight */
+#nd-sidebar {
+    font-weight: 500;
+}
+
+/* Remove extra gap below page description */
+#nd-page p.mb-8 {
+    margin-bottom: 0 !important;
+}
+
+/* Grantline dark theme — overrides default-colors.css */
+.dark {
+    --color-fd-background: #0c0f0d;
+    --color-fd-foreground: #f1f4ee;
+    --color-fd-muted: #131713;
+    --color-fd-muted-foreground: #a1aaa2;
+    --color-fd-popover: #131713;
+    --color-fd-popover-foreground: #f1f4ee;
+    --color-fd-card: #131713;
+    --color-fd-card-foreground: #f1f4ee;
+    --color-fd-border: #2b312c;
+    --color-fd-primary: #d0b46c;
+    --color-fd-primary-foreground: #17140d;
+    --color-fd-secondary: #191e1a;
+    --color-fd-secondary-foreground: #f1f4ee;
+    --color-fd-accent: #191e1a;
+    --color-fd-accent-foreground: #f1f4ee;
+    --color-fd-ring: #d0b46c;
+    --color-fd-overlay: rgba(0, 0, 0, 0.2);
+}
+
+:root {
+    --bg: #0c0f0d;
+    --surface: #131713;
+    --surface-raised: #191e1a;
+    --border: #2b312c;
+    --border-subtle: #202620;
+    --text: #f1f4ee;
+    --text-secondary: #a1aaa2;
+    --brand: #d0b46c;
+    --allow: #72b98b;
+    --escalate: #e1a85a;
+    --deny: #d97878;
+    --max: 1180px;
+    --radius: 6px;
+    --radius-sm: 4px;
+}
