@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
+import {EscalationManager} from "../src/EscalationManager.sol";
 import {ScriptBase} from "./ScriptBase.s.sol";
 
 contract VerifyDeployment is ScriptBase {
@@ -85,6 +86,26 @@ contract VerifyDeployment is ScriptBase {
             MandateEvaluator(evaluatorAddress).skipUnavailableUsdValuation()
         );
 
+        address escalationManagerAddress = vm.parseJsonAddress(
+            manifest,
+            ".escalationManager.address"
+        );
+        _requireRuntimeCodeHash(
+            escalationManagerAddress,
+            vm.parseJsonBytes32(manifest, ".escalationManager.codeHash"),
+            "escalationManager"
+        );
+        _requireAddress(
+            "manifest.escalationManager.evaluator",
+            evaluatorAddress,
+            vm.parseJsonAddress(manifest, ".escalationManager.evaluator")
+        );
+        _requireAddress(
+            "escalationManager.evaluator",
+            evaluatorAddress,
+            address(EscalationManager(escalationManagerAddress).evaluator())
+        );
+
         _requireRuntimeCodeHash(
             executorAddress,
             vm.parseJsonBytes32(manifest, ".vaultExecutor.codeHash"),
@@ -99,6 +120,16 @@ contract VerifyDeployment is ScriptBase {
             "vaultExecutor.evaluator",
             evaluatorAddress,
             address(VaultExecutor(executorAddress).evaluator())
+        );
+        _requireAddress(
+            "manifest.vaultExecutor.escalationManager",
+            escalationManagerAddress,
+            vm.parseJsonAddress(manifest, ".vaultExecutor.escalationManager")
+        );
+        _requireAddress(
+            "vaultExecutor.escalationManager",
+            escalationManagerAddress,
+            address(VaultExecutor(executorAddress).escalationManager())
         );
     }
 

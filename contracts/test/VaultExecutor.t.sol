@@ -5,6 +5,7 @@ import {ActionSignature} from "../src/ActionSignature.sol";
 import {ActionTypes} from "../src/ActionTypes.sol";
 import {IUsdValueProvider, MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
+import {EscalationManager} from "../src/EscalationManager.sol";
 import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
 
@@ -276,7 +277,8 @@ contract VaultExecutorTest {
         executor.execute(vault, plan, signature);
 
         VaultExecutor replacement = new VaultExecutor(
-            address(executor.evaluator())
+            address(executor.evaluator()),
+            address(executor.escalationManager())
         );
         vault.setAuthority(address(replacement));
 
@@ -599,7 +601,7 @@ contract VaultExecutorTest {
     function test_rejectsInvalidEvaluator() public {
         bool reverted;
 
-        try new VaultExecutor(address(0)) {} catch {
+        try new VaultExecutor(address(0), address(0)) {} catch {
             reverted = true;
         }
 
@@ -632,7 +634,8 @@ contract VaultExecutorTest {
             address(0),
             true
         );
-        executor = new VaultExecutor(address(evaluator));
+        EscalationManager manager = new EscalationManager(address(evaluator));
+        executor = new VaultExecutor(address(evaluator), address(manager));
         vault.setAuthority(address(executor));
         plan = ActionTypes.ActionPlan({
             mandateId: mandateId,
@@ -676,7 +679,8 @@ contract VaultExecutorTest {
             address(provider),
             false
         );
-        executor = new VaultExecutor(address(evaluator));
+        EscalationManager manager = new EscalationManager(address(evaluator));
+        executor = new VaultExecutor(address(evaluator), address(manager));
         vault.setAuthority(address(executor));
         plan = ActionTypes.ActionPlan({
             mandateId: mandateId,

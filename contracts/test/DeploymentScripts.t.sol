@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {ConfigureVaultAuthority} from "../script/ConfigureVaultAuthority.s.sol";
 import {DeployDeploymentProbe} from "../script/DeployDeploymentProbe.s.sol";
+import {DeployEscalationManager} from "../script/DeployEscalationManager.s.sol";
 import {DeployMandateEvaluator} from "../script/DeployMandateEvaluator.s.sol";
 import {DeployMandateRegistry} from "../script/DeployMandateRegistry.s.sol";
 import {DeployVault} from "../script/DeployVault.s.sol";
@@ -11,6 +12,7 @@ import {ScriptBase} from "../script/ScriptBase.s.sol";
 import {VerifyDeployment} from "../script/VerifyDeployment.s.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
+import {EscalationManager} from "../src/EscalationManager.sol";
 import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
 
@@ -51,6 +53,8 @@ contract DeploymentScriptsTest {
         bytes32 registryCodeHash;
         address evaluator;
         bytes32 evaluatorCodeHash;
+        address escalationManager;
+        bytes32 escalationManagerCodeHash;
         address executor;
         bytes32 executorCodeHash;
     }
@@ -92,6 +96,11 @@ contract DeploymentScriptsTest {
         }
         {
             DeployMandateEvaluator script = new DeployMandateEvaluator();
+            vm.expectRevert(expectedRevert);
+            script.run();
+        }
+        {
+            DeployEscalationManager script = new DeployEscalationManager();
             vm.expectRevert(expectedRevert);
             script.run();
         }
@@ -345,7 +354,11 @@ contract DeploymentScriptsTest {
             address(0),
             true
         );
-        VaultExecutor executor = new VaultExecutor(address(evaluator));
+        EscalationManager manager = new EscalationManager(address(evaluator));
+        VaultExecutor executor = new VaultExecutor(
+            address(evaluator),
+            address(manager)
+        );
         Vault vault = new Vault();
         address expectedOwner = vm.addr(DEPLOYER_KEY);
         _writeManifestWithOwner(
@@ -414,7 +427,8 @@ contract DeploymentScriptsTest {
         vault = new Vault();
         registry = new MandateRegistry();
         evaluator = new MandateEvaluator(address(registry), address(0), true);
-        executor = new VaultExecutor(address(evaluator));
+        EscalationManager manager = new EscalationManager(address(evaluator));
+        executor = new VaultExecutor(address(evaluator), address(manager));
     }
 
     function _writeManifest(
@@ -484,6 +498,7 @@ contract DeploymentScriptsTest {
         bytes32 vaultCodeHash,
         bytes32 executorCodeHash
     ) private {
+        address managerAddress = _managerAddress(executor, evaluator);
         ManifestConfig memory config = ManifestConfig({
             vault: address(vault),
             owner: expectedOwner,
@@ -493,6 +508,8 @@ contract DeploymentScriptsTest {
             registryCodeHash: address(registry).codehash,
             evaluator: address(evaluator),
             evaluatorCodeHash: address(evaluator).codehash,
+            escalationManager: managerAddress,
+            escalationManagerCodeHash: managerAddress.codehash,
             executor: address(executor),
             executorCodeHash: executorCodeHash
         });
@@ -541,6 +558,19 @@ contract DeploymentScriptsTest {
             vm.toString(config.executorCodeHash),
             '","evaluator":"',
             vm.toString(config.evaluator),
+            '","escalationManager":"',
+            vm.toString(config.escalationManager),
+            '","deploymentTx":"0x',
+            _zeroHex(64),
+            '"}'
+        );
+        string memory escalationManagerJson = string.concat(
+            '"escalationManager":{"address":"',
+            vm.toString(config.escalationManager),
+            '","codeHash":"',
+            vm.toString(config.escalationManagerCodeHash),
+            '","evaluator":"',
+            vm.toString(config.evaluator),
             '","deploymentTx":"0x',
             _zeroHex(64),
             '"}'
@@ -555,12 +585,30 @@ contract DeploymentScriptsTest {
             ",",
             evaluatorJson,
             ",",
+            escalationManagerJson,
+            ",",
             executorJson,
             "}"
         );
         vm.writeFile(MANIFEST_PATH, json);
         vm.setEnv("DEPLOYMENT_MANIFEST_PATH", MANIFEST_PATH);
         vm.setEnv("DEPLOYER_PRIVATE_KEY", vm.toString(DEPLOYER_KEY));
+    }
+
+    function _managerAddress(
+        VaultExecutor executor,
+        MandateEvaluator evaluator
+    ) private returns (address managerAddress) {
+        if (address(executor).code.length == 0) {
+            return address(new EscalationManager(address(evaluator)));
+        }
+        try executor.escalationManager() returns (
+            EscalationManager configuredManager
+        ) {
+            return address(configuredManager);
+        } catch {
+            return address(new EscalationManager(address(evaluator)));
+        }
     }
 
     function _setManifestChain(uint256 chainId) private {

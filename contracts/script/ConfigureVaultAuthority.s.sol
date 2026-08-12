@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {MandateEvaluator, IUsdValueProvider} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
+import {EscalationManager} from "../src/EscalationManager.sol";
 import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
 import {ScriptBase} from "./ScriptBase.s.sol";
@@ -19,6 +20,8 @@ contract ConfigureVaultAuthority is ScriptBase {
         bytes32 evaluatorCodeHash;
         address registry;
         bytes32 registryCodeHash;
+        address escalationManager;
+        bytes32 escalationManagerCodeHash;
         address usdValueProvider;
         bool skipUnavailableUsdValuation;
     }
@@ -26,10 +29,15 @@ contract ConfigureVaultAuthority is ScriptBase {
     error InvalidEvaluator(address evaluator);
     error InvalidExecutor(address executor);
     error InvalidRegistry(address registry);
+    error InvalidEscalationManager(address manager);
     error InvalidVault(address vault);
     error UnexpectedEvaluator(
         address expectedEvaluator,
         address actualEvaluator
+    );
+    error UnexpectedEscalationManager(
+        address expectedManager,
+        address actualManager
     );
     error UnexpectedRegistry(address expectedRegistry, address actualRegistry);
     error UnexpectedUsdValueProvider(
@@ -115,6 +123,14 @@ contract ConfigureVaultAuthority is ScriptBase {
             manifest,
             ".mandateRegistry.codeHash"
         );
+        config.escalationManager = vm.parseJsonAddress(
+            manifest,
+            ".escalationManager.address"
+        );
+        config.escalationManagerCodeHash = vm.parseJsonBytes32(
+            manifest,
+            ".escalationManager.codeHash"
+        );
         config.usdValueProvider = vm.parseJsonAddress(
             manifest,
             ".mandateEvaluator.usdValueProvider"
@@ -183,6 +199,14 @@ contract ConfigureVaultAuthority is ScriptBase {
             config.registryCodeHash,
             "mandateRegistry"
         );
+        if (config.escalationManager.code.length == 0) {
+            revert InvalidEscalationManager(config.escalationManager);
+        }
+        _requireRuntimeCodeHash(
+            config.escalationManager,
+            config.escalationManagerCodeHash,
+            "escalationManager"
+        );
 
         try VaultExecutor(config.executor).evaluator() returns (
             MandateEvaluator actualEvaluator
@@ -195,6 +219,32 @@ contract ConfigureVaultAuthority is ScriptBase {
             }
         } catch {
             revert InvalidExecutor(config.executor);
+        }
+
+        try VaultExecutor(config.executor).escalationManager() returns (
+            EscalationManager actualManager
+        ) {
+            if (address(actualManager) != config.escalationManager) {
+                revert UnexpectedEscalationManager(
+                    config.escalationManager,
+                    address(actualManager)
+                );
+            }
+        } catch {
+            revert InvalidExecutor(config.executor);
+        }
+
+        try EscalationManager(config.escalationManager).evaluator() returns (
+            MandateEvaluator actualEvaluator
+        ) {
+            if (address(actualEvaluator) != config.evaluator) {
+                revert UnexpectedEvaluator(
+                    config.evaluator,
+                    address(actualEvaluator)
+                );
+            }
+        } catch {
+            revert InvalidEscalationManager(config.escalationManager);
         }
 
         try MandateEvaluator(config.evaluator).registry() returns (

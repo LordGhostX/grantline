@@ -37,17 +37,19 @@ Future application boundaries are expected to be `website/` for the Next.js land
 
 ## Current status
 
-The repository contains the product brief, a static landing-page prototype, and the first working contracts loop. The contracts workspace now has the Vault, Mandate registry, typed ActionPlan and signatures, read-only evaluation, executor, shared nonce replay protection, onchain execution records, and a tracked X Layer deployment manifest with runtime-hash validation. All local tests pass. The fresh X Layer enforcement stack has been verified end to end: the funded agent submitted a successful transfer, an over-limit plan was denied, the successful plan was rejected on replay, and the owner withdrew the remaining Vault balance. Relayer, indexing, Decision Receipt assembly, SDK, API, and demo application work remain deferred.
+The repository contains the product brief, a static landing-page prototype, and the working contracts loop. The contracts workspace now has the Vault, nested mandate rules, typed ActionPlan and signatures, `ALLOW`/`ESCALATE`/`DENY` evaluation, full-plan escalation storage, owner approval or denial, shared nonce replay protection, executor re-evaluation, onchain execution records, and deployment verification with runtime-hash validation. All local tests pass. The fresh X Layer enforcement stack has been verified end to end for Phase 1; the tracked manifest remains that live Phase 1 stack until the Phase 2 contracts are explicitly deployed. Relayer, indexing, Decision Receipt assembly, SDK, API, and demo application work remain deferred.
 
-The next implementation step is Phase 2 authority lifecycle work, starting with ESCALATE and pending owner decisions. The relayer remains deferred because the integration evidence uses the agent as the actual transaction submitter.
+Phase 2 ESCALATE is implemented and locally verified. The next operational step is a deliberate fresh-stack X Layer deployment because the registry, evaluator, manager, executor, and Vault wiring are non-upgradeable. The relayer remains deferred because the integration evidence uses the agent as the actual transaction submitter.
 
 ## Decision log
 
-| Date       | Decision                                                  | Reason and impact                                                                                                                 |
-| ---------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-08-11 | Keep blockchain files under `contracts/`.                 | The repository will also contain a website, SDKs, and API, so root-level tooling would make ownership and commands ambiguous.     |
-| 2026-08-11 | Use `AGENTS.md` as the working-memory convention.         | Agents discover the file automatically, and nested files can document package-local boundaries without bloating the root context. |
-| 2026-08-11 | Keep deployment identity in a tracked contracts manifest. | Deployment scripts need one reviewable source for addresses, dependency wiring, runtime hashes, and current Vault authority.      |
+| Date       | Decision                                                                             | Reason and impact                                                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-08-11 | Keep blockchain files under `contracts/`.                                            | The repository will also contain a website, SDKs, and API, so root-level tooling would make ownership and commands ambiguous.                                            |
+| 2026-08-11 | Use `AGENTS.md` as the working-memory convention.                                    | Agents discover the file automatically, and nested files can document package-local boundaries without bloating the root context.                                        |
+| 2026-08-11 | Keep deployment identity in a tracked contracts manifest.                            | Deployment scripts need one reviewable source for addresses, dependency wiring, runtime hashes, and current Vault authority.                                             |
+| 2026-08-12 | Store mandate policy in nested rules and make limit overruns optionally escalatable. | Native and USD limits stay adjacent to their flags, while the evaluator can route configured overruns through explicit owner approval without weakening hard-deny rules. |
+| 2026-08-12 | Store complete escalated plans in a dedicated manager.                               | Approval and later execution remain decoupled from the original submitting process, while the executor re-evaluates current mandate state before moving capital.         |
 
 ## Working-memory rules
 

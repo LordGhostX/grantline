@@ -13,6 +13,12 @@ interface IUsdValueProvider {
 }
 
 contract MandateEvaluator {
+    enum Decision {
+        ALLOW,
+        ESCALATE,
+        DENY
+    }
+
     enum FailureCode {
         NONE,
         MANDATE_NOT_FOUND,
@@ -33,7 +39,7 @@ contract MandateEvaluator {
     }
 
     struct EvaluationResult {
-        bool passed;
+        Decision decision;
         FailureCode failureCode;
         uint256 failedActionIndex;
         uint256 nativeAmount;
@@ -158,8 +164,7 @@ contract MandateEvaluator {
                     nativeAmount,
                     usdAmount,
                     usdLimitSkipped,
-                    mandate.transactionLimit,
-                    mandate.usdTransactionLimit
+                    mandate.rules.usdTransactionLimit != 0
                 );
             if (!valid) {
                 return
@@ -176,15 +181,52 @@ contract MandateEvaluator {
             usdLimitSkipped = updatedUsdLimitSkipped;
         }
 
+        bool nativeLimitExceeded = mandate.rules.transactionLimit != 0 &&
+            nativeAmount > mandate.rules.transactionLimit;
+        bool usdLimitExceeded = mandate.rules.usdTransactionLimit != 0 &&
+            usdAmount > mandate.rules.usdTransactionLimit;
+
+        if (nativeLimitExceeded && !mandate.rules.escalateTransactionLimit) {
+            return
+                _decision(
+                    Decision.DENY,
+                    FailureCode.TRANSACTION_LIMIT_EXCEEDED,
+                    nativeAmount,
+                    usdAmount,
+                    usdLimitSkipped
+                );
+        }
+        if (usdLimitExceeded && !mandate.rules.escalateUsdTransactionLimit) {
+            return
+                _decision(
+                    Decision.DENY,
+                    FailureCode.USD_LIMIT_EXCEEDED,
+                    nativeAmount,
+                    usdAmount,
+                    usdLimitSkipped
+                );
+        }
+        if (nativeLimitExceeded || usdLimitExceeded) {
+            return
+                _decision(
+                    Decision.ESCALATE,
+                    nativeLimitExceeded
+                        ? FailureCode.TRANSACTION_LIMIT_EXCEEDED
+                        : FailureCode.USD_LIMIT_EXCEEDED,
+                    nativeAmount,
+                    usdAmount,
+                    usdLimitSkipped
+                );
+        }
+
         return
-            EvaluationResult({
-                passed: true,
-                failureCode: FailureCode.NONE,
-                failedActionIndex: type(uint256).max,
-                nativeAmount: nativeAmount,
-                usdAmount: usdAmount,
-                usdLimitSkipped: usdLimitSkipped
-            });
+            _decision(
+                Decision.ALLOW,
+                FailureCode.NONE,
+                nativeAmount,
+                usdAmount,
+                usdLimitSkipped
+            );
     }
 
     function _validateAction(
@@ -192,8 +234,7 @@ contract MandateEvaluator {
         uint256 currentNativeAmount,
         uint256 currentUsdAmount,
         bool currentUsdLimitSkipped,
-        uint256 transactionLimit,
-        uint256 usdTransactionLimit
+        bool usdLimitEnabled
     )
         private
         view
@@ -266,18 +307,9 @@ contract MandateEvaluator {
                     );
                 }
                 nativeAmount += transfer.amount;
-                if (transactionLimit != 0 && nativeAmount > transactionLimit) {
-                    return (
-                        false,
-                        nativeAmount,
-                        usdAmount,
-                        usdLimitSkipped,
-                        FailureCode.TRANSACTION_LIMIT_EXCEEDED
-                    );
-                }
             }
 
-            if (usdTransactionLimit != 0) {
+            if (usdLimitEnabled) {
                 (uint256 actionUsdAmount, bool available) = _quoteUsd(
                     transfer.asset,
                     transfer.amount
@@ -304,15 +336,6 @@ contract MandateEvaluator {
                         );
                     }
                     usdAmount += actionUsdAmount;
-                    if (usdAmount > usdTransactionLimit) {
-                        return (
-                            false,
-                            nativeAmount,
-                            usdAmount,
-                            usdLimitSkipped,
-                            FailureCode.USD_LIMIT_EXCEEDED
-                        );
-                    }
                 }
             }
         }
@@ -353,9 +376,27 @@ contract MandateEvaluator {
     ) private pure returns (EvaluationResult memory) {
         return
             EvaluationResult({
-                passed: false,
+                decision: Decision.DENY,
                 failureCode: failureCode,
                 failedActionIndex: actionIndex,
+                nativeAmount: nativeAmount,
+                usdAmount: usdAmount,
+                usdLimitSkipped: usdLimitSkipped
+            });
+    }
+
+    function _decision(
+        Decision decision,
+        FailureCode failureCode,
+        uint256 nativeAmount,
+        uint256 usdAmount,
+        bool usdLimitSkipped
+    ) private pure returns (EvaluationResult memory) {
+        return
+            EvaluationResult({
+                decision: decision,
+                failureCode: failureCode,
+                failedActionIndex: type(uint256).max,
                 nativeAmount: nativeAmount,
                 usdAmount: usdAmount,
                 usdLimitSkipped: usdLimitSkipped

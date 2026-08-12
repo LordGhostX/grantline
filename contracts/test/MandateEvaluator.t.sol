@@ -58,7 +58,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(result.passed);
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
         assert(result.failureCode == MandateEvaluator.FailureCode.NONE);
         assert(result.failedActionIndex == type(uint256).max);
         assert(result.nativeAmount == 7 ether);
@@ -79,12 +79,12 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(!result.passed);
+        assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
                 MandateEvaluator.FailureCode.TRANSACTION_LIMIT_EXCEEDED
         );
-        assert(result.failedActionIndex == 1);
+        assert(result.failedActionIndex == type(uint256).max);
         assert(result.nativeAmount == 11 ether);
     }
 
@@ -107,7 +107,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(result.passed);
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
         assert(result.usdAmount == 2_500e18);
         assert(!result.usdLimitSkipped);
     }
@@ -129,12 +129,12 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(!result.passed);
+        assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
                 MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
         );
-        assert(result.failedActionIndex == 1);
+        assert(result.failedActionIndex == type(uint256).max);
         assert(result.usdAmount == 4_000e18);
     }
 
@@ -162,7 +162,7 @@ contract MandateEvaluatorTest {
                 )
             );
 
-        assert(!nativeResult.passed);
+        assert(nativeResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             nativeResult.failureCode ==
                 MandateEvaluator.FailureCode.TRANSACTION_LIMIT_EXCEEDED
@@ -179,7 +179,7 @@ contract MandateEvaluatorTest {
                 _sign(usdLimitedEvaluator, usdLimitedPlan, usdPrivateKey)
             );
 
-        assert(!usdResult.passed);
+        assert(usdResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             usdResult.failureCode ==
                 MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
@@ -199,7 +199,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(result.passed);
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
         assert(result.usdAmount == 0);
         assert(result.usdLimitSkipped);
     }
@@ -226,8 +226,8 @@ contract MandateEvaluatorTest {
         MandateEvaluator.EvaluationResult memory quotedFirst = evaluator
             .evaluate(plan, _sign(evaluator, plan, privateKey));
 
-        assert(!unavailableFirst.passed);
-        assert(!quotedFirst.passed);
+        assert(unavailableFirst.decision == MandateEvaluator.Decision.DENY);
+        assert(quotedFirst.decision == MandateEvaluator.Decision.DENY);
         assert(
             unavailableFirst.failureCode ==
                 MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
@@ -262,8 +262,8 @@ contract MandateEvaluatorTest {
         MandateEvaluator.EvaluationResult memory quotedFirst = evaluator
             .evaluate(plan, _sign(evaluator, plan, privateKey));
 
-        assert(unavailableFirst.passed);
-        assert(quotedFirst.passed);
+        assert(unavailableFirst.decision == MandateEvaluator.Decision.ALLOW);
+        assert(quotedFirst.decision == MandateEvaluator.Decision.ALLOW);
         assert(unavailableFirst.usdAmount == 600e18);
         assert(quotedFirst.usdAmount == 600e18);
         assert(unavailableFirst.usdLimitSkipped);
@@ -296,12 +296,12 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(!result.passed);
+        assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
                 MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
         );
-        assert(result.failedActionIndex == 2);
+        assert(result.failedActionIndex == type(uint256).max);
         assert(result.usdAmount == 1_100e18);
         assert(result.usdLimitSkipped);
     }
@@ -332,7 +332,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(!result.passed);
+        assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
                 MandateEvaluator.FailureCode.USD_AMOUNT_OVERFLOW
@@ -356,12 +356,12 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(!result.passed);
+        assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
                 MandateEvaluator.FailureCode.TRANSACTION_LIMIT_EXCEEDED
         );
-        assert(!result.usdLimitSkipped);
+        assert(result.usdLimitSkipped);
     }
 
     function test_rejectsUnavailableUsdValuationWhenNotSkipped() public {
@@ -377,7 +377,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(!result.passed);
+        assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
                 MandateEvaluator.FailureCode.USD_VALUATION_UNAVAILABLE
@@ -406,7 +406,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(!result.passed);
+        assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
                 MandateEvaluator.FailureCode.USD_AMOUNT_OVERFLOW
@@ -431,7 +431,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(result.passed);
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
         assert(result.nativeAmount == 0);
     }
 
@@ -454,7 +454,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(result.passed);
+        assert(result.decision == MandateEvaluator.Decision.ALLOW);
         assert(result.nativeAmount == 0);
     }
 
@@ -468,7 +468,7 @@ contract MandateEvaluatorTest {
 
         MandateEvaluator.EvaluationResult memory versionTwoResult = evaluator
             .evaluate(plan, _sign(evaluator, plan, privateKey));
-        assert(!versionTwoResult.passed);
+        assert(versionTwoResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             versionTwoResult.failureCode ==
                 MandateEvaluator.FailureCode.INVALID_ACTION
@@ -479,7 +479,7 @@ contract MandateEvaluatorTest {
         plan.actions[0].version = type(uint8).max;
         MandateEvaluator.EvaluationResult memory maxVersionResult = evaluator
             .evaluate(plan, _sign(evaluator, plan, privateKey));
-        assert(!maxVersionResult.passed);
+        assert(maxVersionResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             maxVersionResult.failureCode ==
                 MandateEvaluator.FailureCode.INVALID_ACTION
@@ -501,7 +501,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(!result.passed);
+        assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode == MandateEvaluator.FailureCode.INVALID_ACTION
         );
@@ -518,7 +518,7 @@ contract MandateEvaluatorTest {
 
         MandateEvaluator.EvaluationResult memory agentResult = evaluator
             .evaluate(plan, _sign(evaluator, plan, privateKey));
-        assert(!agentResult.passed);
+        assert(agentResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             agentResult.failureCode ==
                 MandateEvaluator.FailureCode.AGENT_MISMATCH
@@ -529,7 +529,7 @@ contract MandateEvaluatorTest {
         vm.warp(2);
         MandateEvaluator.EvaluationResult memory deadlineResult = evaluator
             .evaluate(plan, _sign(evaluator, plan, privateKey));
-        assert(!deadlineResult.passed);
+        assert(deadlineResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             deadlineResult.failureCode == MandateEvaluator.FailureCode.EXPIRED
         );
@@ -552,7 +552,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(!result.passed);
+        assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode == MandateEvaluator.FailureCode.INVALID_ACTION
         );
@@ -572,7 +572,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(!result.passed);
+        assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(
             result.failureCode ==
                 MandateEvaluator.FailureCode.INVALID_ACTION_PARAMETERS
@@ -593,7 +593,7 @@ contract MandateEvaluatorTest {
             _sign(evaluator, plan, privateKey)
         );
 
-        assert(!result.passed);
+        assert(result.decision == MandateEvaluator.Decision.DENY);
         assert(result.failureCode == MandateEvaluator.FailureCode.EMPTY_PLAN);
     }
 
@@ -606,7 +606,7 @@ contract MandateEvaluatorTest {
         MandateEvaluator.EvaluationResult memory signatureResult = evaluator
             .evaluate(plan, hex"");
 
-        assert(!signatureResult.passed);
+        assert(signatureResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             signatureResult.failureCode ==
                 MandateEvaluator.FailureCode.INVALID_SIGNATURE
@@ -615,7 +615,7 @@ contract MandateEvaluatorTest {
         plan.actions[0] = _transferAction(address(0), address(0), 1 ether);
         MandateEvaluator.EvaluationResult memory recipientResult = evaluator
             .evaluate(plan, _sign(evaluator, plan, privateKey));
-        assert(!recipientResult.passed);
+        assert(recipientResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             recipientResult.failureCode ==
                 MandateEvaluator.FailureCode.INVALID_RECIPIENT
@@ -624,7 +624,7 @@ contract MandateEvaluatorTest {
         plan.actions[0] = _transferAction(address(0), address(0xBEEF), 0);
         MandateEvaluator.EvaluationResult memory amountResult = evaluator
             .evaluate(plan, _sign(evaluator, plan, privateKey));
-        assert(!amountResult.passed);
+        assert(amountResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             amountResult.failureCode ==
                 MandateEvaluator.FailureCode.INVALID_AMOUNT
@@ -647,7 +647,7 @@ contract MandateEvaluatorTest {
 
         MandateEvaluator.EvaluationResult memory unknownResult = evaluator
             .evaluate(unknownPlan, hex"");
-        assert(!unknownResult.passed);
+        assert(unknownResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             unknownResult.failureCode ==
                 MandateEvaluator.FailureCode.MANDATE_NOT_FOUND
@@ -670,10 +670,71 @@ contract MandateEvaluatorTest {
 
         MandateEvaluator.EvaluationResult memory revokedResult = evaluator
             .evaluate(revokedPlan, hex"");
-        assert(!revokedResult.passed);
+        assert(revokedResult.decision == MandateEvaluator.Decision.DENY);
         assert(
             revokedResult.failureCode ==
                 MandateEvaluator.FailureCode.MANDATE_INACTIVE
+        );
+    }
+
+    function test_escalatesConfiguredNativeLimitOverrun() public {
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithRules(
+                MandateRegistry.MandateRules({
+                    transactionLimit: 1 ether,
+                    escalateTransactionLimit: true,
+                    usdTransactionLimit: 0,
+                    escalateUsdTransactionLimit: false
+                }),
+                address(0),
+                true
+            );
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 2 ether);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.ESCALATE);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.TRANSACTION_LIMIT_EXCEEDED
+        );
+        assert(result.nativeAmount == 2 ether);
+    }
+
+    function test_hardLimitOverrunCannotBeEscalatedThroughOtherFlag() public {
+        MockUsdValueProvider provider = new MockUsdValueProvider();
+        provider.setQuote(address(0), 2_000e18);
+        (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        ) = _setupWithRules(
+                MandateRegistry.MandateRules({
+                    transactionLimit: 1 ether,
+                    escalateTransactionLimit: true,
+                    usdTransactionLimit: 1_000e18,
+                    escalateUsdTransactionLimit: false
+                }),
+                address(provider),
+                false
+            );
+        plan.actions[0] = _transferAction(address(0), address(0xBEEF), 2 ether);
+
+        MandateEvaluator.EvaluationResult memory result = evaluator.evaluate(
+            plan,
+            _sign(evaluator, plan, privateKey)
+        );
+
+        assert(result.decision == MandateEvaluator.Decision.DENY);
+        assert(
+            result.failureCode ==
+                MandateEvaluator.FailureCode.USD_LIMIT_EXCEEDED
         );
     }
 
@@ -703,6 +764,31 @@ contract MandateEvaluatorTest {
             uint256 privateKey
         )
     {
+        return
+            _setupWithRules(
+                MandateRegistry.MandateRules({
+                    transactionLimit: transactionLimit,
+                    escalateTransactionLimit: false,
+                    usdTransactionLimit: usdTransactionLimit,
+                    escalateUsdTransactionLimit: false
+                }),
+                usdValueProvider,
+                skipUnavailableUsdValuation
+            );
+    }
+
+    function _setupWithRules(
+        MandateRegistry.MandateRules memory rules,
+        address usdValueProvider,
+        bool skipUnavailableUsdValuation
+    )
+        private
+        returns (
+            MandateEvaluator evaluator,
+            ActionTypes.ActionPlan memory plan,
+            uint256 privateKey
+        )
+    {
         privateKey = 0xA11CE;
         address agent = vm.addr(privateKey);
         Vault vault = new Vault();
@@ -710,8 +796,7 @@ contract MandateEvaluatorTest {
         uint256 mandateId = registry.createMandate(
             address(vault),
             agent,
-            transactionLimit,
-            usdTransactionLimit
+            rules
         );
         evaluator = new MandateEvaluator(
             address(registry),

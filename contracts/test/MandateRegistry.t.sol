@@ -32,8 +32,8 @@ contract MandateRegistryTest {
         assert(mandate.vault == address(vault));
         assert(mandate.agent == agent);
         assert(mandate.status == MandateRegistry.MandateStatus.ACTIVE);
-        assert(mandate.transactionLimit == 10 ether);
-        assert(mandate.usdTransactionLimit == 1_000e18);
+        assert(mandate.rules.transactionLimit == 10 ether);
+        assert(mandate.rules.usdTransactionLimit == 1_000e18);
         assert(registry.isActive(mandateId));
     }
 
@@ -98,13 +98,13 @@ contract MandateRegistryTest {
         registry.updateMandate(mandateId, 20 ether, 2_000e18);
         MandateRegistry.Mandate memory mandate = registry.getMandate(mandateId);
 
-        assert(mandate.transactionLimit == 20 ether);
-        assert(mandate.usdTransactionLimit == 2_000e18);
+        assert(mandate.rules.transactionLimit == 20 ether);
+        assert(mandate.rules.usdTransactionLimit == 2_000e18);
         assert(mandate.status == MandateRegistry.MandateStatus.ACTIVE);
 
         registry.updateMandate(mandateId, 0, 0);
-        assert(registry.getMandate(mandateId).transactionLimit == 0);
-        assert(registry.getMandate(mandateId).usdTransactionLimit == 0);
+        assert(registry.getMandate(mandateId).rules.transactionLimit == 0);
+        assert(registry.getMandate(mandateId).rules.usdTransactionLimit == 0);
     }
 
     function test_consumesNonceOnlyOnceForCurrentVaultAuthority() public {
@@ -168,8 +168,12 @@ contract MandateRegistryTest {
         }
 
         assert(formerOwnerReverted);
-        assert(registry.getMandate(mandateId).transactionLimit == 20 ether);
-        assert(registry.getMandate(mandateId).usdTransactionLimit == 2_000e18);
+        assert(
+            registry.getMandate(mandateId).rules.transactionLimit == 20 ether
+        );
+        assert(
+            registry.getMandate(mandateId).rules.usdTransactionLimit == 2_000e18
+        );
     }
 
     function test_revokesWithoutDeletingHistory() public {

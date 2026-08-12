@@ -15,14 +15,20 @@ contract MandateRegistry {
         REVOKED
     }
 
+    struct MandateRules {
+        uint256 transactionLimit;
+        bool escalateTransactionLimit;
+        uint256 usdTransactionLimit;
+        bool escalateUsdTransactionLimit;
+    }
+
     struct Mandate {
         uint256 id;
         address owner;
         address vault;
         address agent;
         MandateStatus status;
-        uint256 transactionLimit;
-        uint256 usdTransactionLimit;
+        MandateRules rules;
         uint64 createdAt;
         uint64 revokedAt;
     }
@@ -41,14 +47,12 @@ contract MandateRegistry {
         address indexed owner,
         address indexed vault,
         address agent,
-        uint256 transactionLimit,
-        uint256 usdTransactionLimit,
+        MandateRules rules,
         uint64 createdAt
     );
     event MandateUpdated(
         uint256 indexed mandateId,
-        uint256 transactionLimit,
-        uint256 usdTransactionLimit,
+        MandateRules rules,
         uint64 updatedAt
     );
     event MandateRevoked(
@@ -65,9 +69,31 @@ contract MandateRegistry {
     function createMandate(
         address vault,
         address agent,
+        MandateRules calldata rules
+    ) external returns (uint256 mandateId) {
+        mandateId = _createMandate(vault, agent, rules);
+    }
+
+    function createMandate(
+        address vault,
+        address agent,
         uint256 transactionLimit,
         uint256 usdTransactionLimit
     ) external returns (uint256 mandateId) {
+        MandateRules memory rules = MandateRules({
+            transactionLimit: transactionLimit,
+            usdTransactionLimit: usdTransactionLimit,
+            escalateTransactionLimit: false,
+            escalateUsdTransactionLimit: false
+        });
+        mandateId = _createMandate(vault, agent, rules);
+    }
+
+    function _createMandate(
+        address vault,
+        address agent,
+        MandateRules memory rules
+    ) private returns (uint256 mandateId) {
         _requireValidAddresses(vault, agent);
         _requireVaultOwner(vault, msg.sender);
 
@@ -79,8 +105,7 @@ contract MandateRegistry {
             vault: vault,
             agent: agent,
             status: MandateStatus.ACTIVE,
-            transactionLimit: transactionLimit,
-            usdTransactionLimit: usdTransactionLimit,
+            rules: rules,
             createdAt: createdAt,
             revokedAt: 0
         });
@@ -90,10 +115,16 @@ contract MandateRegistry {
             msg.sender,
             vault,
             agent,
-            transactionLimit,
-            usdTransactionLimit,
+            rules,
             createdAt
         );
+    }
+
+    function updateMandate(
+        uint256 mandateId,
+        MandateRules calldata rules
+    ) external {
+        _updateMandate(mandateId, rules);
     }
 
     function updateMandate(
@@ -101,18 +132,25 @@ contract MandateRegistry {
         uint256 transactionLimit,
         uint256 usdTransactionLimit
     ) external {
+        MandateRules memory rules = MandateRules({
+            transactionLimit: transactionLimit,
+            usdTransactionLimit: usdTransactionLimit,
+            escalateTransactionLimit: false,
+            escalateUsdTransactionLimit: false
+        });
+        _updateMandate(mandateId, rules);
+    }
+
+    function _updateMandate(
+        uint256 mandateId,
+        MandateRules memory rules
+    ) private {
         Mandate storage mandate = _activeMandate(mandateId);
         _requireVaultOwner(mandate.vault, msg.sender);
 
-        mandate.transactionLimit = transactionLimit;
-        mandate.usdTransactionLimit = usdTransactionLimit;
+        mandate.rules = rules;
 
-        emit MandateUpdated(
-            mandateId,
-            transactionLimit,
-            usdTransactionLimit,
-            uint64(block.timestamp)
-        );
+        emit MandateUpdated(mandateId, rules, uint64(block.timestamp));
     }
 
     function revokeMandate(uint256 mandateId) external {
