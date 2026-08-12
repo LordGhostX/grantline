@@ -19,13 +19,13 @@ But giving an autonomous agent access to a wallet can also give it far more auth
 
 **Grantline provides the financial authority layer between autonomous intent and execution.**
 
-Instead of giving an agent unrestricted control of capital, users give it a **Mandate** defining exactly what it is authorized to do and under what conditions.
+Instead of giving an agent unrestricted control of capital, users give it a **Mandate** defining exactly what it is authorised to do and under what conditions.
 
 The agent decides what it wants to do.
 
 **Grantline determines whether it is allowed to do it.**
 
-> **AI proposes. Mandate authorizes.**
+> **AI proposes. Mandate authorises.**
 
 ---
 
@@ -78,11 +78,13 @@ Grantline then evaluates that action through the controls selected by the owner.
 
 → **Mandate checks authority**
 
-→ **Required Guardians verify external conditions**
+→ **Configured conditions check the proposed action**
 
-→ **Required Preflight checks test the proposed action**
+→ **Configured Preflight checks test the proposed action**
 
 → **Allow / Escalate / Deny**
+
+→ **Owner approval when escalated**
 
 → **Execute**
 
@@ -90,7 +92,7 @@ Grantline then evaluates that action through the controls selected by the owner.
 
 Not every action needs every step.
 
-A simple payment may only require authorization.
+A simple payment may only require authorisation.
 
 A significant treasury action may require additional checks and human approval.
 
@@ -102,20 +104,9 @@ Grantline is built around six core concepts.
 
 ## Mandates
 
-Define **what an agent is authorized to do**.
+Define **what an agent is authorised to do**.
 
-A Mandate can specify:
-
-- capital limits
-- transaction limits
-- permitted actions
-- approved assets or products
-- liquidity requirements
-- human approval thresholds
-- required Guardians
-- required Preflight conditions
-- delegation permissions
-- expiry or stop conditions
+A current Mandate can specify amount bounds, typed actions, owner-approved escalation, inherited Preflight rules, delegation permissions, deadlines, and revocation. Planned extensions can add approved assets or products, richer liquidity requirements, multiple approvals, and Guardian conditions.
 
 Mandates govern authority.
 
@@ -137,7 +128,7 @@ The agent only operates against the capital made available to it and only within
 
 Shows **where authority came from and how it has been delegated**.
 
-An owner may authorize one agent, which can then delegate a narrower portion of that authority to another.
+An owner may authorise one agent, which can then delegate a narrower portion of that authority to another.
 
 For example:
 
@@ -164,50 +155,21 @@ Every delegation remains traceable to its original source.
 
 ## Guardians
 
-Verify **external conditions relevant to an action**.
+Guardians are planned modules for verifying **external conditions relevant to an action**.
 
-Mandates can require particular Guardians before execution.
+They could check whether required market information is current, whether an asset is operating normally, or whether an exceptional condition should prevent autonomous execution. Guardians do not decide whether an investment is good; they answer specific questions that the owner has chosen to make relevant to authorisation.
 
-The first Grantline Guardian is the **RWA Guardian**, designed for tokenized real-world assets.
-
-It may verify conditions such as:
-
-- whether required market information is current
-- whether an asset is operating normally
-- whether an exceptional condition should prevent autonomous execution
-
-Guardians do not decide whether an investment is good.
-
-They answer specific questions that the owner has chosen to make relevant to authorization.
-
-Over time, other Guardians could cover protocol, oracle, security, compliance, or asset conditions.
+The first planned Guardian is an **RWA Guardian** for tokenised real-world assets. Other modules could cover protocol, oracle, security, compliance, or asset conditions. Guardian conditions are deferred from the current contracts MVP.
 
 ---
 
 ## Preflight
 
-Tests **what the resulting financial state could look like before execution**.
+Tests **what the resulting Vault state could look like before execution**.
 
-A proposed action can be evaluated against predefined scenarios such as:
+The current MVP checks the projected native Vault balance after the plan's aggregate native outflow against an inherited minimum reserve. A violation can produce `DENY` or `ESCALATE` when the Mandate configures owner approval for it. Token-only plans still preserve the native reserve.
 
-- asset value falling
-- liquidity deteriorating
-- collateral weakening
-- concentration increasing
-
-Preflight does not predict whether an investment will succeed.
-
-It evaluates whether the proposed action stays inside the owner's configured boundaries.
-
-For example:
-
-> Minimum liquidity after stress: 20%.
-
-> Maximum stressed loss: 12%.
-
-> All required checks must pass.
-
-Where useful, several checks may be summarized into a Safety Score, but the underlying conditions remain more important than the score itself.
+Preflight does not predict whether an investment will succeed; it checks whether execution would leave the Vault outside the owner's configured boundary. Richer portfolio, liquidity, collateral, and organisation-specific stress scenarios remain future work.
 
 ---
 
@@ -226,9 +188,7 @@ Records can show:
 - whether the action was allowed, escalated, or denied
 - what happened during execution
 
-A specific authorization event can create a **Decision Receipt**.
-
-Over time, Records may become valuable inputs for external agent reputation, credit, insurance, compliance, and risk systems.
+Onchain events provide the current MVP's traceable history of authority changes, approvals, custody changes, and execution. Assembled **Decision Receipts**, offchain indexing, and behavioural history remain future work that could support external agent reputation, credit, insurance, compliance, and risk systems.
 
 ---
 
@@ -242,7 +202,7 @@ An agent may determine:
 
 Grantline asks:
 
-> Are you authorized to do that?
+> Are you authorised to do that?
 
 A Guardian may ask:
 
@@ -264,9 +224,7 @@ A company places $50,000 into a Treasury Vault and gives its Treasury Agent a Ma
 
 - manage up to $50,000
 - maximum transaction of $10,000
-- keep at least 25% liquid
-- approved assets only
-- RWA Guardian required for RWA transactions
+- keep a configured minimum reserve in the Vault
 - Preflight required
 - human approval above $7,500
 - limited delegation permitted
@@ -282,11 +240,9 @@ The Execution Agent proposes a $3,000 transaction.
 
 Grantline verifies its authority.
 
-The RWA Guardian passes.
-
 Preflight passes.
 
-The transaction executes and a Decision Receipt is created.
+The transaction executes and an onchain execution record is emitted.
 
 Later, the same agent attempts an action outside its Mandate.
 
@@ -314,19 +270,17 @@ Assign a defined amount of capital to autonomous activity.
 
 Create enforceable rules governing what an agent can do.
 
-AI can help translate natural-language instructions into a proposed Mandate.
-
 ### Delegation
 
-Allow an owner to authorize one agent and that agent to delegate narrower authority to another.
+Allow an owner to authorise one agent and that agent to delegate narrower authority to another.
 
-### RWA Guardian
+### Owner-approved escalation
 
-Run additional external-condition checks for supported RWA transactions.
+Route configured authority or Preflight overruns to the owner for explicit approval before execution.
 
 ### Preflight
 
-Test proposed actions against a small set of predefined stress conditions.
+Check the projected native Vault balance against the configured reserve boundary.
 
 ### Enforcement
 
@@ -342,7 +296,7 @@ The owner can revoke authority at any time.
 
 ### Records
 
-Every attempted action leaves behind a clear authorization and execution history.
+Successful authority and execution changes emit onchain records; assembled receipts and indexed history remain future work.
 
 ---
 
@@ -352,9 +306,9 @@ The demo should prove both autonomy and control.
 
 ### 1. Create authority
 
-A user funds a Vault and describes the Treasury Agent's Mandate in natural language.
+A user funds a Vault and creates a Mandate for the Treasury Agent.
 
-Grantline converts it into a visible policy that the user approves.
+The user reviews and approves the policy before the agent can act.
 
 ### 2. Delegate authority
 
@@ -368,27 +322,23 @@ The agent proposes a transaction.
 
 Mandate passes.
 
-Guardian passes.
-
 Preflight passes.
 
 The transaction executes.
 
-A Decision Receipt appears.
+An onchain execution record is emitted.
 
-### 4. Block an unauthorized action
+### 4. Block an unauthorised action
 
 The agent attempts something outside its authority.
 
 Grantline denies execution.
 
-### 5. React to changing conditions
+### 5. Handle an escalation
 
-An external condition causes a required Guardian to fail.
+A proposed action exceeds a configured boundary that permits escalation.
 
-The agent still wants to transact.
-
-Grantline blocks it.
+The owner approves or denies the stored plan, and execution re-evaluates current authority before moving capital.
 
 ### 6. Revoke authority
 
@@ -400,7 +350,7 @@ Any future attempt fails because the authority no longer exists.
 
 # Future State
 
-Grantline can evolve from individual agent controls into infrastructure for autonomous organizations.
+Grantline can evolve from individual agent controls into infrastructure for autonomous organisations.
 
 ## Richer Mandates
 
@@ -408,15 +358,15 @@ Support temporary permissions, emergency authority, multiple approvals, reusable
 
 ## Organizational Delegation
 
-Support complete hierarchies of specialized agents across treasury, payments, procurement, execution, risk, and other functions.
+Support complete hierarchies of specialised agents across treasury, payments, procurement, execution, risk, and other functions.
 
 ## Guardian Ecosystem
 
-Allow organizations and developers to build specialized Guardian modules.
+Allow organisations and developers to build specialised Guardian modules.
 
 ## Advanced Preflight
 
-Support richer portfolio, liquidity, collateral, and organization-specific stress scenarios.
+Support richer portfolio, liquidity, collateral, and organisation-specific stress scenarios.
 
 ## Mandate Templates
 
@@ -424,11 +374,11 @@ Provide reusable authority frameworks for common agent roles.
 
 ## Agent Reputation
 
-Use Records as trusted behavioral history for external reputation, credit, insurance, compliance, and risk systems.
+Use Records as trusted behavioural history for external reputation, credit, insurance, compliance, and risk systems.
 
 ## Agent-to-Agent Delegation
 
-Allow autonomous agents to safely hire, pay, and delegate limited authority to other agents while preserving the chain back to the original owner.
+Build on current parent/child delegation with safe agent-to-agent hiring and payment flows while preserving the chain back to the original owner.
 
 ---
 
@@ -446,7 +396,7 @@ Grantline aims to become the infrastructure that answers those questions.
 
 Any environment in which an autonomous agent is trusted with money eventually needs:
 
-**authorization · delegation · limits · conditions · escalation · revocation · accountability**
+**authorisation · delegation · limits · conditions · escalation · revocation · accountability**
 
 Grantline provides that layer.
 
@@ -454,9 +404,9 @@ Grantline provides that layer.
 
 → **Conditional financial authority**
 
-→ **Delegated agent organizations**
+→ **Delegated agent organisations**
 
-→ **Authorization infrastructure for autonomous economic actors**
+→ **Authorisation infrastructure for autonomous economic actors**
 
 ---
 
@@ -472,15 +422,15 @@ Grantline provides that layer.
 
 ### Product
 
-**Grantline lets people and organizations delegate capital to AI agents under enforceable, conditional, and revocable Mandates.**
+**Grantline lets people and organisations delegate capital to AI agents under enforceable, conditional, and revocable Mandates.**
 
 ### Hackathon / RWA
 
-**Grantline enables AI agents to interact with tokenized real-world assets without giving them unrestricted control of capital. Every action must satisfy delegated authority and any required external or Preflight conditions before execution.**
+**Grantline enables AI agents to interact with tokenised real-world assets without giving them unrestricted control of capital. Every action must satisfy delegated authority and any required external or Preflight conditions before execution.**
 
 ### Core Principle
 
-> **AI proposes. Mandate authorizes.**
+> **AI proposes. Mandate authorises.**
 
 ### Brand Principle
 
