@@ -1,10 +1,36 @@
 ---
 title: Roadmap
-description: Planned direction for Guardians, SDK and API integration, and offchain indexing with Decision Receipts.
+description: Planned direction for mandate lifecycle controls, transfer policies, shared budgets, Guardians, SDK and API integration, and offchain indexing with Decision Receipts.
 icon: Map
 ---
 
-This page describes future direction around Grantline's external conditions, integration surfaces, and evidence presentation. These capabilities are separate from the current contracts MVP and should not be read as available features.
+This page describes future direction around Grantline's mandate lifecycle, external conditions, integration surfaces, and evidence presentation. These capabilities are separate from the current contracts MVP and should not be read as available features.
+
+## Mandate lifecycle and policy
+
+### Planned
+
+Future mandate controls should cover temporary suspension, validity windows, transfer policies, and budgets shared across an authority chain. None of these capabilities is part of the current contracts MVP; the current way to stop an active Mandate is revocation.
+
+### Pausing mandates
+
+A paused Mandate would temporarily prevent new authority use while preserving the Mandate's identity, rules, delegation lineage, and historical evidence. Resuming it should restore the existing authority rather than require a new Mandate, but the implementation must settle how pausing affects delegated Mandates, pending escalations, and actions already in execution.
+
+### Mandate validity window
+
+A Mandate validity window with `validFrom` and `validUntil` would define when that authority can be used. Before `validFrom`, the Mandate would not authorise actions; after `validUntil`, it would stop doing so. This is different from the current Action Plan `deadline`, which expires one signed proposal, and a future Mandate window must define how it interacts with descendants, pending escalations, and already-authorised plans.
+
+### Transfer whitelist
+
+A transfer whitelist would restrict a Mandate's transfer destinations to explicitly approved addresses. The implementation must settle whether delegated Mandates inherit the same list, whether a child can narrow it further, how updates affect pending escalations, and whether a disallowed destination is always `DENY` or can be configured for approval.
+
+### Shared cumulative ancestor budgets
+
+A shared cumulative budget would limit total usage across an ancestor chain, so a parent and its descendants cannot each spend up to separate limits and exceed the intended authority. The implementation must define which denominations and actions consume the budget, when usage is counted, how pending escalations reserve capacity, and how updates or revocation affect remaining capacity.
+
+### What implementation must settle
+
+The contracts and tests must define who can pause or resume a Mandate, whether a pause propagates through its delegation tree, how validity windows, transfer whitelists, and shared budgets are represented and evaluated, and what evidence is recorded for each lifecycle change. These rules should preserve the existing distinction between authority decisions, execution outcomes, and historical lineage.
 
 ## Guardians
 
