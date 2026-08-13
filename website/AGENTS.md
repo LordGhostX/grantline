@@ -54,6 +54,8 @@ bun run copy:deployments
 
 Fumadocs content is defined in `source.config.ts`, loaded through `src/lib/source.ts`, and rendered under `/docs`. The `/docs/:path*.mdx` rewrite exposes processed Markdown at the corresponding `.mdx` URL for copy and LLM workflows. Keep the search route, `/llms.txt`, `/llms-full.txt`, and `/llms.mdx` aligned with the Fumadocs source loader when the content model changes.
 
+React components in MDX do not automatically become useful Markdown in copy or LLM outputs. When a component carries content that those outputs need, add a Markdown renderer to `src/lib/get-llm-text.ts` and keep it derived from the same source data as the visual component.
+
 Use `next/link` for internal navigation such as `/docs`; use normal anchors for in-page hash links and external destinations. Keep the landing page's authorisation examples clearly illustrative until they are connected to live records or contract evidence. Do not present placeholder `href="#"` actions as live product integrations when those CTAs are made functional. The landing page and docs shell include Vercel Web Analytics at the root layout; keep it independent of the server-only site URL configuration.
 
 The website may describe the current contracts MVP, but it must not imply that deferred backend or product capabilities already exist. The current contract-backed evidence is documented in `../contracts/AGENTS.md`; update public copy when that evidence or the product brief changes.

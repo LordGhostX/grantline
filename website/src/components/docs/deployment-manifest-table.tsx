@@ -29,19 +29,41 @@ function loadDeployments() {
   });
 }
 
+function getComponents(manifest: DeploymentManifest) {
+  return [
+    ["Vault", manifest.vault.address],
+    ["MandateRegistry", manifest.mandateRegistry.address],
+    ["MandateEvaluator", manifest.mandateEvaluator.address],
+    ["EscalationManager", manifest.escalationManager.address],
+    ["VaultExecutor", manifest.vaultExecutor.address],
+  ] as const;
+}
+
+export function getDeploymentManifestMarkdown() {
+  return loadDeployments()
+    .map(({ name, manifest }) => {
+      const rows = getComponents(manifest)
+        .map(([component, address]) => `| ${component} | \`${address}\` |`)
+        .join("\n");
+
+      return [
+        `### ${name}`,
+        "",
+        "| Component | Address |",
+        "| --- | --- |",
+        rows,
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
 export function DeploymentManifestTables() {
   const deployments = loadDeployments();
 
   return (
     <>
       {deployments.map(({ name, manifest }) => {
-        const components = [
-          ["Vault", manifest.vault.address],
-          ["MandateRegistry", manifest.mandateRegistry.address],
-          ["MandateEvaluator", manifest.mandateEvaluator.address],
-          ["EscalationManager", manifest.escalationManager.address],
-          ["VaultExecutor", manifest.vaultExecutor.address],
-        ] as const;
+        const components = getComponents(manifest);
 
         return (
           <section key={name}>
