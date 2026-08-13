@@ -1,0 +1,72 @@
+---
+title: Events
+description: The current registry, escalation, Vault, and executor events and what each one proves.
+---
+
+Committed events are the current onchain evidence surface. An event can show that a state transition or execution step committed, but it cannot replace the transaction receipt: a reverted transaction leaves no events behind.
+
+## MandateRegistry
+
+| Event | Fields | What it records |
+| --- | --- | --- |
+| `MandateCreated` | `mandateId` indexed, `owner` indexed, `vault` indexed, `agent`, `parentMandateId`, `delegationDepth`, `MandateRules rules`, `PreflightRules preflightRules`, `createdBy`, `createdAt` | Creation of a Mandate and the rules written at creation time. |
+| `MandateUpdated` | `mandateId` indexed, `MandateRules rules`, `PreflightRules preflightRules`, `updatedBy` indexed, `updatedAt` | A committed replacement of the stored rules. Effective lineage rules still apply when the evaluator reads them. |
+| `MandateRevoked` | `mandateId` indexed, `revokedBy` indexed, `revokedAt` | Revocation of a Mandate. A revoked ancestor also makes descendant lineage inactive during evaluation. |
+| `NonceReservationCreated` | `mandateId` indexed, `agent` indexed, `nonce` indexed, `digest` | Reservation of a nonce for one escalation digest. |
+| `NonceReservationConsumed` | `mandateId` indexed, `agent` indexed, `nonce` indexed, `digest` | Consumption of an escalation reservation when the approved plan executes. |
+
+The registry events describe authority and nonce state. `MandateUpdated` carries the rules supplied to that update, while `getEffectiveRules` and `getEffectivePreflightRules` are still needed to see the inherited result used by the evaluator.
+
+## EscalationManager
+
+| Event | Fields | What it records |
+| --- | --- | --- |
+| `EscalationSubmitted` | `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `nonce`, `nativeAmount`, `usdAmount`, `usdLimitSkipped`, `submittedAt` | A complete plan and signature were stored after evaluation returned `ESCALATE`, and its nonce was reserved. |
+| `EscalationApproved` | `actionDigest` indexed, `mandateId` indexed, `owner` indexed, `approvedAt` | The current Vault owner approved the stored escalation while its Mandate lineage was active. It does not prove later execution. |
+| `EscalationDenied` | `actionDigest` indexed, `mandateId` indexed, `owner` indexed, `deniedAt` | The current Vault owner denied a pending escalation. |
+| `EscalationExecuted` | `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `nonce`, `executedAt` | An approved escalation completed executor-side action processing and was marked executed. |
+
+The manager stores the full `ActionPlan` and signature behind the digest. Query `getEscalation` when an event identifies a digest; the event alone does not contain the original parameters or signature.
+
+## Vault
+
+| Event | Fields | What it records |
+| --- | --- | --- |
+| `AuthorityUpdated` | `previousAuthority` indexed, `newAuthority` indexed | A change to the address allowed to call the Vault's execution surface. |
+| `ExecutionAttempted` | `authority` indexed, `target` indexed, `value`, `dataHash`, `success`, `resultHash` | A low-level call made through the Vault, including its target, native value, calldata hash, call result, and returned-data hash. |
+| `NativeDeposited` | `from` indexed, `amount` | Native asset received by the Vault. |
+| `NativeWithdrawn` | `to` indexed, `amount` | Owner-controlled native withdrawal from the Vault. |
+| `OwnershipTransferred` | `previousOwner` indexed, `newOwner` indexed | A change to Vault ownership. The owner controls custody and escalation approval. |
+| `TokenDeposited` | `token` indexed, `from` indexed, `amount` | Token custody received by the Vault. |
+| `TokenWithdrawn` | `token` indexed, `to` indexed, `amount` | Owner-controlled token withdrawal from the Vault. |
+
+`ExecutionAttempted` is low-level call evidence, not an independent authorisation result. The executor's committed `ActionPlanExecuted` event and the transaction receipt are needed to establish that the complete plan succeeded.
+
+## VaultExecutor
+
+`ActionPlanExecuted` has this exact shape:
+
+```solidity
+event ActionPlanExecuted(
+    bytes32 indexed actionDigest,
+    uint256 indexed mandateId,
+    address indexed agent,
+    address vault,
+    uint256 nonce,
+    uint256 nativeAmount,
+    uint256 usdAmount,
+    bool usdLimitSkipped,
+    uint256 actionCount,
+    uint256 nativeBalanceAfter
+);
+```
+
+It records the digest that was signed, the Mandate and agent, the Vault used, the consumed nonce, aggregate amounts, whether unavailable USD valuation was skipped, the number of actions, and the projected native balance after evaluation. Because it is emitted after the action loop, its presence in a committed transaction is evidence that all actions reached the executor's successful completion point.
+
+## What events do not prove
+
+Events do not prove that a read-only evaluation was performed at a particular time, that an unsubmitted `DENY` was attempted, or that a future indexer or assembled receipt exists. An `EscalationApproved` event proves approval of the stored digest, while `ActionPlanExecuted` proves committed execution of that digest; the two events answer different questions.
+
+Events emitted by a transaction that reverts are rolled back. For a failed executor call, inspect the receipt status and revert data, then use earlier committed registry or manager events to understand the authority state that led to the failure.
+
+See [Inspect execution evidence](/docs/guides/inspect-execution-evidence) for `cast` and explorer workflows.

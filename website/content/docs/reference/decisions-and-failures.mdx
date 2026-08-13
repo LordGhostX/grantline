@@ -1,0 +1,98 @@
+---
+title: Decisions and failures
+description: The evaluator's current decision values, failure codes, result fields, and transaction boundary.
+---
+
+`MandateEvaluator.evaluate` returns a structured result. The decision describes what the authority layer permits next; it does not describe whether a transaction was mined or whether a downstream call succeeded.
+
+## Decision values
+
+| Value | Meaning |
+| --- | --- |
+| `ALLOW` | The plan satisfies the active Mandate, signature, action, amount, and Preflight checks, so `VaultExecutor.execute` may continue. |
+| `ESCALATE` | A configured amount or Preflight boundary was crossed and the relevant escalation flag is enabled, so the plan may be submitted to `EscalationManager` for owner approval. |
+| `DENY` | The plan is not authorised, or the relevant boundary was crossed without permission to escalate. The executor rejects it before moving capital. |
+
+An `ESCALATE` result does not approve the plan. Submission stores the complete plan and signature, and the Vault owner must approve the stored digest before `executeEscalated` can proceed. The executor evaluates the stored plan again at execution time.
+
+## Result fields
+
+```solidity
+struct EvaluationResult {
+    Decision decision;
+    FailureCode failureCode;
+    uint256 failedActionIndex;
+    uint256 nativeAmount;
+    uint256 usdAmount;
+    bool usdLimitSkipped;
+    uint256 nativeBalanceAfter;
+}
+```
+
+`failedActionIndex` is the zero-based action index for an action-specific validation failure. `type(uint256).max` means that no individual action is identified, which is the normal value for a successful result, rule-level failures, and plan-level failures. `nativeAmount`, `usdAmount`, and `nativeBalanceAfter` are raw integer units; USD values use 18-decimal scaling when valuation is present.
+
+## Plan and authority failures
+
+These failures happen before amount rules are applied and always return `DENY`:
+
+| Failure code | Meaning |
+| --- | --- |
+| `MANDATE_NOT_FOUND` | `mandateId` is zero or outside the registry's current Mandate count. |
+| `MANDATE_INACTIVE` | The Mandate or one of its ancestors is revoked. |
+| `AGENT_MISMATCH` | The plan agent differs from the agent stored on the Mandate. |
+| `EXPIRED` | `deadline` is non-zero and earlier than the current block timestamp. |
+| `EMPTY_PLAN` | The plan contains no actions. |
+
+## Signature failures
+
+| Failure code | Meaning |
+| --- | --- |
+| `INVALID_SIGNATURE` | The EIP-712 signature is malformed, does not recover to the Mandate agent, uses an invalid recovery value, or uses a high-`s` value. |
+
+The evaluator binds the digest to the current chain and evaluator address, then requires the recovered signer to match the Mandate agent. `NONE` means that no failure was found; the current evaluator returns it with `ALLOW`.
+
+## Action validity
+
+These failures identify the first invalid action where applicable:
+
+| Failure code | Meaning |
+| --- | --- |
+| `INVALID_ACTION` | The action version is not the current `TRANSFER` version, or its parameter bytes are empty. |
+| `INVALID_ACTION_PARAMETERS` | The current transfer parameter bytes are not exactly the 96-byte ABI encoding expected by `TransferParameters`. |
+| `INVALID_RECIPIENT` | The decoded transfer recipient is the zero address. |
+| `INVALID_AMOUNT` | The decoded transfer amount is zero. |
+
+## Amount bounds
+
+These failures compare aggregate plan amounts with effective Mandate rules:
+
+| Failure code | Meaning |
+| --- | --- |
+| `AMOUNT_OVERFLOW` | Aggregate native amount would overflow `uint256`. |
+| `NATIVE_AMOUNT_BELOW_MINIMUM` | Aggregate native amount is below a configured non-zero minimum. The result becomes `ESCALATE` only when effective native escalation remains enabled. |
+| `NATIVE_AMOUNT_ABOVE_MAXIMUM` | Aggregate native amount exceeds a configured non-zero maximum. The result becomes `ESCALATE` only when effective native escalation remains enabled. |
+| `USD_AMOUNT_OVERFLOW` | Aggregate available USD valuation would overflow `uint256`. |
+| `USD_AMOUNT_BELOW_MINIMUM` | Available aggregate USD valuation is below a configured non-zero minimum. The result becomes `ESCALATE` only when effective USD escalation remains enabled. |
+| `USD_AMOUNT_ABOVE_MAXIMUM` | Aggregate available USD valuation exceeds a configured non-zero maximum. The result becomes `ESCALATE` only when effective USD escalation remains enabled. |
+
+## Valuation
+
+| Failure code | Meaning |
+| --- | --- |
+| `USD_VALUATION_UNAVAILABLE` | A USD limit is enabled, a required quote is unavailable, and the evaluator is configured not to skip unavailable valuation. |
+
+## Preflight
+
+| Failure code | Meaning |
+| --- | --- |
+| `PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM` | The projected Vault native balance after aggregate native outflow is below the effective Preflight floor. The result becomes `ESCALATE` only when effective Preflight escalation remains enabled. |
+
+Native amount rules apply to the aggregate native outflow. USD rules use available valuations, and an unavailable quote sets `usdLimitSkipped` when the evaluator is configured to skip it. The current deployed testnet stack has no USD provider and skips unavailable quotes, so this path is visible in the result rather than treated as a live valuation.
+
+## Transaction boundary
+
+Evaluation is a read-only call and does not create a durable event. `VaultExecutor.execute` accepts only `ALLOW`; `DENY` and `ESCALATE` cause the executor call to revert. `EscalationManager.submit` accepts only `ESCALATE`, while approval and execution are separate transactions.
+
+If a submitted executor transaction reverts, events emitted during that transaction do not persist. A reverted receipt proves that a transaction attempt failed, but it is not a persisted authorisation record. Persistent records come from committed events such as `MandateRevoked`, `EscalationSubmitted`, or `ActionPlanExecuted`.
+
+See [Transaction lifecycle](/docs/execution/transaction-lifecycle) for the contract path and [Events](/docs/reference/events) for the durable event surface.

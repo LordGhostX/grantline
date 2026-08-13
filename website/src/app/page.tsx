@@ -695,7 +695,7 @@ export default function Home() {
               >
                 View the implementation
               </a>
-              <Link className="btn" href="/docs">
+              <Link className="btn" href="/docs/enforcement/enforcement-boundary">
                 Read how enforcement works
               </Link>
             </div>

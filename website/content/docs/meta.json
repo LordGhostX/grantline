@@ -1,3 +1,10 @@
 {
-  "pages": ["index", "concepts", "enforcement", "execution"]
+  "pages": [
+    "index",
+    "concepts",
+    "enforcement",
+    "execution",
+    "guides",
+    "reference"
+  ]
 }

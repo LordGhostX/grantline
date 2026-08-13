@@ -26,6 +26,16 @@ The agent proposes an action. Grantline checks the active authority and returns 
 - [X Layer testnet](/docs/execution/x-layer-testnet) records the current network and live integration boundaries.
 - [Contracts and deployments](/docs/execution/contracts-and-deployments) explains the manifest and contract wiring.
 
+## Guides and reference
+
+- [Inspect a Mandate](/docs/guides/inspect-a-mandate) shows read-only `cast` calls for stored and effective authority.
+- [Build and sign an Action Plan](/docs/guides/build-and-sign-an-action-plan) shows the current raw `TRANSFER` encoding and EIP-712 signing shape.
+- [Inspect execution evidence](/docs/guides/inspect-execution-evidence) shows how to inspect receipts, events, escalation state, and reverted attempts.
+- [Mandate rules](/docs/reference/mandate-rules) lists the exact rule fields, units, zero-disabled values, and inheritance behaviour.
+- [Action Plan reference](/docs/reference/action-plan) lists the current action types, parameter encoding, and signature fields.
+- [Decisions and failures](/docs/reference/decisions-and-failures) lists evaluator outputs and failure codes without treating them as execution records.
+- [Events](/docs/reference/events) explains the current registry, escalation, Vault, and executor event surface.
+
 ## Current implementation
 
 The current contracts MVP runs on X Layer testnet. It includes:

@@ -1,0 +1,108 @@
+---
+title: Action Plan
+description: The current ActionPlan, TRANSFER, parameter encoding, and EIP-712 signing shape.
+---
+
+The current contracts accept an ordered `ActionPlan` containing one or more typed actions. The only supported action is `TRANSFER` version `1`; the shape below is the contract interface, not a promise of a public SDK.
+
+## Solidity types
+
+The current definitions are:
+
+```solidity
+library ActionTypes {
+    enum ActionType {
+        TRANSFER
+    }
+
+    struct ActionPlan {
+        uint256 mandateId;
+        address agent;
+        uint256 nonce;
+        uint256 deadline;
+        Action[] actions;
+    }
+
+    struct Action {
+        ActionType actionType;
+        uint8 version;
+        bytes parameters;
+    }
+
+    struct TransferParameters {
+        address asset;
+        address recipient;
+        uint256 amount;
+    }
+}
+```
+
+`ActionType.TRANSFER` has enum value `0`, and `TRANSFER_VERSION` is `1`. The `actions` array must contain at least one action. The evaluator checks each action's type, version, and parameter bytes before it applies the Mandate rules.
+
+## Transfer parameters
+
+`TransferParameters` is ABI-encoded with `abi.encode`, in this order:
+
+```text
+(address asset, address recipient, uint256 amount)
+```
+
+The resulting `parameters` value is exactly 96 bytes for the current action. A zero `asset` means the Vault's native asset. A non-zero `asset` is treated as a token contract and is called through the Vault. `recipient` and `amount` must both be non-zero, and token amounts use the token's own raw base units.
+
+A readable representation of a native transfer can look like this before ABI encoding:
+
+```json
+{
+  "mandateId": "1",
+  "agent": "0xAgent",
+  "nonce": "1",
+  "deadline": "0",
+  "actions": [
+    {
+      "actionType": "TRANSFER",
+      "version": 1,
+      "parameters": {
+        "asset": "0x0000000000000000000000000000000000000000",
+        "recipient": "0xRecipient",
+        "amount": "1000000000000000000"
+      }
+    }
+  ]
+}
+```
+
+The JSON is explanatory only. The signed Solidity value contains `actionType: 0` and the ABI-encoded bytes, not the readable nested object. `deadline: 0` disables expiry; otherwise the evaluator rejects the plan after the Unix timestamp in `deadline`.
+
+## EIP-712 domain and types
+
+The signature domain is:
+
+```text
+name: Grantline
+version: 1
+chainId: 1952
+verifyingContract: MandateEvaluator address from the deployment manifest
+```
+
+The domain type is:
+
+```text
+EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)
+```
+
+The primary types are:
+
+```text
+Action(uint8 actionType,uint8 version,bytes parameters)
+ActionPlan(uint256 mandateId,address agent,uint256 nonce,uint256 deadline,Action[] actions)
+```
+
+The evaluator hashes each action's parameter bytes, hashes the ordered action hashes as the `actions` field, hashes the complete `ActionPlan`, and combines that struct hash with the domain separator using the EIP-712 `\x19\x01` prefix. Any change to the Mandate, agent, nonce, deadline, action order, version, or parameters changes the digest.
+
+The signature must be 65 bytes, use recovery identifier `27` or `28`, use a low-`s` value, and recover to the agent stored on the Mandate. The verifying contract is the deployed `MandateEvaluator`, not the `VaultExecutor` or `EscalationManager`.
+
+## Current and deferred behaviour
+
+`TRANSFER` version `1` is the current action surface. The executor performs native transfers or token transfers in array order, and a failed action reverts the complete transaction. Other action types, a public SDK, and a public API are deferred; integrations should not infer their shapes from this page.
+
+See [Build and sign an Action Plan](/docs/guides/build-and-sign-an-action-plan) for an illustrative TypeScript encoding and signing flow.
