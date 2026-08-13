@@ -25,7 +25,7 @@ The executor checks that the supplied Vault is the Vault named by the Mandate, c
 
 ## Who can call what?
 
-The agent's authority comes from the signature recovered from the Action Plan. The public executor entrypoint does not trust the transaction sender as the agent; it trusts the plan's signed `agent` field after the evaluator confirms that it matches the Mandate. In the current testnet integration, the agent or operator submits the transaction and pays gas directly. Sponsored submission is future work and would not change this contract boundary.
+The agent's authority comes from the signature recovered from the Action Plan. The public executor entrypoint does not trust the transaction sender as the agent; it trusts the plan's signed `agent` field after the evaluator confirms that it matches the Mandate. In the current integration, the agent or operator submits the transaction and pays gas directly. Sponsored submission is future work and would not change this contract boundary.
 
 Escalation submission is permissionless after the evaluator returns `ESCALATE`, but the manager can reserve a nonce only when it is exposed by the current Vault authority. Approval and denial belong to the current Vault owner. The current Vault authority is the `VaultExecutor`, which is also the only component allowed to consume a normal or reserved nonce for execution.
 

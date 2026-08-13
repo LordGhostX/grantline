@@ -112,4 +112,4 @@ The evaluator is a read-only contract call and returns the decision, failure cod
 
 An `ALLOW` result can be submitted to `VaultExecutor.execute`. An `ESCALATE` result can be submitted to `EscalationManager.submit`, after which the Vault owner decides whether to approve or deny the stored digest. A `DENY` result should not be submitted as an execution attempt because the executor will revert before calling the Vault.
 
-See [Action Plans](/docs/concepts/action-plans), [Signatures and nonces](/docs/enforcement/signatures-and-nonces), and [Decisions and failures](/docs/reference/decisions-and-failures) for the exact current model.
+See [Action Plans](/docs/concepts/action-plans), [Action commitments, signatures and nonces](/docs/enforcement/action-commitments-signatures-and-nonces), and [Decisions and failures](/docs/reference/decisions-and-failures) for the exact current model.

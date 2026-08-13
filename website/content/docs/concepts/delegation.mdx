@@ -21,6 +21,17 @@ The governing rule is simple:
 
 The effective authority of a sub-agent is constrained by the grant that created it and by the active lineage above it. A sub-agent may receive fewer actions, tighter limits, stricter conditions, or less discretion, but it cannot use delegation to create authority its parent did not have. The current implementation applies this rule to amount limits, escalation permissions, delegation permission, and the native-balance Preflight floor.
 
+In the current model:
+
+```text
+effective authority
+= current child Mandate
+  ∩ active parent boundaries
+  ∩ active ancestor boundaries
+```
+
+The [Preflight](/docs/concepts/preflight) check then applies its own state boundary to the proposed action. It does not give the child authority that is absent from its active lineage.
+
 This model lets organisations separate responsibilities between agents while keeping the original source of authority visible. The current contracts support a root Mandate, a child Mandate, and one further sub-agent level.
 
 ## Administration and revocation

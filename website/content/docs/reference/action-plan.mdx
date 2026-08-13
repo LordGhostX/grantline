@@ -97,7 +97,7 @@ Action(uint8 actionType,uint8 version,bytes parameters)
 ActionPlan(uint256 mandateId,address agent,uint256 nonce,uint256 deadline,Action[] actions)
 ```
 
-The evaluator hashes each action's parameter bytes, hashes the ordered action hashes as the `actions` field, hashes the complete `ActionPlan`, and combines that struct hash with the domain separator using the EIP-712 `\x19\x01` prefix. Any change to the Mandate, agent, nonce, deadline, action order, version, or parameters changes the digest.
+The evaluator hashes each action's parameter bytes, hashes the ordered action hashes as the `actions` field, hashes the complete `ActionPlan`, and combines that struct hash with the domain separator using the EIP-712 `\x19\x01` prefix. Any change to the `mandateId`, agent, nonce, deadline, action order, version, or parameters changes the digest. Changes to the Mandate's current rules are read during evaluation and do not alter the signed digest.
 
 The signature must be 65 bytes, use recovery identifier `27` or `28`, use a low-`s` value, and recover to the agent stored on the Mandate. The verifying contract is the deployed `MandateEvaluator`, not the `VaultExecutor` or `EscalationManager`.
 

@@ -24,12 +24,14 @@ The concepts explain the model. Enforcement and execution show how the current c
 - [Decisions](/docs/concepts/decisions) explains the `ALLOW`, `ESCALATE`, and `DENY` outcomes.
 - [Delegation](/docs/concepts/delegation) explains how authority moves to a sub-agent without becoming broader.
 - [Preflight](/docs/concepts/preflight) explains the current projected-balance check.
+- [Guardians](/docs/concepts/guardians) explains the planned model for adding external conditions.
 - [Records](/docs/concepts/records) explains how authority, decisions, and execution outcomes stay traceable.
 
 ## Follow an action through the system
 
+- [Security model](/docs/enforcement/security-model) explains the current boundaries between agent intent, authority, execution, and custody.
 - [Enforcement boundary](/docs/enforcement/enforcement-boundary) follows the contract path from a signed plan to the Vault.
-- [Signatures and nonces](/docs/enforcement/signatures-and-nonces) explains domain binding, replay protection, and escalation reservations.
+- [Action commitments, signatures and nonces](/docs/enforcement/action-commitments-signatures-and-nonces) explains the canonical plan digest, domain binding, replay protection, and escalation reservations.
 - [Escalation](/docs/enforcement/escalation) explains owner approval and current-state re-evaluation.
 - [Revocation](/docs/enforcement/revocation) explains how authority stops without erasing its history.
 - [Transaction lifecycle](/docs/execution/transaction-lifecycle) separates authorisation, execution, and receipt status.
@@ -45,10 +47,6 @@ The concepts explain the model. Enforcement and execution show how the current c
 - [Action Plan reference](/docs/reference/action-plan) lists the current action types, parameter encoding, and signature fields.
 - [Decisions and failures](/docs/reference/decisions-and-failures) lists evaluator outputs and failure codes without treating them as execution records.
 - [Events](/docs/reference/events) explains the current registry, escalation, Vault, and executor event surface.
-
-## Future direction
-
-- [Roadmap](/docs/roadmap) covers planned mandate lifecycle controls, transfer policies, shared budgets, Guardians, future SDK/API integration, and deferred indexing with Decision Receipts.
 
 ## Current implementation
 

@@ -1,0 +1,51 @@
+---
+title: Guardians
+description: Planned external conditions that can add verified context to a Grantline decision.
+---
+
+<Callout type="warning" title="Planned direction">
+  Guardians are not part of the current contracts. This page describes the
+  direction Grantline may take as it adds external conditions to the current
+  authority model.
+</Callout>
+
+A Guardian is intended to evaluate a narrow external condition around an action. It can bring context such as asset eligibility, market conditions, counterparty status, or an organisation's policy into a Grantline decision, while the agent remains responsible for proposing the action and the Mandate remains the source of authority.
+
+The first proposed direction is an RWA Guardian for tokenised real-world assets. A Guardian would answer a configured condition; it would not choose the agent's strategy, replace the Mandate, or take custody of the Vault.
+
+## The planned model
+
+```text
+External source
+      ↓
+Evidence
+      ↓
+Guardian condition
+      ↓
+PASS / FAIL / UNKNOWN
+      ↓
+Grantline decision
+```
+
+The result would be an input to Grantline's decision path, alongside the authority and state checks already performed by the current system. An external condition would not create authority that the Mandate and active lineage do not already provide.
+
+## Evidence should be explainable
+
+The future Guardian model needs to make the evidence behind a condition visible enough to evaluate and investigate. The intended direction is that evidence should:
+
+- identify or be attributable to its issuer;
+- apply to the action being checked, rather than to an unrelated request;
+- expose when it was observed and when it should no longer be trusted; and
+- make an unavailable, stale, invalid, or unknown result explicit.
+
+Required external conditions should not be certified solely by the acting agent. Otherwise the condition would add another name for the same authority rather than an independent check.
+
+Unknown or unusable evidence should never silently become authorisation. The Mandate or future Guardian policy will need to determine whether that situation produces `DENY` or `ESCALATE`.
+
+## Guardians and current checks
+
+The current [Preflight](/docs/concepts/preflight) implementation checks the projected native balance remaining in a Vault. It does not evaluate market data, asset eligibility, counterparties, or organisational policy. Guardians are a planned external-condition layer, not a replacement for Preflight.
+
+Grantline also needs to keep external conditions separate from downstream execution. A future Guardian and the current Mandate may both pass while a token or protocol still rejects the transaction. In that case Grantline's authorisation result and the downstream execution failure remain separate facts. No final evidence structure, result enum, issuer registry, quorum rule, or external provider has been chosen.
+
+See [Preflight](/docs/concepts/preflight) for the current condition check, [Decisions](/docs/concepts/decisions) for authorisation outcomes, and [Roadmap](/docs/roadmap) for the wider future direction.

@@ -43,4 +43,4 @@ The current evaluation may return `ALLOW` or `ESCALATE` for an approved escalati
 
 Revocation blocks new escalation reservations and approval through the active-lineage checks. The owner can still deny a pending escalation after revocation, which closes the operational record without authorising it. An already approved escalation remains `APPROVED` as history, but current evaluation returns `DENY` for an inactive lineage and prevents execution.
 
-See [Signatures and nonces](/docs/enforcement/signatures-and-nonces) for reservation behaviour and [Revocation](/docs/enforcement/revocation) for the authority lifecycle that affects pending and approved escalations.
+See [Action commitments, signatures and nonces](/docs/enforcement/action-commitments-signatures-and-nonces) for reservation behaviour and [Revocation](/docs/enforcement/revocation) for the authority lifecycle that affects pending and approved escalations.

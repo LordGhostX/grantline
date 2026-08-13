@@ -19,7 +19,7 @@ The current executor runs actions in order and treats the plan as one operation.
 
 ## Signed intent
 
-The agent signs the proposal it wants to submit. The signature binds the proposal to the relevant authority and its controls, so changing the action, its timing, or its execution context produces a different proposal that must be checked again. See [Signatures and nonces](/docs/enforcement/signatures-and-nonces) for the current EIP-712 rules.
+The agent signs the proposal it wants to submit. The signature binds the agent to the exact Action Plan and the Mandate ID it uses, so changing the plan's signed values produces a different commitment that must be checked again. The evaluator reads current Mandate rules and conditions when it checks the plan, so the signature does not freeze historical permissions. See [Action commitments, signatures and nonces](/docs/enforcement/action-commitments-signatures-and-nonces) for the current EIP-712 rules and digest usage.
 
 Action Plans are proposals, not permission by themselves. The active Mandate, current conditions, and any required approval still determine whether the plan may proceed.
 

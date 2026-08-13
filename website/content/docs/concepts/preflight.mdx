@@ -13,6 +13,6 @@ When the projected balance is outside its boundary, the result is `DENY` or `ESC
 
 ## What Preflight does not decide
 
-Preflight does not decide whether a strategy is profitable or whether an external asset is eligible. [Guardians](/docs/roadmap) are the planned way to bring external context into an authorisation decision; the current testnet flow has only the native-balance check.
+Preflight does not decide whether a strategy is profitable or whether an external asset is eligible. It is an additional execution gate, not a source of authority. [Guardians](/docs/concepts/guardians) are the planned way to bring external context into an authorisation decision; the current contracts only have the native-balance check.
 
 See [Decisions](/docs/concepts/decisions) for how a failed Preflight check affects authorisation and [Mandates](/docs/concepts/mandates) for how conditions attach to authority.

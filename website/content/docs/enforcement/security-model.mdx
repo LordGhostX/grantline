@@ -1,0 +1,82 @@
+---
+title: Security model
+description: How Grantline keeps agent authority bounded from a signed proposal to controlled capital.
+---
+
+Grantline enforces authority at the point where a proposal can move Vault capital. The current contracts separate agent intent, Mandate evaluation, owner approval, and Vault execution, so the agent's key is never the Vault authority.
+
+<Callout type="info" title="Current contract model">
+  This page describes the current contract-backed enforcement path. The current
+  Vault owner controls custody and administration, while agent-led execution
+  goes through the configured `VaultExecutor`.
+</Callout>
+
+<Callout type="info" title="Vault upgrade status">
+  The current X Layer deployment uses non-upgradeable contracts. While Grantline
+  remains under active development, the next managed deployment is expected to
+  use upgradeable Vaults so custody and enforcement issues can be corrected.
+  The protocol admin controls those upgrades, which is part of the current trust
+  model. Once the Vault interface and enforcement stack stabilise, the intended
+  direction is a non-upgradeable Vault boundary.
+</Callout>
+
+## The current enforcement path
+
+```text
+Agent signs a typed Action Plan
+            ↓
+MandateEvaluator checks current state and active lineage
+            ↓
+ALLOW / ESCALATE / DENY
+            ↓
+VaultExecutor accepts an allowed or approved plan
+            ↓
+          Vault
+```
+
+For a normal execution, `VaultExecutor` evaluates the signed plan when the execution call is made. An `ALLOW` result lets it consume the shared nonce, call the Vault, and execute the ordered actions atomically. An `ESCALATE` result is submitted to `EscalationManager`, which stores the complete plan and signature for the current Vault owner to approve or deny. The executor evaluates an approved escalation again against current state before it moves capital.
+
+## The Vault is the capital boundary
+
+The agent signs an Action Plan, but the agent address is not the Vault's execution authority. The Vault accepts its generic execution surface only from the configured authority, which is the executor for the agent-led path. A direct call from the agent therefore cannot turn a valid signature into unrestricted Vault access.
+
+The current Vault owner remains responsible for custody and administration. That owner can deposit and withdraw capital, change the Vault authority, transfer ownership, and administer the Mandates that govern the Vault. Routine agent execution does not require the owner to sign each transaction, while configured boundary crossings can require owner approval through Escalation.
+
+Grantline's guarantee is limited to capital held behind this execution boundary. An agent may still obtain another wallet, acquire assets outside the Vault, or use an off-platform resource that Grantline does not control.
+
+## Effective authority
+
+The evaluator determines a Mandate's effective authority from its current rules and the active ancestor boundaries above it:
+
+```text
+effective authority
+= current Mandate
+  ∩ active ancestor boundaries
+```
+
+Delegation can narrow that result but cannot broaden it. Revoking a Mandate or an ancestor makes the lineage inactive for future evaluation. The current implementation applies this inheritance to the implemented Mandate limits, escalation permissions, delegation permission, and native-balance Preflight rules.
+
+Effective authority is not the same thing as every check that can affect execution. Preflight is an additional state gate: it checks whether the projected Vault balance remains above the inherited reserve and can return `DENY` or `ESCALATE` according to the configured rule. Guardians are a planned way to add external conditions; no Guardian check runs in the current contracts.
+
+Escalation is also separate from ordinary effective authority. It gives the owner a path to review a configured boundary crossing, but approval is tied to the exact stored plan and execution still checks current Mandate state, lineage, nonce state, and conditions.
+
+## Authorisation is separate from execution
+
+`ALLOW`, `ESCALATE`, and `DENY` describe what Grantline permits next. They do not describe whether a transaction was mined successfully or whether a downstream asset call accepted the action.
+
+```text
+Authorisation: ALLOW
+Execution:    FAILED
+```
+
+An authorised transfer can still revert during the Vault call or in a downstream token integration. A read-only `DENY` returns a result without creating a state change, while a reverted transaction does not preserve events emitted inside that transaction.
+
+## Metering is not enforcement
+
+A counter can measure how much authority has been used, but it does not stop capital from moving by itself. A budget becomes an enforcement rule only when the execution path checks the same state before calling the Vault or another capital-holding system. Shared cumulative budgets remain future work, so the current contracts do not claim to enforce a total allowance across siblings.
+
+## A current limitation of transfers
+
+The current typed action surface supports `TRANSFER` version `1` and rejects only a zero recipient. It does not yet enforce a destination allowlist. An authorised transfer can therefore send capital to an address controlled by the agent; once that capital leaves the Vault, it is outside the protection of that Vault's execution boundary. The Vault was still reached through its authorised path, but the current action policy does not constrain the destination further.
+
+See [Vaults](/docs/concepts/vaults) for the custody model, [Action commitments, signatures and nonces](/docs/enforcement/action-commitments-signatures-and-nonces) for the canonical plan digest, and [Transaction lifecycle](/docs/execution/transaction-lifecycle) for the execution and receipt boundary.

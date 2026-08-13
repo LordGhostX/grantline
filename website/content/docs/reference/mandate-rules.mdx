@@ -3,7 +3,7 @@ title: Mandate rules
 description: The current MandateRules and PreflightRules fields, units, inheritance, and escalation behaviour.
 ---
 
-`MandateRegistry` stores the authority that binds an agent to a Vault. The stored rules are the rules written for that Mandate. The evaluator uses effective rules, which combine the active Mandate with every active ancestor in its lineage. Read the effective rules when you need to know what a proposal can actually use.
+`MandateRegistry` stores the authority that binds an agent to a Vault. The stored rules are the rules written for that Mandate. The evaluator uses effective rules, which combine the active Mandate with every active ancestor in its lineage. These effective rules are the current implementation of the [effective authority](/docs/concepts/mandates) that a proposal can actually use.
 
 ## MandateRules
 

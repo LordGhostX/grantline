@@ -1,9 +1,25 @@
 ---
-title: Signatures and nonces
-description: Grantline binds each signed Action Plan to its authority domain and prevents it from being executed twice.
+title: Action commitments, signatures and nonces
+description: How Grantline commits an exact Action Plan to its authority domain and prevents it from being executed twice.
 ---
 
-Grantline uses EIP-712 to sign the complete [Action Plan](/docs/concepts/action-plans) rather than an unstructured message. The digest is computed by `ActionSignature` and verified by `MandateEvaluator` before the executor can consume a nonce or call the [Vault](/docs/concepts/vaults).
+The Action Plan digest is Grantline's canonical commitment to the proposed action. It is derived from the complete ordered [Action Plan](/docs/concepts/action-plans) and its EIP-712 domain, then used wherever the current contracts need to identify that exact plan.
+
+Grantline uses EIP-712 to sign the complete Action Plan rather than an unstructured message. The digest is computed by `ActionSignature` and verified by `MandateEvaluator` before the executor can consume a nonce or call the [Vault](/docs/concepts/vaults).
+
+## The canonical action commitment
+
+The current digest includes:
+
+- the `mandateId` and `agent` in the plan;
+- the proposal `nonce` and `deadline`; and
+- the complete ordered action array, including each action's type, version, and exact parameter bytes.
+
+The EIP-712 domain adds `Grantline`, version `1`, the active chain ID, and the deployed `MandateEvaluator` address. Changing any signed plan value, the action order, the evaluator, or the chain changes the digest.
+
+Mandate rules are not copied into the signed bytes. The signature binds the agent to the exact Action Plan and Mandate ID it uses; the evaluator reads the current Mandate rules, active lineage, and Preflight state when it checks the plan. A signature therefore does not freeze earlier permissions.
+
+`actionDigest` is derived at the points that need it. It is not a field on `ActionPlan`, and the current `EvaluationResult` does not return it directly.
 
 ## EIP-712 domain
 
@@ -16,13 +32,24 @@ Every signature uses this domain:
 | Chain ID           | The chain on which the evaluator is deployed |
 | Verifying contract | The `MandateEvaluator` address               |
 
-The verifying contract is the evaluator, not the executor. A signature is therefore tied to the active chain and evaluator address, so the same bytes cannot be moved to another chain or evaluator and retain the same meaning.
+The verifying contract is the evaluator, not the executor. A signature is therefore tied to the active chain and evaluator address, so the same signed plan cannot be moved to another chain or evaluator and retain the same meaning.
 
 ## What the signature covers
 
-The signed plan includes the Mandate ID, agent address, proposal nonce, deadline, and the complete ordered action array. Each action contributes its type, version, and exact parameter bytes to the digest. Changing an action, its order, its parameters, its deadline, or its authority context produces a different digest.
+The signed plan includes the Mandate ID, agent address, proposal nonce, deadline, and complete ordered action array. Each action contributes its type, version, and exact parameter bytes to the digest. Changing an action, its order, its parameters, its deadline, or its Mandate ID produces a different commitment.
 
 The evaluator accepts a signature only when it recovers to the agent recorded in the Mandate. Recovery requires a 65-byte signature with `v` equal to `27` or `28`, and rejects an `s` value above the secp256k1 half-order. The low-`s` check prevents signature malleability from creating alternate valid encodings of the same proposal.
+
+## Where the digest is used
+
+The current contract paths use the derived commitment consistently when they need to identify a complete plan:
+
+- `EscalationManager.submit` computes the digest, stores the complete plan and signature behind it, and reserves the plan's nonce.
+- `EscalationManager.approve` and `deny` address the stored escalation by its digest.
+- `VaultExecutor.execute` computes the digest for a successful normal execution and emits it in `ActionPlanExecuted`.
+- `VaultExecutor.executeEscalated` reloads the stored plan, evaluates current state again, recomputes the digest, and rejects the execution if it differs from the reserved value.
+
+The escalation and execution events therefore identify an exact signed plan, while the registry and evaluator still provide the current authority state that was checked around it.
 
 ## Proposal nonces
 

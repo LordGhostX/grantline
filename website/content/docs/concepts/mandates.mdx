@@ -25,6 +25,18 @@ A Mandate does not give an agent unrestricted control. It grants a defined area 
 
 Updates can change what an agent is allowed to do. [Revocation](/docs/enforcement/revocation) prevents future use of the authority while preserving the history needed to understand what was granted and when it changed.
 
+## Effective authority
+
+The authority an agent can use is the effective authority that remains after the current Mandate is combined with every active ancestor above it:
+
+```text
+effective authority
+= current Mandate
+  ∩ active ancestor boundaries
+```
+
+This is why a child Mandate cannot broaden the authority that created it, and why revoking an ancestor affects the descendants below it. The current contracts apply this model to the implemented Mandate limits, escalation permissions, delegation permission, and the [Preflight](/docs/concepts/preflight) rules. Preflight is an additional execution gate rather than authority itself.
+
 ## Authority lineage
 
 Mandates can form a lineage when an authorised agent delegates a narrower grant to a sub-agent. A proposal is valid only when the authority behind it, including any relevant ancestors, remains active.
