@@ -2,7 +2,7 @@
 
 ## Purpose and boundary
 
-This directory owns Grantline's public website, landing page, documentation surface, and future browser-facing demo. It is a Next.js App Router application using Fumadocs MDX for documentation content. It does not own contract enforcement, backend orchestration, SDKs, deployment manifests, or private operational records.
+This directory owns Grantline's public website, landing page, documentation surface, and future browser-facing demo. It is a Next.js App Router application using Fumadocs MDX for documentation content. It does not own contract enforcement, backend orchestration, SDKs, canonical deployment manifests, or private operational records; its checked-in deployment copies exist only as self-contained docs build inputs.
 
 The website explains the authority model and links to the canonical repository at `https://github.com/LordGhostX/grantline`. Public-facing product copy uses UK English, including `authorisation`, `authorised`, and `tokenised`.
 
@@ -17,6 +17,7 @@ website/
 ├── source.config.ts          # Fumadocs content collection configuration
 ├── eslint.config.mjs         # ESLint flat configuration
 ├── .env.example              # Safe public site URL configuration template
+├── data/deployments/         # Website-local deployment manifest copies
 ├── content/docs/             # Markdown and MDX documentation source
 └── src/
     ├── app/                  # App Router pages, layouts, routes, and metadata
@@ -44,9 +45,10 @@ bun run typecheck
 bun run build
 bun run start
 bun audit
+bun run copy:deployments
 ```
 
-`bun install` runs the `postinstall` script, which regenerates Fumadocs' `.source` files. Run `bun run postinstall` directly when content collection types or generated entries need to be refreshed. Next.js 16 no longer provides `next lint`; linting is owned by the ESLint CLI through `bun run lint`.
+`bun install` runs the `postinstall` script, which regenerates Fumadocs' `.source` files. Run `bun run postinstall` directly when content collection types or generated entries need to be refreshed. `bun run copy:deployments` is a manual local command that copies the contents of `../contracts/deployments/` into `data/deployments/`; it is not part of installation, development, or production builds. Next.js 16 no longer provides `next lint`; linting is owned by the ESLint CLI through `bun run lint`.
 
 ## Application conventions
 
@@ -55,6 +57,8 @@ Fumadocs content is defined in `source.config.ts`, loaded through `src/lib/sourc
 Use `next/link` for internal navigation such as `/docs`; use normal anchors for in-page hash links and external destinations. Keep the landing page's authorisation examples clearly illustrative until they are connected to live records or contract evidence. Do not present placeholder `href="#"` actions as live product integrations when those CTAs are made functional. The landing page and docs shell include Vercel Web Analytics at the root layout; keep it independent of the server-only site URL configuration.
 
 The website may describe the current contracts MVP, but it must not imply that deferred backend or product capabilities already exist. The current contract-backed evidence is documented in `../contracts/AGENTS.md`; update public copy when that evidence or the product brief changes.
+
+The deployment tables in the contracts documentation use the ordered registry at the top of `src/components/docs/deployment-manifest-table.tsx` to map display labels to files under `data/deployments/`. Run `bun run copy:deployments` manually after a contracts deployment change, then add or adjust the registry entry when the deployment should be included or reordered. The copy command does not delete files or update the registry. These copies stay inside the website so Vercel and Docker builds that use `website/` as their context do not depend on files outside the package.
 
 ### Documentation update workflow
 

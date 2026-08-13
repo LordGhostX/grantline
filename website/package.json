@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "postinstall": "fumadocs-mdx"
+    "postinstall": "fumadocs-mdx",
+    "copy:deployments": "mkdir -p data/deployments && cp -R ../contracts/deployments/. data/deployments/"
   },
   "dependencies": {
     "@types/mdx": "^2.0.14",

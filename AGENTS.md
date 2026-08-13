@@ -64,6 +64,7 @@ Sponsored submission remains deferred because the integration evidence uses the 
 | 2026-08-13 | Add the Phase 1 concept documentation surface under `website/content/docs/`.              | The first docs pass covers the current MVP's strategy, Mandates, Vaults, Action Plans, decisions, delegation, Preflight, and records; enforcement, execution, reference, and roadmap sections remain for later phases.                                                 |
 | 2026-08-13 | Add Phase 2 enforcement and execution documentation under `website/content/docs/`.        | The docs now explain the contract enforcement path, signatures, nonces, escalation, revocation, transaction lifecycle, X Layer testnet evidence, and manifest-driven deployment wiring; guides, reference, and roadmap sections remain.                                |
 | 2026-08-13 | Add Phase 3 integrator guides and contract reference pages under `website/content/docs/`. | The docs now include read-only `cast` inspection, raw Action Plan signing, evidence inspection, exact rule and action shapes, evaluator failures, and event semantics; they intentionally do not imply a Grantline SDK, API, indexer, or production valuation service. |
+| 2026-08-13 | Keep an ordered registry for filename-matched website deployment copies.                   | The documentation maps explicit labels to `website/data/deployments/` files, so new networks have intentional names and order while Vercel or Docker builds scoped to `website/` remain self-contained. |
 
 ## Working-memory rules
 

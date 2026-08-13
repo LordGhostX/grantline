@@ -3,6 +3,8 @@ title: Contracts and deployments
 description: The tracked deployment manifest defines the current X Layer contract addresses, wiring, authority, and runtime hashes.
 ---
 
+import { DeploymentManifestTables } from "@/components/docs/deployment-manifest-table";
+
 `contracts/deployments/xlayer-testnet.json` is the operational source of truth for the current deployment. It records the expected chain, contract addresses, dependency wiring, Vault owner and authority, evaluator valuation settings, deployment transactions, and runtime code hashes.
 
 ## Current wiring
@@ -25,17 +27,11 @@ The roles are deliberately separate:
 - `EscalationManager` stores complete escalated plans, accepts permissionless submission, and restricts approval or denial to the Vault owner.
 - `VaultExecutor` binds the evaluator, escalation manager, registry, and Vault execution path, then translates supported actions into atomic Vault calls.
 
-## Current testnet manifest
+## Deployment manifests
 
-The current manifest records these addresses:
+Each registered deployment produces its own table below in the declared order, using the same filename as its contracts source. The current testnet manifest records these addresses:
 
-| Component         | Address                                      |
-| ----------------- | -------------------------------------------- |
-| Vault             | `0xd4450620774933f35ade107f545df5354cc16753` |
-| MandateRegistry   | `0x550DE5A61dd4D442700569dcb46d08C730D3e70C` |
-| MandateEvaluator  | `0x1EFe15d7709e6B703270301A0193ee00484225EA` |
-| EscalationManager | `0xc0105fA41f2c27577206949eb775956A0f56D66E` |
-| VaultExecutor     | `0xf4eeFb87D56dabEd21ba16f7b7329b2Dcaa4A29B` |
+<DeploymentManifestTables />
 
 The evaluator points to the manifest registry and has a zero USD provider with unavailable valuation skipping enabled for this testnet deployment. The escalation manager points to the manifest evaluator. The executor points to the same evaluator and escalation manager, and the Vault authority is the manifest executor.
 
