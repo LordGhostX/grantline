@@ -12,9 +12,12 @@ The agent proposes an action. Grantline checks the active authority and returns 
 
 - [Strategy vs authority](/docs/concepts/strategy-vs-authority) explains the product distinction.
 - [Mandates](/docs/concepts/mandates) explains the rules that bind an agent to a Vault.
+- [Vaults](/docs/concepts/vaults) explains the custody boundary around controlled capital.
 - [Action Plans](/docs/concepts/action-plans) explains the structured proposal format.
+- [Decisions](/docs/concepts/decisions) explains the `ALLOW`, `ESCALATE`, and `DENY` outcomes.
 - [Delegation](/docs/concepts/delegation) explains how authority moves to a sub-agent without becoming broader.
 - [Preflight](/docs/concepts/preflight) explains the current projected-balance check.
+- [Records](/docs/concepts/records) explains how authority, decisions, and execution outcomes stay traceable.
 
 ## Enforcement and execution
 
@@ -35,6 +38,10 @@ The agent proposes an action. Grantline checks the active authority and returns 
 - [Action Plan reference](/docs/reference/action-plan) lists the current action types, parameter encoding, and signature fields.
 - [Decisions and failures](/docs/reference/decisions-and-failures) lists evaluator outputs and failure codes without treating them as execution records.
 - [Events](/docs/reference/events) explains the current registry, escalation, Vault, and executor event surface.
+
+## Future direction
+
+- [Roadmap](/docs/roadmap) covers planned Guardians, future SDK/API integration, and deferred indexing with Decision Receipts.
 
 ## Current implementation
 

@@ -1,0 +1,93 @@
+---
+title: Roadmap
+description: Planned direction for Guardians, SDK and API integration, and offchain indexing with Decision Receipts.
+icon: Map
+---
+
+This page describes future direction around Grantline's external conditions, integration surfaces, and evidence presentation. These capabilities are separate from the current contracts MVP and should not be read as available features.
+
+## Guardians
+
+### Planned
+
+Guardians are planned external condition modules. They are not part of the current contracts MVP, and no Guardian check runs in the current X Layer testnet flow.
+
+### Intended role
+
+A Guardian would bring context from outside the current contract state into an authorisation decision. A Mandate defines what an agent may do, while a Guardian could help determine whether the surrounding conditions make a proposed action acceptable at that moment.
+
+The intended direction includes an RWA Guardian that could provide context such as:
+
+- whether an asset is eligible for a particular action;
+- whether market conditions meet the relevant policy;
+- whether a counterparty is in an acceptable state; and
+- whether an organisation's policy allows the proposed action.
+
+These examples describe the product direction. They do not define a provider, data source, interface, freshness rule, quorum model, or final failure code.
+
+### Relationship to current Preflight
+
+The current Preflight implementation checks the projected native balance that remains in a Vault after a plan's aggregate native outflow. Guardians would add external context to that decision boundary; they would not replace Vault custody, Mandate inheritance, signature checks, nonce protection, or executor re-evaluation.
+
+The current evaluator has no Guardian input, no Guardian failure code, and no external condition provider. A proposal cannot be treated as Guardian-checked because it passes the current native-balance Preflight.
+
+### What implementation must settle
+
+Before Guardians become current functionality, the contracts and tests must define how condition results are authenticated, how stale or unavailable context is handled, who can configure a Guardian, and how a result affects `ALLOW`, `ESCALATE`, or `DENY`. The implementation must also make the evidence for a condition inspectable without implying that the external source itself is part of the Vault's custody boundary.
+
+Until those decisions exist in code and testnet evidence, tokenised Treasury or RWA actions remain illustrative product direction. See [Preflight](/docs/concepts/preflight) for the current condition model and [Mandate rules](/docs/reference/mandate-rules) for the implemented rule fields.
+
+## SDK and API
+
+### Planned
+
+Grantline does not currently publish a TypeScript SDK or public API. Integrators use the contract interfaces, raw `cast` calls, and their own wallet tooling as shown in the current guides.
+
+### Intended responsibilities
+
+A future SDK and API layer could make the current contract flow easier to integrate without moving authority decisions out of the contracts. The responsibility boundary is expected to include:
+
+- constructing and validating typed Action Plans;
+- preparing and signing the EIP-712 message with the agent's wallet;
+- submitting a normal plan or an escalation;
+- retrieving an evaluator result and escalation state; and
+- retrieving committed execution evidence for an action digest.
+
+The SDK would help an integrator prepare and call the current interfaces. The API could coordinate server-side submission, lookup, or presentation work once those services exist. Neither should be described as the authority itself: the deployed evaluator and executor remain the enforcement boundary for contract-backed actions.
+
+### Current integration boundary
+
+The current [build and sign guide](/docs/guides/build-and-sign-an-action-plan) uses illustrative TypeScript with external ABI and wallet tooling. It does not import a Grantline package or call a Grantline API. [Inspect execution evidence](/docs/guides/inspect-execution-evidence) uses the deployment manifest, `cast`, receipts, and events directly for the same reason.
+
+An eventual integration layer must preserve the current distinctions between an authorisation result, an escalation decision, a committed execution, and a reverted transaction. It must also keep signing authority with the configured agent rather than turning a hosted API into a holder of agent private keys.
+
+### Open design work
+
+Package boundaries, supported runtimes, authentication, rate limits, endpoint paths, error envelopes, versioning, and generated types remain open. They should be published only after the underlying contract flow and service behaviour are implemented and tested. This page therefore describes responsibilities, not a final package name, API schema, or endpoint contract.
+
+## Indexing and Decision Receipts
+
+### Deferred
+
+The current contracts emit onchain events, but Grantline does not currently run an offchain indexer or store assembled Decision Receipts. A transaction receipt and committed events remain the source of current execution evidence.
+
+### Intended direction
+
+An indexer could collect committed events from `MandateRegistry`, `EscalationManager`, `Vault`, and `VaultExecutor`, then associate them by Mandate, nonce, and action digest. A receipt view could present the authority, proposal, decision path, owner approval where applicable, execution result, and links to the underlying transactions in a form that a person can inspect.
+
+The receipt should distinguish an authorisation decision from an execution outcome. For example, an `ALLOW` result may lead to a reverted transaction, while an approved escalation may remain unexecuted. A committed `ActionPlanExecuted` event is evidence of completed executor processing; an `EscalationApproved` event is evidence of approval, not execution.
+
+### What the current events provide
+
+The current event surface can support future indexing of:
+
+- Mandate creation, updates, revocation, and nonce reservations;
+- escalation submission, approval, denial, and execution;
+- Vault custody and low-level execution attempts; and
+- successful Action Plan execution with its digest, Mandate, agent, nonce, aggregate amounts, action count, and projected native balance.
+
+Those events do not create a record for every read-only evaluation. Events emitted by a transaction that reverts do not persist, so a future indexer must keep failed receipt evidence tied to the transaction receipt rather than inventing a successful event record.
+
+### Deferred data products
+
+Indexing, assembled Decision Receipts, behavioural history, reputation, and reporting remain deferred. The final storage model, query surface, receipt schema, reorganisation handling, and retention policy must be defined with the indexer implementation. Until then, use [Events](/docs/reference/events) and [Inspect execution evidence](/docs/guides/inspect-execution-evidence) to interpret the current onchain evidence directly.
