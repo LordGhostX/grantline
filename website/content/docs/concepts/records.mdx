@@ -7,18 +7,18 @@ Grantline needs a record of how authority was used, not only a decision made in 
 
 ## Traceability
 
-Authority changes, approvals, custody changes, and successful execution can produce durable records that others can inspect. These records make it possible to follow the path from a granted boundary to the action that used it.
+The current contracts emit durable onchain events for authority changes, approvals, custody changes, and successful execution. These records make it possible to follow the path from a granted boundary to the action that used it.
 
-Records can be stored and presented in different ways, but their purpose remains the same: showing what authority was involved and what happened after the decision.
+The event stream is evidence, not a complete human-readable receipt. [Events](/docs/reference/events) show what committed, while the transaction receipt shows whether the enclosing transaction succeeded.
 
-## Failed paths
+## Decisions and failed paths
 
 A read-only evaluation can return `DENY` without creating a state change. A submitted execution can also fail before completion, so the absence of a successful execution record does not mean no proposal was evaluated.
 
-A record should distinguish an authorisation result from an execution outcome, because a failed attempt may not create a permanent record.
+Records distinguish an authorisation result from an execution outcome. A failed transaction may leave a receipt with status `0` but no committed events from that transaction.
 
-## From records to explanations
+## Decision Receipts
 
-Records can also be aggregated into a human-readable explanation of a decision, connecting the proposal, authority lineage, checks, approval, transaction, and outcome.
+Future indexing could aggregate the proposal, authority lineage, checks, approval, transaction, and outcome into a human-readable Decision Receipt. Grantline does not currently run that indexer or publish those receipts.
 
-See [decisions](/docs/concepts/decisions) for the distinction between authorisation and execution.
+See [Decisions](/docs/concepts/decisions) for the distinction between authorisation and execution.

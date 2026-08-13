@@ -3,7 +3,7 @@ title: Inspect execution evidence
 description: Use the deployment manifest, cast, and the X Layer explorer to inspect successful, escalated, and reverted flows.
 ---
 
-Execution evidence has two parts: the transaction receipt tells you whether a submitted transaction committed, while events explain the state changes and successful execution that the transaction contained. A read-only `DENY` result has no transaction receipt unless a caller submits it and causes a revert.
+Execution evidence has two parts: the transaction receipt tells you whether a submitted transaction committed, while events explain the state changes and successful execution that the transaction contained. A read-only `DENY` result has no transaction receipt unless a caller submits it and causes a revert. The current system exposes events and receipts directly; assembled Decision Receipts are future work.
 
 ## Load the current stack
 
@@ -113,4 +113,4 @@ Receipt status `0` and revert data show that the submitted attempt failed. Event
 - A `MandateRevoked` event proves that an administrator revoked the Mandate at the recorded time; descendant lineage becomes inactive when evaluated.
 - A reverted receipt proves that a submitted transaction failed, but it does not create a persistent event stream for the failed path.
 
-See [events](/docs/reference/events) for event fields and [transaction lifecycle](/docs/execution/transaction-lifecycle) for the relationship between decisions, calls, and receipts.
+See [Events](/docs/reference/events) for event fields and [Transaction lifecycle](/docs/execution/transaction-lifecycle) for the relationship between decisions, calls, and receipts.

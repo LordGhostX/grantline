@@ -3,7 +3,7 @@ title: Signatures and nonces
 description: Grantline binds each signed Action Plan to its authority domain and prevents it from being executed twice.
 ---
 
-Grantline uses EIP-712 to sign the complete Action Plan rather than an unstructured message. The digest is computed by `ActionSignature` and verified by `MandateEvaluator` before the executor can consume a nonce or call the Vault.
+Grantline uses EIP-712 to sign the complete [Action Plan](/docs/concepts/action-plans) rather than an unstructured message. The digest is computed by `ActionSignature` and verified by `MandateEvaluator` before the executor can consume a nonce or call the [Vault](/docs/concepts/vaults).
 
 ## EIP-712 domain
 
@@ -40,8 +40,8 @@ The reservation is shared through `MandateRegistry`, not kept only in the manage
 
 ## Deadlines and rollback
 
-A deadline of `0` means no expiry. Any other deadline is an absolute Unix timestamp checked against the chain's `block.timestamp`; the transaction must be included before the deadline. Callers should leave a safety margin for inclusion delay rather than depend on an exact second.
+A deadline of `0` means no expiry. Any other deadline is an absolute Unix timestamp checked against the chain's `block.timestamp`; the plan is accepted while the current timestamp is at or before the deadline. Callers should leave a safety margin for inclusion delay rather than depend on an exact second.
 
 Nonce consumption, Vault calls, event emission, and escalation status changes happen in one EVM transaction. If a downstream call or a later validation step reverts, those state changes and events do not persist. A receipt with status `0` proves that the transaction failed, not that a nonce was permanently consumed.
 
-See [escalation](/docs/enforcement/escalation) for the approval lifecycle and [transaction lifecycle](/docs/execution/transaction-lifecycle) for how these checks appear in normal and escalated execution.
+See [Escalation](/docs/enforcement/escalation) for the approval lifecycle and [Transaction lifecycle](/docs/execution/transaction-lifecycle) for how these checks appear in normal and escalated execution.

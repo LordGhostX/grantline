@@ -5,7 +5,7 @@ description: The tracked deployment manifest defines the current X Layer contrac
 
 import { DeploymentManifestTables } from "@/components/docs/deployment-manifest-table";
 
-`contracts/deployments/xlayer-testnet.json` is the operational source of truth for the current deployment. It records the expected chain, contract addresses, dependency wiring, Vault owner and authority, evaluator valuation settings, deployment transactions, and runtime code hashes.
+The current X Layer testnet deployment is recorded in `contracts/deployments/xlayer-testnet.json`. The manifest contains the expected chain, contract addresses, dependency wiring, Vault owner and authority, evaluator valuation settings, deployment transactions, and runtime code hashes.
 
 ## Current wiring
 
@@ -19,7 +19,7 @@ MandateRegistry ← MandateEvaluator ← EscalationManager
 
 > Arrows show contract dependency or call direction.
 
-The roles are deliberately separate:
+The roles are separate so each part has one job:
 
 - `Vault` holds native and token capital, exposes owner custody operations, and accepts generic execution only from its configured authority.
 - `MandateRegistry` stores Mandates, lineage, effective rules, nonce usage, and escalation reservations.
@@ -29,7 +29,7 @@ The roles are deliberately separate:
 
 ## Deployment manifests
 
-Each registered deployment produces its own table below in the declared order, using the same filename as its contracts source. The current testnet manifest records these addresses:
+Each registered deployment produces its own table below in the declared order. The current testnet manifest records these addresses:
 
 <DeploymentManifestTables />
 
@@ -55,6 +55,6 @@ Authority configuration uses the same manifest checks before broadcasting. The V
 
 Deploy a replacement component and verify its runtime code and dependency wiring before treating it as current. Update the tracked manifest only after the broadcast succeeds and the resulting address, transaction, authority, and code hash have been checked. This ordering keeps a failed or misdirected authority change visible instead of hiding it behind an edited record.
 
-Never copy an address from an old integration log over the manifest. The manifest is the value that scripts verify, and the relevant network page should be updated whenever that source changes.
+Use the addresses from the current manifest rather than an old integration log. Deployment scripts verify those values, and the relevant network page should be updated whenever the deployment changes.
 
-See [X Layer testnet](/docs/execution/networks/x-layer-testnet) for network-specific details and [enforcement boundary](/docs/enforcement/enforcement-boundary) for how the deployed components constrain execution.
+See [X Layer testnet](/docs/execution/networks/x-layer-testnet) for network-specific details and [Enforcement boundary](/docs/enforcement/enforcement-boundary) for how the deployed components constrain execution.

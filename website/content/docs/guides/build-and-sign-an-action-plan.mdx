@@ -3,7 +3,13 @@ title: Build and sign an Action Plan
 description: Construct the current TRANSFER Action Plan shape and sign its EIP-712 digest without relying on a Grantline SDK.
 ---
 
-This is a raw integration example, not a public SDK or Grantline API. The current contracts accept one typed action, `TRANSFER` version `1`; an integrator must supply its own ABI and wallet tooling around the contract interfaces.
+<Callout type="info" title="Current integration">
+  Grantline does not yet publish an SDK or API. This guide shows the current
+  contract shape with external ABI and wallet tooling; it is useful for testnet
+  integration, but it is not a Grantline package to install.
+</Callout>
+
+The current contracts accept one typed action, `TRANSFER` version `1`. The example below constructs the proposal, encodes its transfer, signs it, and checks the result before choosing normal execution or escalation.
 
 ## Human-readable plan
 
@@ -21,13 +27,13 @@ An integrator can represent the current plan like this before encoding it for th
       "version": 1,
       "asset": "native",
       "to": "0xRecipient",
-      "amount": "1000000000000000"
+      "amount": "1000000000000000000"
     }
   ]
 }
 ```
 
-This JSON is a readable representation. The contract action uses enum value `0` for `TRANSFER`, and native `asset` is encoded as the zero address. The amount above is `0.001 OKB` in raw base units. Token amounts must use the token's own raw base units.
+This JSON is a readable representation. The contract action uses enum value `0` for `TRANSFER`, and native `asset` is encoded as the zero address. The amount above is `1 OKB` in raw base units. Token amounts must use the token's own raw base units.
 
 ## Encode the action parameters
 
@@ -35,23 +41,14 @@ The current `TransferParameters` tuple is `(address asset, address recipient, ui
 
 ```ts
 // Illustrative TypeScript using viem as an external wallet and ABI utility.
-// Grantline does not publish this package or a public SDK yet.
-import {
-  encodeAbiParameters,
-  parseEther,
-  zeroAddress,
-} from "viem";
+import { encodeAbiParameters, parseEther, zeroAddress } from "viem";
 
 const asset = zeroAddress;
 const recipient = "0xRecipient" as `0x${string}`;
 
 const parameters = encodeAbiParameters(
-  [
-    { type: "address" },
-    { type: "address" },
-    { type: "uint256" },
-  ],
-  [asset, recipient, parseEther("0.001")],
+  [{ type: "address" }, { type: "address" }, { type: "uint256" }],
+  [asset, recipient, parseEther("1")],
 );
 
 const actionPlan = {
@@ -115,4 +112,4 @@ The evaluator is a read-only contract call and returns the decision, failure cod
 
 An `ALLOW` result can be submitted to `VaultExecutor.execute`. An `ESCALATE` result can be submitted to `EscalationManager.submit`, after which the Vault owner decides whether to approve or deny the stored digest. A `DENY` result should not be submitted as an execution attempt because the executor will revert before calling the Vault.
 
-See [Action Plans](/docs/concepts/action-plans), [signatures and nonces](/docs/enforcement/signatures-and-nonces), and [decisions and failures](/docs/reference/decisions-and-failures) for the exact current model.
+See [Action Plans](/docs/concepts/action-plans), [Signatures and nonces](/docs/enforcement/signatures-and-nonces), and [Decisions and failures](/docs/reference/decisions-and-failures) for the exact current model.

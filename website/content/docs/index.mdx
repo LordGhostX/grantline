@@ -4,13 +4,20 @@ description: Learn how Grantline gives AI agents bounded authority over capital 
 icon: Landmark
 ---
 
-Grantline is the financial authority layer between an AI agent's intent and execution.
+Grantline is the financial authority layer between an AI agent's intent and execution. An agent proposes an action, Grantline checks the active [Mandate](/docs/concepts/mandates), and the authority layer returns `ALLOW`, `ESCALATE`, or `DENY` before the [Vault](/docs/concepts/vaults) moves capital.
 
-The agent proposes an action. Grantline checks the active authority and returns `ALLOW`, `ESCALATE`, or `DENY` before the Vault moves capital.
+The concepts explain the model. Enforcement and execution show how the current contracts apply it. Guides and reference pages then give integrators the exact fields, calls, and evidence.
 
-## Start here
+<Callout type="info" title="Current MVP">
+  The current contracts MVP is deployed and exercised on X Layer testnet. It
+  supports Vault custody, typed `TRANSFER` Action Plans, Mandates, delegation,
+  Preflight, owner-approved escalation, revocation, and committed execution
+  events.
+</Callout>
 
-- [Strategy vs authority](/docs/concepts/strategy-vs-authority) explains the product distinction.
+## Start with the model
+
+- [Strategy vs authority](/docs/concepts/strategy-vs-authority) explains the distinction between an agent's intent and Grantline's authorisation decision.
 - [Mandates](/docs/concepts/mandates) explains the rules that bind an agent to a Vault.
 - [Vaults](/docs/concepts/vaults) explains the custody boundary around controlled capital.
 - [Action Plans](/docs/concepts/action-plans) explains the structured proposal format.
@@ -19,7 +26,7 @@ The agent proposes an action. Grantline checks the active authority and returns 
 - [Preflight](/docs/concepts/preflight) explains the current projected-balance check.
 - [Records](/docs/concepts/records) explains how authority, decisions, and execution outcomes stay traceable.
 
-## Enforcement and execution
+## Follow an action through the system
 
 - [Enforcement boundary](/docs/enforcement/enforcement-boundary) follows the contract path from a signed plan to the Vault.
 - [Signatures and nonces](/docs/enforcement/signatures-and-nonces) explains domain binding, replay protection, and escalation reservations.
@@ -29,7 +36,7 @@ The agent proposes an action. Grantline checks the active authority and returns 
 - [X Layer testnet](/docs/execution/networks/x-layer-testnet) records the current network and environment-specific integration boundaries.
 - [Contracts and deployments](/docs/execution/contracts-and-deployments) explains the manifest and contract wiring.
 
-## Guides and reference
+## Inspect and integrate
 
 - [Inspect a Mandate](/docs/guides/inspect-a-mandate) shows read-only `cast` calls for stored and effective authority.
 - [Build and sign an Action Plan](/docs/guides/build-and-sign-an-action-plan) shows the current raw `TRANSFER` encoding and EIP-712 signing shape.
@@ -45,15 +52,13 @@ The agent proposes an action. Grantline checks the active authority and returns 
 
 ## Current implementation
 
-The current contracts MVP runs on X Layer testnet. It includes:
+The current contracts MVP runs on X Layer testnet and includes:
 
 - Vault custody and onchain execution events
 - typed `TRANSFER` Action Plans and EIP-712 signatures
 - inherited Mandate rules and native-balance Preflight
 - owner-approved escalation and revocation
 - delegation to sub-agents with bounded authority
-
-The docs describe this implementation first. Mandate pausing, validity windows, transfer whitelists, shared budgets, Guardians, sponsored submission, event indexing, SDK and API surfaces, production valuation, and assembled Decision Receipts are planned work, not current features.
 
 ## For AI agents and tools
 

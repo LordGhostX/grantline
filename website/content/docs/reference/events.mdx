@@ -3,42 +3,42 @@ title: Events
 description: The current registry, escalation, Vault, and executor events and what each one proves.
 ---
 
-Committed events are the current onchain evidence surface. An event can show that a state transition or execution step committed, but it cannot replace the transaction receipt: a reverted transaction leaves no events behind.
+Committed events are the current onchain evidence surface. An event can show that a state transition or execution step committed, but it cannot replace the transaction receipt: a reverted transaction leaves no events behind. See [Records](/docs/concepts/records) for how events fit into the broader traceability model.
 
 ## MandateRegistry
 
-| Event | Fields | What it records |
-| --- | --- | --- |
-| `MandateCreated` | `mandateId` indexed, `owner` indexed, `vault` indexed, `agent`, `parentMandateId`, `delegationDepth`, `MandateRules rules`, `PreflightRules preflightRules`, `createdBy`, `createdAt` | Creation of a Mandate and the rules written at creation time. |
-| `MandateUpdated` | `mandateId` indexed, `MandateRules rules`, `PreflightRules preflightRules`, `updatedBy` indexed, `updatedAt` | A committed replacement of the stored rules. Effective lineage rules still apply when the evaluator reads them. |
-| `MandateRevoked` | `mandateId` indexed, `revokedBy` indexed, `revokedAt` | Revocation of a Mandate. A revoked ancestor also makes descendant lineage inactive during evaluation. |
-| `NonceReservationCreated` | `mandateId` indexed, `agent` indexed, `nonce` indexed, `digest` | Reservation of a nonce for one escalation digest. |
-| `NonceReservationConsumed` | `mandateId` indexed, `agent` indexed, `nonce` indexed, `digest` | Consumption of an escalation reservation when the approved plan executes. |
+| Event                      | Fields                                                                                                                                                                                | What it records                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `MandateCreated`           | `mandateId` indexed, `owner` indexed, `vault` indexed, `agent`, `parentMandateId`, `delegationDepth`, `MandateRules rules`, `PreflightRules preflightRules`, `createdBy`, `createdAt` | Creation of a Mandate and the rules written at creation time.                                                   |
+| `MandateUpdated`           | `mandateId` indexed, `MandateRules rules`, `PreflightRules preflightRules`, `updatedBy` indexed, `updatedAt`                                                                          | A committed replacement of the stored rules. Effective lineage rules still apply when the evaluator reads them. |
+| `MandateRevoked`           | `mandateId` indexed, `revokedBy` indexed, `revokedAt`                                                                                                                                 | Revocation of a Mandate. A revoked ancestor also makes descendant lineage inactive during evaluation.           |
+| `NonceReservationCreated`  | `mandateId` indexed, `agent` indexed, `nonce` indexed, `digest`                                                                                                                       | Reservation of a nonce for one escalation digest.                                                               |
+| `NonceReservationConsumed` | `mandateId` indexed, `agent` indexed, `nonce` indexed, `digest`                                                                                                                       | Consumption of an escalation reservation when the approved plan executes.                                       |
 
 The registry events describe authority and nonce state. `MandateUpdated` carries the rules supplied to that update, while `getEffectiveRules` and `getEffectivePreflightRules` are still needed to see the inherited result used by the evaluator.
 
 ## EscalationManager
 
-| Event | Fields | What it records |
-| --- | --- | --- |
-| `EscalationSubmitted` | `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `nonce`, `nativeAmount`, `usdAmount`, `usdLimitSkipped`, `submittedAt` | A complete plan and signature were stored after evaluation returned `ESCALATE`, and its nonce was reserved. |
-| `EscalationApproved` | `actionDigest` indexed, `mandateId` indexed, `owner` indexed, `approvedAt` | The current Vault owner approved the stored escalation while its Mandate lineage was active. It does not prove later execution. |
-| `EscalationDenied` | `actionDigest` indexed, `mandateId` indexed, `owner` indexed, `deniedAt` | The current Vault owner denied a pending escalation. |
-| `EscalationExecuted` | `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `nonce`, `executedAt` | An approved escalation completed executor-side action processing and was marked executed. |
+| Event                 | Fields                                                                                                                               | What it records                                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `EscalationSubmitted` | `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `nonce`, `nativeAmount`, `usdAmount`, `usdLimitSkipped`, `submittedAt` | A complete plan and signature were stored after evaluation returned `ESCALATE`, and its nonce was reserved.                     |
+| `EscalationApproved`  | `actionDigest` indexed, `mandateId` indexed, `owner` indexed, `approvedAt`                                                           | The current Vault owner approved the stored escalation while its Mandate lineage was active. It does not prove later execution. |
+| `EscalationDenied`    | `actionDigest` indexed, `mandateId` indexed, `owner` indexed, `deniedAt`                                                             | The current Vault owner denied a pending escalation.                                                                            |
+| `EscalationExecuted`  | `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `nonce`, `executedAt`                                                  | An approved escalation completed executor-side action processing and was marked executed.                                       |
 
 The manager stores the full `ActionPlan` and signature behind the digest. Query `getEscalation` when an event identifies a digest; the event alone does not contain the original parameters or signature.
 
 ## Vault
 
-| Event | Fields | What it records |
-| --- | --- | --- |
-| `AuthorityUpdated` | `previousAuthority` indexed, `newAuthority` indexed | A change to the address allowed to call the Vault's execution surface. |
-| `ExecutionAttempted` | `authority` indexed, `target` indexed, `value`, `dataHash`, `success`, `resultHash` | A low-level call made through the Vault, including its target, native value, calldata hash, call result, and returned-data hash. |
-| `NativeDeposited` | `from` indexed, `amount` | Native asset received by the Vault. |
-| `NativeWithdrawn` | `to` indexed, `amount` | Owner-controlled native withdrawal from the Vault. |
-| `OwnershipTransferred` | `previousOwner` indexed, `newOwner` indexed | A change to Vault ownership. The owner controls custody and escalation approval. |
-| `TokenDeposited` | `token` indexed, `from` indexed, `amount` | Token custody received by the Vault. |
-| `TokenWithdrawn` | `token` indexed, `to` indexed, `amount` | Owner-controlled token withdrawal from the Vault. |
+| Event                  | Fields                                                                              | What it records                                                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `AuthorityUpdated`     | `previousAuthority` indexed, `newAuthority` indexed                                 | A change to the address allowed to call the Vault's execution surface.                                                           |
+| `ExecutionAttempted`   | `authority` indexed, `target` indexed, `value`, `dataHash`, `success`, `resultHash` | A low-level call made through the Vault, including its target, native value, calldata hash, call result, and returned-data hash. |
+| `NativeDeposited`      | `from` indexed, `amount`                                                            | Native asset received by the Vault.                                                                                              |
+| `NativeWithdrawn`      | `to` indexed, `amount`                                                              | Owner-controlled native withdrawal from the Vault.                                                                               |
+| `OwnershipTransferred` | `previousOwner` indexed, `newOwner` indexed                                         | A change to Vault ownership. The owner controls custody and escalation approval.                                                 |
+| `TokenDeposited`       | `token` indexed, `from` indexed, `amount`                                           | Token custody received by the Vault.                                                                                             |
+| `TokenWithdrawn`       | `token` indexed, `to` indexed, `amount`                                             | Owner-controlled token withdrawal from the Vault.                                                                                |
 
 `ExecutionAttempted` is low-level call evidence, not an independent authorisation result. The executor's committed `ActionPlanExecuted` event and the transaction receipt are needed to establish that the complete plan succeeded.
 

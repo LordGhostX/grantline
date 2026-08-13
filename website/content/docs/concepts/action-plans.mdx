@@ -3,11 +3,11 @@ title: Action Plans
 description: Action Plans are structured proposals that describe what an agent wants to do under its authority.
 ---
 
-An Action Plan is the agent-facing proposal that Grantline evaluates. It describes one or more intended actions in a form that can be checked against an active authority grant before execution.
+An Action Plan is the agent-facing proposal that Grantline evaluates. It describes one or more intended actions in a form that can be checked against an active [Mandate](/docs/concepts/mandates) before execution.
 
 ## A structured proposal
 
-An Action Plan gives Grantline a complete object to evaluate rather than a request to execute arbitrary Vault calls. It can carry the identity of the authority being used, the proposing agent, replay and timing controls, and an ordered set of typed actions.
+An Action Plan gives Grantline a complete object to evaluate rather than a request to execute arbitrary Vault calls. It carries the identity of the authority being used, the proposing agent, replay and timing controls, and an ordered set of typed actions.
 
 The proposal format can expand as Grantline supports more capabilities, while the principle stays the same: the agent submits a structured request that Grantline can evaluate before execution.
 
@@ -15,12 +15,12 @@ The proposal format can expand as Grantline supports more capabilities, while th
 
 An Action Plan can contain multiple actions. Grantline evaluates the plan as a whole, which prevents separate actions from being used to bypass a boundary that applies to their combined effect.
 
-Execution can preserve the plan's order and treat it as one operation. If a later action cannot complete, the system should not present earlier partial movement as a successful completion of the plan.
+The current executor runs actions in order and treats the plan as one operation. If a later action fails, the transaction reverts, so earlier capital movement is not left behind as a successful completion.
 
 ## Signed intent
 
-The agent signs the proposal it wants to submit. The signature binds the proposal to the relevant authority and its controls, so changing the action, its timing, or its execution context produces a different proposal that must be checked again.
+The agent signs the proposal it wants to submit. The signature binds the proposal to the relevant authority and its controls, so changing the action, its timing, or its execution context produces a different proposal that must be checked again. See [Signatures and nonces](/docs/enforcement/signatures-and-nonces) for the current EIP-712 rules.
 
 Action Plans are proposals, not permission by themselves. The active Mandate, current conditions, and any required approval still determine whether the plan may proceed.
 
-See [mandates](/docs/concepts/mandates) for the authority applied to a plan and [decisions](/docs/concepts/decisions) for the result of evaluation.
+See [Decisions](/docs/concepts/decisions) for the result of evaluation.

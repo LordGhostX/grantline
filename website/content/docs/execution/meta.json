@@ -1,4 +1,4 @@
 {
   "icon": "Workflow",
-  "pages": ["transaction-lifecycle", "networks", "contracts-and-deployments"]
+  "pages": ["transaction-lifecycle", "contracts-and-deployments", "networks"]
 }

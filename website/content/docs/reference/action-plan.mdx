@@ -3,7 +3,7 @@ title: Action Plan
 description: The current ActionPlan, TRANSFER, parameter encoding, and EIP-712 signing shape.
 ---
 
-The current contracts accept an ordered `ActionPlan` containing one or more typed actions. The only supported action is `TRANSFER` version `1`; the shape below is the contract interface, not a promise of a public SDK.
+The current contracts accept an ordered `ActionPlan` containing one or more typed actions. The only supported action is `TRANSFER` version `1`. This page describes the contract interface; use [Build and sign an Action Plan](/docs/guides/build-and-sign-an-action-plan) for an integration example.
 
 ## Solidity types
 
@@ -101,8 +101,8 @@ The evaluator hashes each action's parameter bytes, hashes the ordered action ha
 
 The signature must be 65 bytes, use recovery identifier `27` or `28`, use a low-`s` value, and recover to the agent stored on the Mandate. The verifying contract is the deployed `MandateEvaluator`, not the `VaultExecutor` or `EscalationManager`.
 
-## Current and deferred behaviour
+## Current action surface
 
-`TRANSFER` version `1` is the current action surface. The executor performs native transfers or token transfers in array order, and a failed action reverts the complete transaction. Other action types, a public SDK, and a public API are deferred; integrations should not infer their shapes from this page.
+`TRANSFER` version `1` is the current action surface. The executor performs native transfers or token transfers in array order, and a failed action reverts the complete transaction. Other action types are not part of this contract version. A public SDK and API will provide higher-level integration surfaces when they are available.
 
 See [Build and sign an Action Plan](/docs/guides/build-and-sign-an-action-plan) for an illustrative TypeScript encoding and signing flow.

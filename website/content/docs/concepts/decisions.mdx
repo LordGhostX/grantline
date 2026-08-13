@@ -3,7 +3,7 @@ title: Decisions
 description: Grantline resolves a proposal to ALLOW, ESCALATE, or DENY before controlled capital can move.
 ---
 
-Grantline returns one of three authorisation decisions.
+Grantline returns one of three authorisation decisions before the executor can move capital.
 
 ## `ALLOW`
 
@@ -13,13 +13,13 @@ The proposal passed the checks that apply to its authority, actions, and current
 
 ## `ESCALATE`
 
-The proposal crossed a boundary that permits additional approval. It must be reviewed by the authority responsible for that approval before it can execute.
+The proposal crossed a configured boundary that permits additional approval. It must be reviewed by the Vault owner before it can execute.
 
 Approval applies to the proposal that was reviewed. It does not permanently bypass Grantline, because the relevant authority and conditions still need to be valid when execution occurs.
 
 ## `DENY`
 
-The proposal failed a required authority or validation check, or it crossed a boundary that cannot be approved through escalation. It cannot proceed through the authorised execution path.
+The proposal failed a required authority or validation check, or it crossed a boundary that cannot be approved through [Escalation](/docs/enforcement/escalation). It cannot proceed through the authorised execution path.
 
 ## Decision versus execution
 
@@ -39,4 +39,4 @@ Decision: DENY
 Execution: NO EXECUTION SUBMITTED
 ```
 
-The technical response may include a reason or failure code to help an integrator explain the result. Those response fields can grow as the evaluation surface grows, while the three decision meanings remain stable.
+The technical response includes a failure code and aggregate values that help an integrator explain the result. See [Decisions and failures](/docs/reference/decisions-and-failures) for the current fields; the three decision meanings remain stable as the evaluation surface grows.

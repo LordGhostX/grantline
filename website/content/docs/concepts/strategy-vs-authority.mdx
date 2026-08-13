@@ -8,14 +8,14 @@ An AI agent can decide what it wants to do. Grantline decides whether the active
 That distinction separates three stages:
 
 1. The agent forms an intention.
-2. The agent proposes a structured action under an authority grant.
-3. Grantline evaluates the proposal before the controlled execution path can act.
+2. The agent turns that intention into an [Action Plan](/docs/concepts/action-plans) under a [Mandate](/docs/concepts/mandates).
+3. Grantline evaluates the plan before the controlled execution path can act.
 
 Grantline does not decide whether the agent's strategy is profitable or sensible. It checks whether the proposal fits the authority that an owner or another authorised agent granted, together with the conditions attached to it and the current state relevant to the action.
 
 ## Authorisation is not execution
 
-`ALLOW`, `ESCALATE`, and `DENY` are authorisation decisions.
+`ALLOW`, `ESCALATE`, and `DENY` are [authorisation decisions](/docs/concepts/decisions), not execution results.
 
 - `ALLOW` means the proposal passed the current checks and may enter the authorised execution path.
 - `ESCALATE` means the proposal requires additional approval before execution.
@@ -25,6 +25,6 @@ An allowed action can still fail when the downstream execution system rejects it
 
 ## The authority boundary
 
-The agent proposes an action, but it does not own the controlled capital. Grantline checks the proposal against the authority granted to that agent, and only a proposal that satisfies those boundaries can reach the execution path. This keeps the agent free to form plans while keeping capital movement subject to explicit permission.
+The agent proposes an action, but it does not own the controlled capital. Grantline checks the proposal against the authority granted to that agent, and only a proposal that satisfies those boundaries can reach the execution path. The [Vault](/docs/concepts/vaults) remains the custody boundary, so a signing key does not become an unrestricted capital-movement key.
 
-See [decisions](/docs/concepts/decisions) for how Grantline communicates the result of that check.
+See [Decisions](/docs/concepts/decisions) for how Grantline communicates the result of that check.

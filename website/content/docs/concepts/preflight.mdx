@@ -3,16 +3,16 @@ title: Preflight
 description: Preflight checks whether the conditions around an action are safe before execution.
 ---
 
-Preflight is the set of checks Grantline performs against the state surrounding a proposal before controlled capital can move. It answers whether the action would leave the relevant capital context inside the boundaries attached to its authority.
+Preflight is the set of checks Grantline performs against the state surrounding a proposal before controlled capital can move. It answers whether the action would leave the relevant [Vault](/docs/concepts/vaults) inside the boundaries attached to its [Mandate](/docs/concepts/mandates).
 
 ## Before execution
 
-Preflight can consider the proposal as a whole and compare its expected effect with current state. This keeps conditions such as reserves, available capacity, or other safety boundaries separate from the action's basic authorisation.
+The current Preflight check considers the proposal as a whole and compares its expected native outflow with the Vault's current native balance. It requires the projected balance after execution to stay above the inherited minimum reserve.
 
-When a condition is outside its boundary, the result can be `DENY` or `ESCALATE` depending on how the authority configured that condition. When the conditions hold, the proposal can continue to the other checks.
+When the projected balance is outside its boundary, the result is `DENY` or `ESCALATE` depending on how the Mandate configured that condition. When the boundary holds, the proposal can continue to the other checks.
 
-## A growing condition layer
+## What Preflight does not decide
 
-Preflight can grow to cover more kinds of state and policy as Grantline supports more assets and external context, while retaining the same role: checking whether the expected action stays within its conditions before execution.
+Preflight does not decide whether a strategy is profitable or whether an external asset is eligible. [Guardians](/docs/roadmap) are the planned way to bring external context into an authorisation decision; the current testnet flow has only the native-balance check.
 
-See [decisions](/docs/concepts/decisions) for how a failed Preflight check affects authorisation and [mandates](/docs/concepts/mandates) for how conditions attach to authority.
+See [Decisions](/docs/concepts/decisions) for how a failed Preflight check affects authorisation and [Mandates](/docs/concepts/mandates) for how conditions attach to authority.

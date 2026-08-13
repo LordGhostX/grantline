@@ -5,6 +5,11 @@ description: Current Grantline contract evidence on X Layer testnet, including n
 
 The current contracts MVP is deployed and exercised on X Layer testnet. This page records the network and deployment-specific evidence; shared authorisation and execution mechanics belong in the enforcement and execution pages.
 
+<Callout type="warning" title="Testnet evidence">
+  This is a testnet deployment for inspection and integration work. Do not use
+  the listed contracts with production capital.
+</Callout>
+
 ## Network settings
 
 | Setting   | Value                                                                         |
@@ -17,15 +22,15 @@ The current contracts MVP is deployed and exercised on X Layer testnet. This pag
 
 ## Deployment status
 
-The current stack is a testnet deployment, not a production deployment. Its addresses, dependency wiring, runtime hashes, Vault authority, and evaluator settings are recorded in the tracked deployment manifest and shown in [Contracts and deployments](/docs/execution/contracts-and-deployments). Do not treat those addresses as suitable for production capital.
+Its addresses, dependency wiring, runtime hashes, Vault authority, and evaluator settings are recorded in the deployment manifest and shown in [Contracts and deployments](/docs/execution/contracts-and-deployments#deployment-manifests).
 
-The deployment is verified against the expected chain and runtime hashes before the integration flow runs. The manifest is the source of truth for this environment; the network page does not duplicate its addresses so a deployment update has one public reference point.
+The deployment is verified against the expected chain and runtime hashes before the integration flow runs. The manifest is authoritative for this environment, so the network page does not duplicate its addresses and a deployment update has one public reference point.
 
 ## Submission status
 
 The current testnet integration uses the root or delegated agent as the transaction submitter, and that account pays its own gas. This describes the integration that was exercised on this network, not a requirement of the authority model. The evaluator, nonce, escalation, executor, and Vault checks still apply regardless of who submits the transaction.
 
-Sponsored submission remains deferred. A future relayer can be documented on the relevant integration page once it exists and has been tested.
+Sponsored submission remains deferred. A future relayer will be documented on the relevant integration page once it exists and has been tested.
 
 ## Evidence covered
 
@@ -39,7 +44,7 @@ The X Layer testnet integration exercised:
 - ancestor tightening and lineage revocation; and
 - failed execution receipts that moved no funds.
 
-This is testnet evidence of the current contract flow. Use [Inspect execution evidence](/docs/guides/inspect-execution-evidence) for the reusable receipt, event, and explorer workflow.
+This is evidence of the current contract flow on this network. Use [Inspect execution evidence](/docs/guides/inspect-execution-evidence) for the reusable receipt, event, and explorer workflow.
 
 ## Testnet-specific boundaries
 

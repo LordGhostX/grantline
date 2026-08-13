@@ -3,7 +3,7 @@ title: Enforcement boundary
 description: Grantline keeps proposal evaluation, approval, and capital movement on an authorised contract path.
 ---
 
-Grantline separates the agent's signed proposal from the Vault that holds capital. The evaluator decides whether the proposal is authorised, the executor translates an authorised plan into Vault calls, and the Vault accepts calls only from its configured authority.
+Grantline separates the agent's signed proposal from the Vault that holds capital. The evaluator decides whether the proposal is authorised, the executor translates an authorised plan into Vault calls, and the Vault accepts calls only from its configured authority. This is the contract boundary that prevents an agent's signing key from becoming direct Vault authority.
 
 ```text
 Agent signs an Action Plan
@@ -17,7 +17,7 @@ Vault performs the transfer
 
 ## Contract path
 
-`MandateEvaluator` is the decision boundary. It checks the Mandate and active lineage, the agent binding, the signature, the deadline, the complete action plan, amount rules, and Preflight state. It returns `ALLOW`, `ESCALATE`, or `DENY` with the first relevant failure code rather than moving capital itself.
+`MandateEvaluator` is the decision boundary. It checks the [Mandate](/docs/concepts/mandates) and active lineage, the agent binding, the signature, the deadline, the complete [Action Plan](/docs/concepts/action-plans), amount rules, and [Preflight](/docs/concepts/preflight) state. It returns `ALLOW`, `ESCALATE`, or `DENY` with the first relevant failure code; it never moves capital itself.
 
 `VaultExecutor` is the execution boundary above the Vault. Its normal entrypoint accepts only an `ALLOW` result. Its escalated entrypoint loads the complete plan stored by `EscalationManager`, confirms that the escalation is approved, recomputes the evaluation against current state, and rejects the plan only when the current result is `DENY`. An approved plan can therefore remain executable when current rules still return `ALLOW` or `ESCALATE`, but approval never skips re-evaluation.
 
@@ -25,7 +25,7 @@ The executor checks that the supplied Vault is the Vault named by the Mandate, c
 
 ## Who can call what?
 
-The agent's authority comes from the signature recovered from the Action Plan. The public executor entrypoint does not trust the transaction sender as the agent; it trusts the plan's signed `agent` field after the evaluator confirms that it matches the Mandate. The current integration uses the agent or operator as the transaction submitter and pays gas directly, while a future relayer could submit the same signed plan without changing the contract boundary.
+The agent's authority comes from the signature recovered from the Action Plan. The public executor entrypoint does not trust the transaction sender as the agent; it trusts the plan's signed `agent` field after the evaluator confirms that it matches the Mandate. In the current testnet integration, the agent or operator submits the transaction and pays gas directly. Sponsored submission is future work and would not change this contract boundary.
 
 Escalation submission is permissionless after the evaluator returns `ESCALATE`, but the manager can reserve a nonce only when it is exposed by the current Vault authority. Approval and denial belong to the current Vault owner. The current Vault authority is the `VaultExecutor`, which is also the only component allowed to consume a normal or reserved nonce for execution.
 
@@ -41,4 +41,4 @@ Approved escalations are evaluated again immediately before execution. Current M
 
 Both public executor entrypoints share one OpenZeppelin `ReentrancyGuard` lock. If a recipient makes an external callback during a native or token transfer, that callback cannot start a nested plan through the executor while the active plan is using its point-in-time Preflight balance.
 
-See [decisions](/docs/concepts/decisions) for the meaning of the authorisation result and [transaction lifecycle](/docs/execution/transaction-lifecycle) for the committed and reverted paths.
+See [Decisions](/docs/concepts/decisions) for the meaning of the authorisation result and [Transaction lifecycle](/docs/execution/transaction-lifecycle) for the committed and reverted paths.

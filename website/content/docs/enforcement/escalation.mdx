@@ -3,7 +3,7 @@ title: Escalation
 description: Escalation routes a boundary-crossing proposal to owner approval without bypassing current authority checks.
 ---
 
-Escalation is an approval path for a proposal that crossed a configured amount or Preflight boundary. It does not turn a denied proposal into an executable one: the evaluator must return `ESCALATE`, the Vault owner must approve the stored proposal, and the executor must accept its current evaluation before capital moves.
+Escalation is an approval path for a proposal that crossed a configured amount or [Preflight](/docs/concepts/preflight) boundary. It does not turn a denied proposal into an executable one: the evaluator must return `ESCALATE`, the [Vault](/docs/concepts/vaults) owner must approve the stored proposal, and the executor must accept its current evaluation before capital moves.
 
 ## Lifecycle
 
@@ -29,7 +29,7 @@ Submission is permissionless after evaluation, so the transaction sender does no
 
 Only the current Vault owner can approve or deny a pending escalation. Approval records the digest and changes its status to `APPROVED`; denial changes it to `DENIED`. The owner is approving or denying the exact stored plan, not a later plan that happens to reuse its nonce.
 
-Approval checks that the Mandate and its full lineage are active. It does not permanently bypass the evaluator: the executor evaluates the stored plan again at execution time, so a later rule update, valuation result, balance change, or revocation can still prevent execution.
+Approval checks that the Mandate and its full lineage are active. It does not permanently bypass the evaluator: the executor evaluates the stored plan again at execution time, so a later rule update, valuation result, balance change, expired deadline, or revocation can still prevent execution.
 
 Denial does not release the reserved nonce. The reservation remains part of the historical binding for that digest, and the slot cannot be reused through the ordinary path.
 
@@ -43,4 +43,4 @@ The current evaluation may return `ALLOW` or `ESCALATE` for an approved escalati
 
 Revocation blocks new escalation reservations and approval through the active-lineage checks. The owner can still deny a pending escalation after revocation, which closes the operational record without authorising it. An already approved escalation remains `APPROVED` as history, but current evaluation returns `DENY` for an inactive lineage and prevents execution.
 
-See [signatures and nonces](/docs/enforcement/signatures-and-nonces) for reservation behaviour and [revocation](/docs/enforcement/revocation) for the authority lifecycle that affects pending and approved escalations.
+See [Signatures and nonces](/docs/enforcement/signatures-and-nonces) for reservation behaviour and [Revocation](/docs/enforcement/revocation) for the authority lifecycle that affects pending and approved escalations.
