@@ -1,0 +1,47 @@
+---
+title: Signatures and nonces
+description: Grantline binds each signed Action Plan to its authority domain and prevents it from being executed twice.
+---
+
+Grantline uses EIP-712 to sign the complete Action Plan rather than an unstructured message. The digest is computed by `ActionSignature` and verified by `MandateEvaluator` before the executor can consume a nonce or call the Vault.
+
+## EIP-712 domain
+
+Every signature uses this domain:
+
+| Field              | Current value                                |
+| ------------------ | -------------------------------------------- |
+| Name               | `Grantline`                                  |
+| Version            | `1`                                          |
+| Chain ID           | The chain on which the evaluator is deployed |
+| Verifying contract | The `MandateEvaluator` address               |
+
+The verifying contract is the evaluator, not the executor. A signature is therefore tied to the active chain and evaluator address, so the same bytes cannot be moved to another chain or evaluator and retain the same meaning.
+
+## What the signature covers
+
+The signed plan includes the Mandate ID, agent address, proposal nonce, deadline, and the complete ordered action array. Each action contributes its type, version, and exact parameter bytes to the digest. Changing an action, its order, its parameters, its deadline, or its authority context produces a different digest.
+
+The evaluator accepts a signature only when it recovers to the agent recorded in the Mandate. Recovery requires a 65-byte signature with `v` equal to `27` or `28`, and rejects an `s` value above the secp256k1 half-order. The low-`s` check prevents signature malleability from creating alternate valid encodings of the same proposal.
+
+## Proposal nonces
+
+A nonce identifies an execution slot for a Mandate and agent. It does not require nonces to execute in numerical order, so a later valid proposal can proceed while an earlier proposal is unused.
+
+For a normal `ALLOW` path, `VaultExecutor` asks `MandateRegistry` to consume the `(Mandate, agent, nonce)` slot after evaluation and before external Vault calls. The registry checks the active lineage, the agent binding, the current Vault authority, and whether the slot was already used or reserved.
+
+The executor rejects a normal plan when that slot is reserved for an escalation. A successful normal execution marks the slot used, and a later proposal using it fails. If any later call reverts, the nonce update reverts with the transaction, so a failed downstream execution does not permanently consume the slot.
+
+## Escalation reservations
+
+When `EscalationManager.submit` accepts an `ESCALATE` result, it computes the exact Action Plan digest and reserves the plan's nonce against that digest. The reservation prevents an ordinary execution from using the same slot and prevents another escalation from replacing the stored plan.
+
+The reservation is shared through `MandateRegistry`, not kept only in the manager. The current executor's configured escalation manager is the only caller allowed to create a reservation, and an escalated execution must consume the same digest that was reserved. Pending or denied reservations remain binding, while successful approved execution deletes the reservation and marks the nonce used.
+
+## Deadlines and rollback
+
+A deadline of `0` means no expiry. Any other deadline is an absolute Unix timestamp checked against the chain's `block.timestamp`; the transaction must be included before the deadline. Callers should leave a safety margin for inclusion delay rather than depend on an exact second.
+
+Nonce consumption, Vault calls, event emission, and escalation status changes happen in one EVM transaction. If a downstream call or a later validation step reverts, those state changes and events do not persist. A receipt with status `0` proves that the transaction failed, not that a nonce was permanently consumed.
+
+See [escalation](/docs/enforcement/escalation) for the approval lifecycle and [transaction lifecycle](/docs/execution/transaction-lifecycle) for how these checks appear in normal and escalated execution.

@@ -1,0 +1,42 @@
+---
+title: X Layer testnet
+description: The current Grantline contract evidence runs on X Layer testnet with direct transaction submission.
+---
+
+The current contracts MVP is deployed and exercised on X Layer testnet. It is testnet evidence, not a production deployment or a claim that the current addresses should receive production capital.
+
+| Setting   | Value                                                                         |
+| --------- | ----------------------------------------------------------------------------- |
+| Network   | X Layer testnet                                                               |
+| Chain ID  | `1952`                                                                        |
+| Gas token | `OKB`                                                                         |
+| RPC       | `https://testrpc.xlayer.tech/terigon`                                         |
+| Explorer  | [OKX X Layer testnet explorer](https://web3.okx.com/explorer/x-layer-testnet) |
+
+## Submission model
+
+The live integration uses the root or delegated agent as the transaction submitter, and that account pays its own gas. The contracts enforce the signed agent identity and Vault authority independently of the transaction sender, so this flow proves the authority boundary without introducing a sponsored submission service.
+
+Sponsored submission remains deferred. A future relayer may pay gas and submit a user-signed plan, but it must remain a caller that passes the same evaluator, nonce, escalation, executor, and Vault checks.
+
+## Evidence covered
+
+The current integration exercised:
+
+- a successful root `ALLOW` transfer
+- a hard-denied over-limit plan and a consumed-nonce replay
+- escalation submission, owner approval, and execution
+- delegated authority through a child and a grandchild Mandate
+- inherited Preflight denial followed by owner-approved execution
+- ancestor tightening and lineage revocation
+- failed execution receipts that moved no funds
+
+The tracked contracts working memory records the transaction hashes and outcomes for each flow. The reusable broadcast flow is `contracts/script/TestnetIntegration.s.sol`, and the final evidence left the test fixtures closed with the Vault balance at zero.
+
+## Testnet boundaries
+
+The deployed evaluator has no USD value provider and explicitly allows unavailable USD valuation on this testnet deployment. Available quotes still contribute to the USD subtotal, while a missing quote marks the result as skipped and prevents a USD minimum from being enforced for an incomplete valuation. Production USD resolution, indexing, sponsored submission, and assembled Decision Receipts are deferred.
+
+Do not copy the deployment addresses into a new environment without checking the current manifest. The addresses, dependency wiring, runtime hashes, authority assignment, and evaluator settings belong to the tracked deployment record.
+
+See [contracts and deployments](/docs/execution/contracts-and-deployments) for that manifest-driven setup and [signatures and nonces](/docs/enforcement/signatures-and-nonces) for chain and evaluator binding.

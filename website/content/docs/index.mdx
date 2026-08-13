@@ -16,6 +16,16 @@ The agent proposes an action. Grantline checks the active authority and returns 
 - [Delegation](/docs/concepts/delegation) explains how authority moves to a sub-agent without becoming broader.
 - [Preflight](/docs/concepts/preflight) explains the current projected-balance check.
 
+## Enforcement and execution
+
+- [Enforcement boundary](/docs/enforcement/enforcement-boundary) follows the contract path from a signed plan to the Vault.
+- [Signatures and nonces](/docs/enforcement/signatures-and-nonces) explains domain binding, replay protection, and escalation reservations.
+- [Escalation](/docs/enforcement/escalation) explains owner approval and current-state re-evaluation.
+- [Revocation](/docs/enforcement/revocation) explains how authority stops without erasing its history.
+- [Transaction lifecycle](/docs/execution/transaction-lifecycle) separates authorisation, execution, and receipt status.
+- [X Layer testnet](/docs/execution/x-layer-testnet) records the current network and live integration boundaries.
+- [Contracts and deployments](/docs/execution/contracts-and-deployments) explains the manifest and contract wiring.
+
 ## Current implementation
 
 The current contracts MVP runs on X Layer testnet. It includes:

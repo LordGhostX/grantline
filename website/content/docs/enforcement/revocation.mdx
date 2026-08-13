@@ -1,0 +1,49 @@
+---
+title: Revocation
+description: Revocation stops future use of a Mandate and its descendants while preserving authority history.
+---
+
+Revocation changes a Mandate from `ACTIVE` to `REVOKED` and records the revocation time. It does not delete the Mandate, its parent reference, its agent address, or the events that explain its history.
+
+## Who can revoke
+
+The Vault owner can revoke any Mandate for that Vault. The direct parent agent can revoke its child while the parent lineage is active. A parent agent cannot administer a child through an inactive parent, and an unrelated agent cannot revoke either record.
+
+The same administrator boundary applies to Mandate updates. Updates are read by the evaluator at execution time, so a tightened rule can affect a plan that was signed before the update.
+
+## Active lineage
+
+The registry stores each Mandate's status, but it does not write a separate `REVOKED` status into every descendant. Instead, the evaluator walks the Mandate and every ancestor when it checks `isLineageActive`.
+
+```text
+Root Mandate: REVOKED
+       ↓
+Child Mandate: ACTIVE record, inactive lineage
+       ↓
+Sub-agent proposal: DENY / MANDATE_INACTIVE
+```
+
+This preserves the original records while making the ancestor's revocation effective across the entire delegated authority graph. A descendant cannot use its own `ACTIVE` record to bypass a revoked ancestor.
+
+## Normal proposals
+
+A normal proposal from a revoked Mandate or descendant receives `DENY` with `MANDATE_INACTIVE`. `VaultExecutor` reverts before it consumes the nonce or calls the Vault, so revocation does not create a capital movement or a successful execution record.
+
+The registry also checks the active lineage when consuming a nonce. This keeps replay protection aligned with authority state rather than allowing a stale signed plan to use a previously valid slot.
+
+## Escalations
+
+Revocation affects every stage of an escalation:
+
+- a new escalation cannot reserve a nonce for an inactive lineage
+- a pending escalation cannot be approved after its Mandate or ancestor is revoked
+- a pending escalation can still be denied by the Vault owner to close it operationally
+- an approved escalation remains stored as history, but current evaluation prevents execution
+
+The reserved digest is not silently reassigned when authority changes. This keeps the old proposal's history intact and prevents a different plan from inheriting its execution slot.
+
+## Historical record
+
+`MandateRevoked` records the Mandate, revoking administrator, and timestamp. The original `MandateCreated` and any `MandateUpdated` events remain available, so an observer can reconstruct what authority existed before revocation and when it stopped being usable.
+
+See [delegation](/docs/concepts/delegation) for the parent and sub-agent model and [escalation](/docs/enforcement/escalation) for the lifecycle of a stored approval request.

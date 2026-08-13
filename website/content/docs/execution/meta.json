@@ -1,0 +1,8 @@
+{
+  "icon": "Workflow",
+  "pages": [
+    "transaction-lifecycle",
+    "x-layer-testnet",
+    "contracts-and-deployments"
+  ]
+}

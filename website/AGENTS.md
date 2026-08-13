@@ -69,13 +69,13 @@ When a product or contract feature changes, use the following order:
 
 ## Current status and handoff
 
-The Next.js and Fumadocs foundation is working. The landing page is implemented in `src/app/page.tsx`; the docs shell, MDX source loader, search, LLM routes, favicon, robots route, sitemap, and Vercel Web Analytics are implemented. Phase 1 documentation under `content/docs/` now includes the landing page and eight current-MVP concept pages covering strategy versus authority, Mandates, Vaults, Action Plans, decisions, delegation, Preflight, and records. Enforcement, execution, guides, reference, and roadmap sections remain for later phases.
+The Next.js and Fumadocs foundation is working. The landing page is implemented in `src/app/page.tsx`; the docs shell, MDX source loader, search, LLM routes, favicon, robots route, sitemap, and Vercel Web Analytics are implemented. Phase 1 documentation under `content/docs/` includes the landing page and eight current-MVP concept pages, while Phase 2 adds enforcement and execution pages for the contract boundary, signatures, nonces, escalation, revocation, transaction lifecycle, X Layer testnet, and deployment wiring. Guides, reference, and roadmap sections remain for later phases.
 
 The package currently uses Next.js `16.3.0`, React `19.2.8`, Fumadocs Core/UI `16.14.3`, Fumadocs MDX `15.2.3`, `@vercel/analytics` `2.0.1`, Tailwind CSS `4.3.3`, and Bun-managed dependencies. ESLint `9.39.5` with `eslint-config-next@16.3.0` is the compatible linting setup; ESLint 10 currently fails inside the installed React plugin stack even though the Next config's peer range permits it. TypeScript remains on the declared `^5` line.
 
 The production build and route smoke tests pass with network access. The site URL override has been verified with a preview build, and the generated `robots.txt`, `sitemap.xml`, and LLM document URLs use the configured origin; Vercel deployments can use `VERCEL_URL` when the explicit variable is absent. Sitemap entries intentionally use the current generation date for `lastModified` because the current landing page and concept docs do not provide reliable source modification dates.
 
-Deferred website work includes adding the enforcement, execution, integrator, reference, and roadmap docs; connecting live demo actions to safe read-only or testnet flows; adding social preview assets; and connecting records or receipt views after the API and indexer exist. Do not add wallet signing, capital movement, or production transaction submission to the landing page without an explicit product and security review.
+Deferred website work includes adding the guides, reference, integrator, and roadmap docs; connecting live demo actions to safe read-only or testnet flows; adding social preview assets; and connecting records or receipt views after the API and indexer exist. Do not add wallet signing, capital movement, or production transaction submission to the landing page without an explicit product and security review.
 
 ## Working-memory rules
 

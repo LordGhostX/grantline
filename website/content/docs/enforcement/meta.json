@@ -1,0 +1,9 @@
+{
+  "icon": "ShieldCheck",
+  "pages": [
+    "enforcement-boundary",
+    "signatures-and-nonces",
+    "escalation",
+    "revocation"
+  ]
+}
