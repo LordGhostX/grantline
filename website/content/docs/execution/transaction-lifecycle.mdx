@@ -12,7 +12,7 @@ Signed Action Plan
         ↓
 MandateEvaluator.evaluate
         ↓
-ALLOW
+      ALLOW
         ↓
 MandateRegistry.consumeNonce
         ↓
@@ -29,15 +29,15 @@ The executor then translates each supported action into a Vault call. Native tra
 
 ```text
 ESCALATE
-   ↓
+    ↓
 EscalationManager stores plan and reserves nonce
-   ↓
+    ↓
 Vault owner approves
-   ↓
+    ↓
 VaultExecutor.executeEscalated(digest)
-   ↓
+    ↓
 Current evaluation and exact digest check
-   ↓
+    ↓
 Reserved nonce consumed, actions execute, status becomes EXECUTED
 ```
 
