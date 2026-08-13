@@ -1,0 +1,50 @@
+---
+title: X Layer testnet
+description: Current Grantline contract evidence on X Layer testnet, including network settings and testnet-specific boundaries.
+---
+
+The current contracts MVP is deployed and exercised on X Layer testnet. This page records the network and deployment-specific evidence; shared authorisation and execution mechanics belong in the enforcement and execution pages.
+
+## Network settings
+
+| Setting   | Value                                                                         |
+| --------- | ----------------------------------------------------------------------------- |
+| Network   | X Layer testnet                                                               |
+| Chain ID  | `1952`                                                                        |
+| Gas token | `OKB`                                                                         |
+| RPC       | `https://testrpc.xlayer.tech/terigon`                                         |
+| Explorer  | [OKX X Layer testnet explorer](https://web3.okx.com/explorer/x-layer-testnet) |
+
+## Deployment status
+
+The current stack is a testnet deployment, not a production deployment. Its addresses, dependency wiring, runtime hashes, Vault authority, and evaluator settings are recorded in the tracked deployment manifest and shown in [Contracts and deployments](/docs/execution/contracts-and-deployments). Do not treat those addresses as suitable for production capital.
+
+The deployment is verified against the expected chain and runtime hashes before the integration flow runs. The manifest is the source of truth for this environment; the network page does not duplicate its addresses so a deployment update has one public reference point.
+
+## Submission status
+
+The current testnet integration uses the root or delegated agent as the transaction submitter, and that account pays its own gas. This describes the integration that was exercised on this network, not a requirement of the authority model. The evaluator, nonce, escalation, executor, and Vault checks still apply regardless of who submits the transaction.
+
+Sponsored submission remains deferred. A future relayer can be documented on the relevant integration page once it exists and has been tested.
+
+## Evidence covered
+
+The X Layer testnet integration exercised:
+
+- a successful root `ALLOW` transfer;
+- a hard-denied over-limit plan and a consumed-nonce replay;
+- escalation submission, owner approval, and execution;
+- delegated authority through a child and a grandchild Mandate;
+- inherited Preflight denial followed by owner-approved execution;
+- ancestor tightening and lineage revocation; and
+- failed execution receipts that moved no funds.
+
+This is testnet evidence of the current contract flow. Use [Inspect execution evidence](/docs/guides/inspect-execution-evidence) for the reusable receipt, event, and explorer workflow.
+
+## Testnet-specific boundaries
+
+The deployed evaluator has no USD value provider and is configured to skip unavailable USD valuation. Available quotes still contribute to the USD subtotal, while a missing quote marks the result as skipped and prevents a USD minimum from being enforced for an incomplete valuation. This setting belongs to the current testnet deployment and must not be read as a production valuation policy.
+
+Offchain indexing, sponsored submission, production USD resolution, and assembled Decision Receipts remain deferred. Those are product or integration capabilities, not properties of X Layer testnet itself.
+
+See [Transaction lifecycle](/docs/execution/transaction-lifecycle) for shared transaction behaviour and [Enforcement boundary](/docs/enforcement/enforcement-boundary) for the contract path that applies on this network.

@@ -55,6 +55,6 @@ Authority configuration uses the same manifest checks before broadcasting. The V
 
 Deploy a replacement component and verify its runtime code and dependency wiring before treating it as current. Update the tracked manifest only after the broadcast succeeds and the resulting address, transaction, authority, and code hash have been checked. This ordering keeps a failed or misdirected authority change visible instead of hiding it behind an edited record.
 
-Never copy an address from an old integration log over the manifest. The manifest is the value that scripts verify, and the X Layer testnet page should be updated whenever that source changes.
+Never copy an address from an old integration log over the manifest. The manifest is the value that scripts verify, and the relevant network page should be updated whenever that source changes.
 
-See [X Layer testnet](/docs/execution/x-layer-testnet) for network details and [enforcement boundary](/docs/enforcement/enforcement-boundary) for how the deployed components constrain execution.
+See [X Layer testnet](/docs/execution/networks/x-layer-testnet) for network-specific details and [enforcement boundary](/docs/enforcement/enforcement-boundary) for how the deployed components constrain execution.
