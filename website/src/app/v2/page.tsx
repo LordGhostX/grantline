@@ -16,7 +16,6 @@ type DecisionKey = "allow" | "escalate" | "deny";
 type DecisionCase = {
   action: string;
   amount: string;
-  rows: readonly [string, string, string][];
   decision: string;
   tone: DecisionKey;
   reason: string;
@@ -34,11 +33,6 @@ const decisionCases: Record<DecisionKey, DecisionCase> = {
   allow: {
     action: "Routine supplier payment",
     amount: "$2,500 · signed Action Plan",
-    rows: [
-      ["Mandate", "WITHIN BOUNDARY", "ok"],
-      ["Preflight", "PASS", "ok"],
-      ["Owner approval", "NOT REQUIRED", "muted"],
-    ],
     decision: "ALLOW",
     tone: "allow",
     reason: "The proposal may enter the controlled execution path.",
@@ -54,11 +48,6 @@ const decisionCases: Record<DecisionKey, DecisionCase> = {
   escalate: {
     action: "Larger supplier payment",
     amount: "$12,000 · signed Action Plan",
-    rows: [
-      ["Mandate", "BOUNDARY CROSSED", "warn"],
-      ["Preflight", "PASS", "ok"],
-      ["Owner approval", "REQUIRED", "warn"],
-    ],
     decision: "ESCALATE",
     tone: "escalate",
     reason: "Route the exact proposal to the owner for review.",
@@ -74,11 +63,6 @@ const decisionCases: Record<DecisionKey, DecisionCase> = {
   deny: {
     action: "Signed under revoked authority",
     amount: "$25,000 · signed Action Plan",
-    rows: [
-      ["Mandate", "INACTIVE", "bad"],
-      ["Authority lineage", "REVOKED", "bad"],
-      ["Execution", "NOT SUBMITTED", "muted"],
-    ],
     decision: "DENY",
     tone: "deny",
     reason: "Stop before the proposal reaches the Vault.",
@@ -256,7 +240,7 @@ export default function V2Page() {
 
           <div className="v2-nav-links">
             <a href="#how-it-works">How it works</a>
-            <a href="#model">The Grantline model</a>
+            <a href="#model">Authority model</a>
             <a href="#live">What&apos;s live</a>
             <Link href="/docs">Docs</Link>
             <a href={repositoryUrl} target="_blank" rel="noreferrer nofollow">
@@ -293,7 +277,7 @@ export default function V2Page() {
               How it works
             </a>
             <a href="#model" onClick={closeMenu}>
-              The Grantline model
+              Authority model
             </a>
             <a href="#live" onClick={closeMenu}>
               What&apos;s live
@@ -412,14 +396,6 @@ export default function V2Page() {
                     <span className="v2-label">Proposed action</span>
                     <strong>{current.action}</strong>
                     <small>{current.amount}</small>
-                  </div>
-                  <div className="v2-checks">
-                    {current.rows.map(([label, value, tone]) => (
-                      <div className="v2-check-row" key={label}>
-                        <span>{label}</span>
-                        <strong className={tone}>{value}</strong>
-                      </div>
-                    ))}
                   </div>
                   <div
                     id="v2-decision-panel"
@@ -548,42 +524,50 @@ export default function V2Page() {
           </div>
         </section>
 
-        <section id="use-cases">
+        <section id="where-it-fits">
           <div className="v2-shell">
-            <div className="v2-use-case-layout">
-              <div className="v2-section-head v2-reveal">
-                <div className="v2-eyebrow">One agent. Bounded authority.</div>
-                <h2>
-                  Routine actions can run automatically. Boundary crossings
-                  still have a path.
-                </h2>
-                <p>
-                  A payments or operations agent can propose ordinary transfers
-                  while the owner keeps a defined boundary around controlled
-                  capital.
-                </p>
-              </div>
+            <div className="v2-section-head v2-reveal">
+              <div className="v2-eyebrow">Where bounded authority fits</div>
+              <h2>The agent can change. The authority model stays the same.</h2>
+              <p>
+                Give different agents room to operate inside a defined boundary
+                while the owner keeps control of the capital.
+              </p>
+            </div>
 
-              <div className="v2-outcome-grid v2-reveal">
-                <article className="v2-outcome-card v2-outcome-allow">
-                  <span className="v2-label">Within authority</span>
-                  <code>ALLOW</code>
-                  <h3>Routine supplier payment</h3>
-                  <p>The proposal may enter the controlled execution path.</p>
-                </article>
-                <article className="v2-outcome-card v2-outcome-escalate">
-                  <span className="v2-label">Configured boundary crossed</span>
-                  <code>ESCALATE</code>
-                  <h3>Larger supplier payment</h3>
-                  <p>Route the exact proposal to the owner for review.</p>
-                </article>
-                <article className="v2-outcome-card v2-outcome-deny">
-                  <span className="v2-label">Authority no longer exists</span>
-                  <code>DENY</code>
-                  <h3>Signed under revoked authority</h3>
-                  <p>Stop before the proposal reaches the Vault.</p>
-                </article>
-              </div>
+            <div className="v2-use-case-grid v2-reveal">
+              <article className="v2-use-case-card">
+                <span className="v2-label">Payments agents</span>
+                <h3>Routine payments</h3>
+                <p>
+                  Run ordinary transfers inside a defined boundary, with larger
+                  actions routed for review.
+                </p>
+              </article>
+              <article className="v2-use-case-card">
+                <span className="v2-label">Treasury operations</span>
+                <h3>Controlled capital movement</h3>
+                <p>
+                  Give an agent room to move capital without giving it
+                  unrestricted custody.
+                </p>
+              </article>
+              <article className="v2-use-case-card">
+                <span className="v2-label">Operational agents</span>
+                <h3>Automated workflows</h3>
+                <p>
+                  Connect recurring workflows to a defined capital pool while
+                  owner control remains intact.
+                </p>
+              </article>
+              <article className="v2-use-case-card">
+                <span className="v2-label">Agent teams</span>
+                <h3>Narrower authority</h3>
+                <p>
+                  Delegate specialised authority to sub-agents without losing
+                  the lineage above them.
+                </p>
+              </article>
             </div>
           </div>
         </section>
@@ -716,12 +700,12 @@ export default function V2Page() {
         <section className="v2-section-dark" id="authority-state">
           <div className="v2-shell">
             <div className="v2-section-head v2-reveal">
-              <div className="v2-eyebrow">Current authority</div>
-              <h2>Permission is checked when it matters.</h2>
+              <div className="v2-eyebrow">Bounded authority</div>
+              <h2>Authority stays bounded as things change.</h2>
               <p>
-                A signature does not freeze historical permissions. Grantline
-                reads current authority when the proposal is evaluated and again
-                when an approved escalation is executed.
+                Grantline evaluates current authority, preserves the active
+                lineage, and checks an approved escalation again before
+                execution.
               </p>
             </div>
 
@@ -750,21 +734,26 @@ export default function V2Page() {
                   so changed authority can still stop it.
                 </p>
               </article>
+              <article>
+                <span className="v2-label">
+                  Delegation cannot expand authority
+                </span>
+                <h3>Authority can move down, not out.</h3>
+                <p>
+                  A sub-agent receives a narrower boundary, while restrictions
+                  above it continue to apply.
+                </p>
+              </article>
             </div>
 
             <div className="v2-delegation v2-reveal">
-              <div>
-                <div className="v2-eyebrow">Delegated authority</div>
-                <h2>Authority can move down. It cannot expand on the way.</h2>
+              <div className="v2-delegation-note">
+                <span className="v2-label">Delegated authority</span>
+                <h3>Effective authority follows the active lineage.</h3>
                 <p>
-                  A sub-agent receives a narrower portion of the authority above
-                  it. Its effective authority is the current Mandate intersected
-                  with the active boundaries in its lineage.
+                  Effective authority is the current Mandate intersected with
+                  active ancestor boundaries.
                 </p>
-                <div className="v2-formula">
-                  effective authority = current Mandate &cap; active ancestor
-                  boundaries
-                </div>
               </div>
 
               <div
@@ -798,11 +787,11 @@ export default function V2Page() {
           <div className="v2-shell">
             <div className="v2-section-head v2-reveal">
               <div className="v2-eyebrow">Conditional authority</div>
-              <h2>Authority can be conditional without becoming vague.</h2>
+              <h2>Conditions can narrow what may proceed.</h2>
               <p>
-                Each layer answers a different question about whether an action
-                may proceed, so the owner can keep routine execution automatic
-                without treating every boundary as a hard stop.
+                Mandate rules define authority. Preflight checks the projected
+                Vault state. Escalation routes a configured boundary crossing to
+                owner review.
               </p>
             </div>
 
@@ -817,7 +806,9 @@ export default function V2Page() {
               </article>
               <article>
                 <span className="v2-label">Preflight</span>
-                <h3>Would the resulting Vault state remain safe?</h3>
+                <h3>
+                  Would the projected Vault balance stay above its reserve?
+                </h3>
                 <p>
                   The current MVP checks the projected native Vault balance
                   against an inherited reserve boundary.
@@ -913,8 +904,9 @@ export default function V2Page() {
                 </div>
                 <p className="v2-proof-note">
                   Committed authority changes, approvals, custody changes, and
-                  successful execution events are traceable onchain. A read-only
-                  <code> DENY</code> returns without creating a state change.
+                  successful execution events are traceable onchain. A read-only{" "}
+                  <code className="v2-code-deny">DENY</code> returns without
+                  creating a state change.
                 </p>
               </div>
             </div>
@@ -1010,10 +1002,13 @@ export default function V2Page() {
 
       <footer className="v2-footer">
         <div className="v2-shell v2-footer-row">
-          <a className="v2-brand" href="#top" aria-label="Grantline home">
-            <GrantlineMark className="v2-brand-mark" />
-            <span>Grantline</span>
-          </a>
+          <div className="v2-footer-brand">
+            <a className="v2-brand" href="#top" aria-label="Grantline home">
+              <GrantlineMark className="v2-brand-mark" />
+              <span>Grantline</span>
+            </a>
+            <p>The financial authorisation layer for AI agents.</p>
+          </div>
           <div className="v2-footer-links">
             <Link href="/docs">Documentation</Link>
             <a href={repositoryUrl} target="_blank" rel="noreferrer nofollow">
