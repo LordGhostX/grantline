@@ -1,0 +1,20 @@
+---
+title: Vaults
+description: Vaults hold controlled capital while the owner retains custody and control.
+---
+
+A Vault is the controlled capital context that an authority grant applies to. An agent receives permission to propose actions against that capital; it does not receive ownership of the Vault or a private-key path around its controls.
+
+## Owner and authority
+
+The owner remains responsible for the Vault and its administration. An execution authority acts for the Vault only through the controls Grantline places around it.
+
+This separates custody from operation. An allowed action can proceed without the owner signing every routine transaction, while an action that crosses a configured boundary can require the owner's approval before execution.
+
+## A boundary around capital
+
+The Vault is the final controlled boundary between an authorised proposal and capital movement. The execution path accepts only actions that have passed the applicable authority checks, so an agent cannot turn a valid signing identity into unrestricted access to the Vault.
+
+Vaults can support different kinds of capital, actions, and execution integrations over time, but the custody boundary remains the same: authority to act does not become ownership of the capital.
+
+See [mandates](/docs/concepts/mandates) for the authority applied to a Vault and [decisions](/docs/concepts/decisions) for the outcomes that precede execution.

@@ -1,0 +1,32 @@
+---
+title: Mandates
+description: Mandates define the authority an agent may use over controlled capital and the boundaries around it.
+---
+
+A Mandate is an authority grant connecting an agent to controlled capital. It defines what the agent may propose, the boundaries around those actions, and the conditions under which more approval is required.
+
+## What a Mandate establishes
+
+A Mandate can describe:
+
+- the agent allowed to act
+- the capital or execution context covered by the authority
+- permitted actions and their limits
+- conditions that must hold before an action proceeds
+- when additional approval is required
+- whether narrower authority may be delegated
+- how the authority begins, changes, and ends
+
+The model can expand with new actions, assets, conditions, and approval paths while keeping the same basic authority boundary.
+
+## Authority is bounded
+
+A Mandate does not give an agent unrestricted control. It grants a defined area of authority, and every proposal is checked against the boundaries that apply at the time it is evaluated.
+
+Updates can change what an agent is allowed to do. Revocation prevents future use of the authority while preserving the history needed to understand what was granted and when it changed.
+
+## Authority lineage
+
+Mandates can form a lineage when an authorised agent delegates a narrower grant to a sub-agent. A proposal is valid only when the authority behind it, including any relevant ancestors, remains active.
+
+See [delegation](/docs/concepts/delegation) for the general inheritance model and [decisions](/docs/concepts/decisions) for how a proposal's result is expressed.

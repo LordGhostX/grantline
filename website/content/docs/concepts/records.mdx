@@ -1,0 +1,24 @@
+---
+title: Records
+description: Records connect authority, proposals, decisions, approvals, and execution outcomes over time.
+---
+
+Grantline needs a record of how authority was used, not only a decision made in isolation. Records connect the proposal, the authority behind it, the conditions considered, any approval, and the eventual execution outcome.
+
+## Traceability
+
+Authority changes, approvals, custody changes, and successful execution can produce durable records that others can inspect. These records make it possible to follow the path from a granted boundary to the action that used it.
+
+Records can be stored and presented in different ways, but their purpose remains the same: showing what authority was involved and what happened after the decision.
+
+## Failed paths
+
+A read-only evaluation can return `DENY` without creating a state change. A submitted execution can also fail before completion, so the absence of a successful execution record does not mean no proposal was evaluated.
+
+A record should distinguish an authorisation result from an execution outcome, because a failed attempt may not create a permanent record.
+
+## From records to explanations
+
+Records can also be aggregated into a human-readable explanation of a decision, connecting the proposal, authority lineage, checks, approval, transaction, and outcome.
+
+See [decisions](/docs/concepts/decisions) for the distinction between authorisation and execution.

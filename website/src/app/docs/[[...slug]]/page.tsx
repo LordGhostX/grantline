@@ -25,7 +25,6 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
     <DocsPage
       toc={page.data.toc}
       full={page.data.full}
-      footer={{ enabled: false }}
       lastUpdate={page.data.lastModified}
     >
       <DocsTitle>{page.data.title}</DocsTitle>
@@ -67,7 +66,10 @@ export async function generateMetadata(
   if (!page) notFound();
 
   return {
-    title: page.data.title,
+    title:
+      page.url === "/docs"
+        ? page.data.title
+        : `${page.data.title} | Grantline Documentation`,
     description: page.data.description,
   };
 }

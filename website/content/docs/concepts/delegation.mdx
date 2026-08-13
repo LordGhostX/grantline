@@ -1,0 +1,30 @@
+---
+title: Delegation
+description: Delegation gives a sub-agent a narrower authority grant while preserving the lineage back to its source.
+---
+
+An authorised agent can delegate a narrower authority grant to a sub-agent when its own authority allows it. The sub-agent has its own identity, but it remains connected to the parent grant and the capital context above it.
+
+```text
+Capital owner
+    ↓
+Treasury sub-agent
+    ↓
+Execution sub-agent
+```
+
+The governing rule is simple:
+
+> Delegated authority may become narrower, but never broader.
+
+## Inherited boundaries
+
+The effective authority of a sub-agent is constrained by the grant that created it and by the active lineage above it. A sub-agent may receive fewer actions, tighter limits, stricter conditions, or less discretion, but it cannot use delegation to create authority its parent did not have.
+
+This model lets organisations separate responsibilities between agents while keeping the original source of authority visible. The boundaries may become more detailed over time, but a sub-agent cannot receive broader authority than its parent.
+
+## Administration and revocation
+
+The responsible owner and authorised parent can administer the grants within their respective boundaries. Revoking an ancestor prevents descendant authority from being used, while preserving the records needed to understand the lineage and its history.
+
+See [mandates](/docs/concepts/mandates) for the authority grant itself and [decisions](/docs/concepts/decisions) for how an inactive or insufficient lineage affects a proposal.

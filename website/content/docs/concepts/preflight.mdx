@@ -1,0 +1,18 @@
+---
+title: Preflight
+description: Preflight checks whether the conditions around an action are safe before execution.
+---
+
+Preflight is the set of checks Grantline performs against the state surrounding a proposal before controlled capital can move. It answers whether the action would leave the relevant capital context inside the boundaries attached to its authority.
+
+## Before execution
+
+Preflight can consider the proposal as a whole and compare its expected effect with current state. This keeps conditions such as reserves, available capacity, or other safety boundaries separate from the action's basic authorisation.
+
+When a condition is outside its boundary, the result can be `DENY` or `ESCALATE` depending on how the authority configured that condition. When the conditions hold, the proposal can continue to the other checks.
+
+## A growing condition layer
+
+Preflight can grow to cover more kinds of state and policy as Grantline supports more assets and external context, while retaining the same role: checking whether the expected action stays within its conditions before execution.
+
+See [decisions](/docs/concepts/decisions) for how a failed Preflight check affects authorisation and [mandates](/docs/concepts/mandates) for how conditions attach to authority.

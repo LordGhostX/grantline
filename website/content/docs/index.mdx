@@ -1,9 +1,45 @@
 ---
 title: Grantline Documentation
-description: Grantline gives AI agents bounded authority over capital, with enforceable limits, delegation, owner approval, and traceable execution.
-icon: Building
+description: Learn how Grantline gives AI agents bounded authority over capital through Mandates, Preflight, delegation, owner approval, and traceable execution.
+icon: Landmark
 ---
 
-## What is Grantline?
+Grantline is the financial authority layer between an AI agent's intent and execution.
 
-Grantline lets people and organisations define what an agent is allowed to do, under what conditions, and when another authority needs to step in. The result is autonomy with a defined boundary, owner control, and an auditable path from intent to execution.
+The agent proposes an action. Grantline checks the active authority and returns `ALLOW`, `ESCALATE`, or `DENY` before the Vault moves capital.
+
+## Start here
+
+- [Strategy vs authority](/docs/concepts/strategy-vs-authority) explains the product distinction.
+- [Mandates](/docs/concepts/mandates) explains the rules that bind an agent to a Vault.
+- [Action Plans](/docs/concepts/action-plans) explains the structured proposal format.
+- [Delegation](/docs/concepts/delegation) explains how authority moves to a sub-agent without becoming broader.
+- [Preflight](/docs/concepts/preflight) explains the current projected-balance check.
+
+## Current implementation
+
+The current contracts MVP runs on X Layer testnet. It includes:
+
+- Vault custody and onchain execution events
+- typed `TRANSFER` Action Plans and EIP-712 signatures
+- inherited Mandate rules and native-balance Preflight
+- owner-approved escalation and revocation
+- delegation to sub-agents with bounded authority
+
+The docs describe this implementation first. Guardians, sponsored submission, event indexing, SDK and API surfaces, production valuation, and assembled Decision Receipts are planned work, not current features.
+
+## For AI agents and tools
+
+- <a href="/llms.txt" target="_blank" rel="noopener noreferrer">
+    <code>/llms.txt</code>
+  </a>
+  provides a concise index of the documentation.
+- <a href="/llms-full.txt" target="_blank" rel="noopener noreferrer">
+    <code>/llms-full.txt</code>
+  </a>
+  provides all documentation as one plain-text resource.
+- Add `.mdx` to any docs URL to fetch that page as Markdown, such as <a href="/docs/concepts/mandates.mdx" target="_blank" rel="noopener noreferrer"><code>/docs/concepts/mandates.mdx</code></a>.
+- <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer">
+    <code>/sitemap.xml</code>
+  </a>
+  provides the canonical URL map for crawlers and tools.

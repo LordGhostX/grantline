@@ -23,6 +23,11 @@ body {
     font-weight: 500;
 }
 
+#nd-sidebar a:focus-visible {
+    outline: 2px solid var(--color-fd-ring);
+    outline-offset: -2px;
+}
+
 /* Remove extra gap below page description */
 #nd-page p.mb-8 {
     margin-bottom: 0 !important;

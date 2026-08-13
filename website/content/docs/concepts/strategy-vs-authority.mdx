@@ -1,0 +1,30 @@
+---
+title: Strategy vs authority
+description: Grantline decides whether an agent is authorised to take an action; it does not choose the agent's strategy.
+---
+
+An AI agent can decide what it wants to do. Grantline decides whether the active authority permits it.
+
+That distinction separates three stages:
+
+1. The agent forms an intention.
+2. The agent proposes a structured action under an authority grant.
+3. Grantline evaluates the proposal before the controlled execution path can act.
+
+Grantline does not decide whether the agent's strategy is profitable or sensible. It checks whether the proposal fits the authority that an owner or another authorised agent granted, together with the conditions attached to it and the current state relevant to the action.
+
+## Authorisation is not execution
+
+`ALLOW`, `ESCALATE`, and `DENY` are authorisation decisions.
+
+- `ALLOW` means the proposal passed the current checks and may enter the authorised execution path.
+- `ESCALATE` means the proposal requires additional approval before execution.
+- `DENY` means the proposal cannot proceed through the authorised path.
+
+An allowed action can still fail when the downstream execution system rejects it. That failure is an execution result, not a change to the earlier authorisation decision.
+
+## The authority boundary
+
+The agent proposes an action, but it does not own the controlled capital. Grantline checks the proposal against the authority granted to that agent, and only a proposal that satisfies those boundaries can reach the execution path. This keeps the agent free to form plans while keeping capital movement subject to explicit permission.
+
+See [decisions](/docs/concepts/decisions) for how Grantline communicates the result of that check.

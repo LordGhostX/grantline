@@ -1,0 +1,42 @@
+---
+title: Decisions
+description: Grantline resolves a proposal to ALLOW, ESCALATE, or DENY before controlled capital can move.
+---
+
+Grantline returns one of three authorisation decisions.
+
+## `ALLOW`
+
+The proposal passed the checks that apply to its authority, actions, and current conditions. It may enter the authorised execution path.
+
+`ALLOW` authorises the path. It does not guarantee that a downstream system, recipient, or asset integration will accept the action.
+
+## `ESCALATE`
+
+The proposal crossed a boundary that permits additional approval. It must be reviewed by the authority responsible for that approval before it can execute.
+
+Approval applies to the proposal that was reviewed. It does not permanently bypass Grantline, because the relevant authority and conditions still need to be valid when execution occurs.
+
+## `DENY`
+
+The proposal failed a required authority or validation check, or it crossed a boundary that cannot be approved through escalation. It cannot proceed through the authorised execution path.
+
+## Decision versus execution
+
+The decision answers whether the proposal is authorised. The execution result answers whether the authorised action completed.
+
+For example:
+
+```text
+Decision: ALLOW
+Execution: FAILED
+```
+
+That is different from:
+
+```text
+Decision: DENY
+Execution: NO EXECUTION SUBMITTED
+```
+
+The technical response may include a reason or failure code to help an integrator explain the result. Those response fields can grow as the evaluation surface grows, while the three decision meanings remain stable.
