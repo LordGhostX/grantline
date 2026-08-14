@@ -124,6 +124,15 @@ export default function V2Page() {
     let observer: IntersectionObserver | null = null;
 
     if ("IntersectionObserver" in window && !reduceMotion) {
+      const viewportHeight = window.innerHeight;
+      revealElements.forEach((element) => {
+        const rect = element.getBoundingClientRect();
+        if (rect.top < viewportHeight && rect.bottom > 0) {
+          element.classList.add("is-visible");
+        }
+      });
+
+      root.classList.add("v2-motion-ready");
       observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
@@ -134,7 +143,11 @@ export default function V2Page() {
         },
         { threshold: 0.12 },
       );
-      revealElements.forEach((element) => observer?.observe(element));
+      revealElements.forEach((element) => {
+        if (!element.classList.contains("is-visible")) {
+          observer?.observe(element);
+        }
+      });
     } else {
       revealElements.forEach((element) => element.classList.add("is-visible"));
     }
@@ -153,6 +166,10 @@ export default function V2Page() {
       lenis?.destroy();
       cancelAnimationFrame(rafId);
       observer?.disconnect();
+      root.classList.remove("v2-motion-ready");
+      revealElements.forEach((element) =>
+        element.classList.remove("is-visible"),
+      );
       anchorHandlers.forEach(([link, handler]) => {
         link.removeEventListener("click", handler);
       });
@@ -255,11 +272,7 @@ export default function V2Page() {
             <a href={repositoryUrl} target="_blank" rel="noreferrer nofollow">
               GitHub <span aria-hidden="true">↗</span>
             </a>
-            <button
-              type="button"
-              className="v2-mobile-demo"
-              disabled
-            >
+            <button type="button" className="v2-mobile-demo" disabled>
               Demo coming soon
             </button>
           </div>
@@ -383,7 +396,6 @@ export default function V2Page() {
                   </div>
                 </div>
               </div>
-
             </figure>
           </div>
         </header>
@@ -527,9 +539,8 @@ export default function V2Page() {
               <div className="v2-eyebrow">Live on testnet</div>
               <h2>The current X Layer testnet enforces the authority path.</h2>
               <p>
-                The implementation covers signed proposals, inherited
-                authority, owner escalation, revocation, and committed
-                execution evidence.
+                The implementation covers signed proposals, inherited authority,
+                owner escalation, revocation, and committed execution evidence.
               </p>
             </div>
 
@@ -718,7 +729,9 @@ export default function V2Page() {
               </article>
             </div>
             <div className="v2-model-followup v2-reveal">
-              <h3>Before execution, Grantline checks authority and Vault state.</h3>
+              <h3>
+                Before execution, Grantline checks authority and Vault state.
+              </h3>
               <p>
                 Mandate rules define authority. Preflight checks the projected
                 Vault state. Escalation routes a configured boundary crossing to
@@ -771,7 +784,9 @@ export default function V2Page() {
             <div className="v2-state-grid v2-reveal">
               <article>
                 <span className="v2-label">Rules can tighten</span>
-                <h3>New Mandate rules are checked when the proposal is evaluated.</h3>
+                <h3>
+                  New Mandate rules are checked when the proposal is evaluated.
+                </h3>
                 <p>
                   A proposal signed under a wider boundary can stop when the
                   Mandate becomes more restrictive.
@@ -845,9 +860,7 @@ export default function V2Page() {
           <div className="v2-shell">
             <div className="v2-section-head v2-reveal">
               <div className="v2-eyebrow">Where Grantline goes next</div>
-              <h2>
-                Extend the authority model without opening a bypass.
-              </h2>
+              <h2>Extend the authority model without opening a bypass.</h2>
               <p>
                 Future work adds policy, external context, integrations, and
                 evidence around the same enforced execution boundary.

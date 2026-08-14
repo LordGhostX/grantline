@@ -1320,7 +1320,12 @@ code.v2-code-deny {
     transform: none;
 }
 
-.v2-reveal.is-visible {
+.landing-v2.v2-motion-ready .v2-reveal:not(.is-visible) {
+    opacity: 0;
+    transform: translateY(14px);
+}
+
+.landing-v2.v2-motion-ready .v2-reveal.is-visible {
     animation: v2-reveal-in 450ms ease both;
 }
 
