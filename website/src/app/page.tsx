@@ -1,23 +1,63 @@
 "use client";
 
 import "./landing.css";
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import Link from "next/link";
 import Lenis from "lenis";
 import GrantlineMark from "@/components/grantline-mark";
 import { repositoryUrl, xUrl } from "@/lib/site-links";
 
+type DecisionKey = "allow" | "escalate" | "deny";
+
+type DecisionCase = {
+  action: string;
+  amount: string;
+  decision: string;
+  tone: DecisionKey;
+  reason: string;
+};
+
+const decisionCases: Record<DecisionKey, DecisionCase> = {
+  allow: {
+    action: "Routine supplier payment",
+    amount: "$2,500 · signed Action Plan",
+    decision: "ALLOW",
+    tone: "allow",
+    reason: "The proposal may enter the controlled execution path.",
+  },
+  escalate: {
+    action: "Larger supplier payment",
+    amount: "$12,000 · signed Action Plan",
+    decision: "ESCALATE",
+    tone: "escalate",
+    reason: "Route the exact proposal to the owner for review.",
+  },
+  deny: {
+    action: "Signed under revoked authority",
+    amount: "$25,000 · signed Action Plan",
+    decision: "DENY",
+    tone: "deny",
+    reason: "Stop before the proposal reaches the Vault.",
+  },
+};
+
+const decisionKeys = Object.keys(decisionCases) as DecisionKey[];
+
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeCase, setActiveCase] = useState("allow");
+  const [activeCase, setActiveCase] = useState<DecisionKey>("allow");
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
   useEffect(() => {
+    const root = document.querySelector<HTMLElement>(".landing");
+    if (!root) return;
+
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
-    const navWrap = document.querySelector(".nav-wrap");
+    const nav = root.querySelector<HTMLElement>(".nav-wrap nav");
     let lenis: Lenis | null = null;
     let rafId = 0;
 
@@ -28,676 +68,783 @@ export default function Home() {
         wheelMultiplier: 0.9,
         touchMultiplier: 1,
       });
-      function raf(time: number) {
-        lenis!.raf(time);
+
+      const raf = (time: number) => {
+        lenis?.raf(time);
         rafId = requestAnimationFrame(raf);
-      }
+      };
+
       rafId = requestAnimationFrame(raf);
     }
 
-    function scrollToAnchor(target: string) {
-      const el = document.querySelector(target);
-      if (!el) return;
+    const scrollToAnchor = (target: string, link?: HTMLAnchorElement) => {
+      const element = root.querySelector<HTMLElement>(target);
+      if (!element) return;
       closeMenu();
 
       const performScroll = () => {
-        const navHeight = navWrap
-          ? ((navWrap.querySelector("nav") as HTMLElement)?.offsetHeight ?? 0)
-          : 0;
+        const navHeight = nav?.offsetHeight ?? 0;
         if (lenis) {
-          lenis.scrollTo(el as HTMLElement, { offset: -navHeight });
+          lenis.scrollTo(element, { offset: -navHeight });
         } else {
           const top =
-            el.getBoundingClientRect().top + window.scrollY - navHeight;
+            element.getBoundingClientRect().top + window.scrollY - navHeight;
           window.scrollTo({
             top,
             behavior: reduceMotion ? "auto" : "smooth",
           });
         }
+
+        if (link?.classList.contains("skip-link")) {
+          element.focus({ preventScroll: true });
+        }
       };
 
       requestAnimationFrame(() => requestAnimationFrame(performScroll));
-    }
+    };
 
-    const anchorLinks = document.querySelectorAll('a[href^="#"]');
-    const anchorHandlers: Array<[Element, (e: Event) => void]> = [];
+    const anchorLinks =
+      root.querySelectorAll<HTMLAnchorElement>('a[href^="#"]');
+    const anchorHandlers: Array<[HTMLAnchorElement, (event: Event) => void]> =
+      [];
+
     anchorLinks.forEach((link) => {
-      const handler = (e: Event) => {
-        e.preventDefault();
+      const handler = (event: Event) => {
         const target = link.getAttribute("href");
-        if (!target || target === "#") return;
-        if (!document.querySelector(target)) return;
-        scrollToAnchor(target);
+        if (!target || target === "#" || !root.querySelector(target)) return;
+        event.preventDefault();
+        scrollToAnchor(target, link);
       };
+
       link.addEventListener("click", handler);
       anchorHandlers.push([link, handler]);
     });
 
-    const onKeydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeMenu();
-    };
-    const onResize = () => {
-      if (window.innerWidth > 720) closeMenu();
-    };
-    window.addEventListener("keydown", onKeydown);
-    window.addEventListener("resize", onResize);
+    const revealElements = root.querySelectorAll<HTMLElement>(".reveal");
+    let observer: IntersectionObserver | null = null;
 
-    const revealEls = document.querySelectorAll(".reveal");
     if ("IntersectionObserver" in window && !reduceMotion) {
-      const io = new IntersectionObserver(
+      const viewportHeight = window.innerHeight;
+      revealElements.forEach((element) => {
+        const rect = element.getBoundingClientRect();
+        if (rect.top < viewportHeight && rect.bottom > 0) {
+          element.classList.add("is-visible");
+        }
+      });
+
+      root.classList.add("motion-ready");
+      observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              entry.target.classList.add("visible");
-              io.unobserve(entry.target);
-            }
+            if (!entry.isIntersecting) return;
+            entry.target.classList.add("is-visible");
+            observer?.unobserve(entry.target);
           });
         },
         { threshold: 0.12 },
       );
-      revealEls.forEach((el) => io.observe(el as HTMLElement));
+      revealElements.forEach((element) => {
+        if (!element.classList.contains("is-visible")) {
+          observer?.observe(element);
+        }
+      });
     } else {
-      revealEls.forEach((el) => el.classList.add("visible"));
+      revealElements.forEach((element) => element.classList.add("is-visible"));
     }
+
+    const onKeydown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") closeMenu();
+    };
+    const onResize = () => {
+      if (window.innerWidth > 960) closeMenu();
+    };
+
+    window.addEventListener("keydown", onKeydown);
+    window.addEventListener("resize", onResize);
 
     return () => {
       lenis?.destroy();
       cancelAnimationFrame(rafId);
-      anchorHandlers.forEach(([el, handler]) => {
-        el.removeEventListener("click", handler);
+      observer?.disconnect();
+      root.classList.remove("motion-ready");
+      revealElements.forEach((element) =>
+        element.classList.remove("is-visible"),
+      );
+      anchorHandlers.forEach(([link, handler]) => {
+        link.removeEventListener("click", handler);
       });
       window.removeEventListener("keydown", onKeydown);
       window.removeEventListener("resize", onResize);
     };
   }, [closeMenu]);
 
-  const authorizationCases: Record<
-    string,
-    {
-      request: string;
-      rows: [string, string, string][];
-      decision: string;
-      tone: string;
-      reason: string;
-      meta: string;
+  const current = decisionCases[activeCase];
+
+  const handleDecisionKey = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    if (
+      event.key !== "ArrowLeft" &&
+      event.key !== "ArrowRight" &&
+      event.key !== "Home" &&
+      event.key !== "End"
+    ) {
+      return;
     }
-  > = {
-    allow: {
-      request: "Allocate $25,000 within an active Mandate",
-      rows: [
-        ["Mandate boundary", "PASS", "ok"],
-        ["Required conditions", "PASS", "ok"],
-        ["Owner approval", "NOT REQUIRED", "muted"],
-      ],
-      decision: "ALLOW",
-      tone: "allow",
-      reason: "The action is within the authority granted to the agent.",
-      meta: "Illustrative product scenario",
-    },
-    escalate: {
-      request: "Allocate $100,000 above the agent's approval threshold",
-      rows: [
-        ["Mandate boundary", "REVIEW", "warn"],
-        ["Required conditions", "PASS", "ok"],
-        ["Owner approval", "REQUIRED", "warn"],
-      ],
-      decision: "ESCALATE",
-      tone: "escalate",
-      reason:
-        "The Mandate allows the request to continue only after owner approval.",
-      meta: "Illustrative product scenario",
-    },
-    deny: {
-      request: "Move $250,000 outside the active Mandate",
-      rows: [
-        ["Mandate boundary", "FAIL", "bad"],
-        ["Authority", "EXCEEDED", "bad"],
-        ["Execution", "NOT SUBMITTED", "bad"],
-      ],
-      decision: "DENY",
-      tone: "deny",
-      reason:
-        "The requested action is outside the authority granted to the agent.",
-      meta: "No execution submitted.",
-    },
-  };
-
-  const current = authorizationCases[activeCase];
-
-  const handleTabKey = (e: React.KeyboardEvent, idx: number) => {
-    if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
-    e.preventDefault();
-    const keys = Object.keys(authorizationCases);
-    const delta = e.key === "ArrowRight" ? 1 : -1;
-    const next = keys[(idx + delta + keys.length) % keys.length];
+    event.preventDefault();
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? decisionKeys.length - 1
+          : (index +
+              (event.key === "ArrowRight" ? 1 : -1) +
+              decisionKeys.length) %
+            decisionKeys.length;
+    const next = decisionKeys[nextIndex];
     setActiveCase(next);
-    (
-      (e.currentTarget as HTMLElement).parentElement?.querySelector(
-        `[data-case="${next}"]`,
-      ) as HTMLElement
-    )?.focus();
+    event.currentTarget.parentElement
+      ?.querySelector<HTMLButtonElement>(`[data-case="${next}"]`)
+      ?.focus();
   };
 
   return (
     <div className="landing">
-      <div className="page-grid" />
+      <div className="page-grid" aria-hidden="true" />
+      <a className="skip-link" href="#top">
+        Skip to content
+      </a>
 
       <div className="nav-wrap">
         <nav className="shell" aria-label="Primary navigation">
-          <a className="brand-lockup" href="#top" aria-label="Grantline home">
+          <a className="brand" href="#top" aria-label="Grantline home">
             <GrantlineMark className="brand-mark" />
             <span>Grantline</span>
           </a>
+
           <div className="nav-links">
-            <a href="#mechanism">How it works</a>
-            <a href="#platform">Platform</a>
-            <a href="#vision">Vision</a>
-            <Link href="/docs">Documentation</Link>
-            <span className="btn coming-soon" aria-disabled="true">
+            <a href="#how-it-works">How it works</a>
+            <a href="#live">What&apos;s live</a>
+            <a href="#model">Authority model</a>
+            <Link href="/docs">Docs</Link>
+            <a href={repositoryUrl} target="_blank" rel="noreferrer nofollow">
+              GitHub <span aria-hidden="true">↗</span>
+            </a>
+            <button
+              type="button"
+              className="btn btn-primary coming-soon"
+              disabled
+            >
               Demo coming soon
-            </span>
+            </button>
           </div>
+
           <button
             className="menu-toggle"
             type="button"
             aria-label={menuOpen ? "Close navigation" : "Open navigation"}
             aria-expanded={menuOpen}
-            onClick={() => setMenuOpen(!menuOpen)}
+            onClick={() => setMenuOpen((open) => !open)}
           >
             <span className="menu-icon" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
+              <span />
+              <span />
+              <span />
             </span>
           </button>
         </nav>
+
         <div className="mobile-menu" data-open={menuOpen}>
           <div className="mobile-menu-inner">
-            <a href="#mechanism" onClick={closeMenu}>
+            <a href="#how-it-works" onClick={closeMenu}>
               How it works
             </a>
-            <a href="#platform" onClick={closeMenu}>
-              Platform
+            <a href="#live" onClick={closeMenu}>
+              What&apos;s live
             </a>
-            <a href="#vision" onClick={closeMenu}>
-              Vision
+            <a href="#model" onClick={closeMenu}>
+              Authority model
             </a>
             <Link href="/docs" onClick={closeMenu}>
               Documentation
             </Link>
-            <span className="mobile-demo" aria-disabled="true">
+            <a href={repositoryUrl} target="_blank" rel="noreferrer nofollow">
+              GitHub <span aria-hidden="true">↗</span>
+            </a>
+            <button type="button" className="mobile-demo" disabled>
               Demo coming soon
-            </span>
+            </button>
           </div>
         </div>
       </div>
 
-      <main id="top">
+      <main id="top" tabIndex={-1}>
         <header className="hero">
           <div className="shell hero-grid">
             <div className="reveal">
               <div className="eyebrow">
-                Programmable financial authority for AI agents
+                Financial authorisation for AI agents
               </div>
               <h1>
-                Give AI agents capital without giving them unlimited authority.
+                Let AI agents use capital without giving them unrestricted
+                control.
               </h1>
               <p className="hero-copy">
-                Grantline lets people and organisations define what an agent is
-                allowed to do, under what conditions, and when another authority
-                needs to step in. The result is autonomy with a defined
-                boundary, owner control, and an auditable path from intent to
-                execution.
+                Grantline sits between an AI agent&apos;s signed intent and
+                execution. The agent proposes what it wants to do; Grantline
+                checks whether its current authority permits it before
+                controlled capital can move.
               </p>
-              <div className="hero-principle">
-                Your AI agent proposes. Grantline authorises.
+              <div className="principle">
+                Your agent decides what to do. Grantline decides whether it is
+                authorised.
               </div>
               <div className="hero-actions">
-                <a className="btn primary" href="#mechanism">
+                <a className="btn btn-primary" href="#how-it-works">
                   See how Grantline works
                 </a>
-                <span className="btn coming-soon" aria-disabled="true">
-                  Demo coming soon
-                </span>
+                <Link className="btn btn-quiet" href="/docs">
+                  Read the docs
+                </Link>
               </div>
             </div>
 
-            <div
-              className="auth-console reveal"
-              aria-label="Illustrative Grantline authorisation scenarios"
+            <figure
+              className="hero-visual reveal"
+              aria-labelledby="visual-caption"
             >
-              <div className="console-top">
-                <span className="console-title">
-                  Illustrative authorisation scenarios
+              <figcaption id="visual-caption" className="visual-head">
+                <span>Illustrative authority path</span>
+                <span className="status">ILLUSTRATIVE OUTCOME</span>
+              </figcaption>
+
+              <div className="path-top">
+                <div className="path-node">
+                  <span className="label">Your agent</span>
+                  <strong>Chooses</strong>
+                  <small>strategy and intent</small>
+                </div>
+                <span className="path-arrow" aria-hidden="true">
+                  →
                 </span>
-                <span className="console-status">MANDATE ACTIVE</span>
+                <div className="path-node">
+                  <span className="label">Signed proposal</span>
+                  <strong>Action Plan</strong>
+                  <small>exact intent</small>
+                </div>
               </div>
-              <div className="decision-explore-label">
-                <strong>Explore outcomes</strong> &middot; select a decision
-                state
-              </div>
-              <div
-                className="decision-tabs"
-                role="tablist"
-                aria-label="Authorisation examples"
-              >
-                {(Object.keys(authorizationCases) as string[]).map(
-                  (key, idx) => (
+
+              <div className="gate">
+                <div className="gate-head">
+                  <span className="gate-prompt">
+                    <span>Explore outcomes</span>
+                    <span className="gate-prompt-divider" aria-hidden="true">
+                      ·
+                    </span>
+                    <span className="gate-prompt-instruction">
+                      Select a decision state
+                    </span>
+                  </span>
+                </div>
+                <div
+                  className="decision-tabs"
+                  role="tablist"
+                  aria-label="Illustrative authorisation outcomes"
+                >
+                  {decisionKeys.map((key, index) => (
                     <button
                       key={key}
                       className="decision-tab"
+                      type="button"
                       role="tab"
+                      id={`decision-tab-${key}`}
                       aria-selected={activeCase === key}
+                      aria-controls="decision-panel"
+                      tabIndex={activeCase === key ? 0 : -1}
                       data-case={key}
                       onClick={() => setActiveCase(key)}
-                      onKeyDown={(e) => handleTabKey(e, idx)}
+                      onKeyDown={(event) => handleDecisionKey(event, index)}
                     >
                       {key === "allow"
-                        ? "Allowed"
+                        ? "Allow"
                         : key === "escalate"
-                          ? "Escalated"
-                          : "Denied"}
+                          ? "Escalate"
+                          : "Deny"}
                     </button>
-                  ),
-                )}
-              </div>
-              <div className="console-body">
-                <div className="request-block">
-                  <div className="label">Proposed action</div>
-                  <div className="request-name">{current.request}</div>
-                  <div className="request-agent">AI Treasury Agent</div>
+                  ))}
                 </div>
-                <div className="authority-line" aria-hidden="true" />
-                <div className="mandate-card">
-                  <div className="mandate-head">
-                    <span>Mandate</span>
-                    <span>TREASURY_EXECUTION_V3</span>
+                <div className="gate-body">
+                  <div className="request">
+                    <span className="label">Proposed action</span>
+                    <strong>{current.action}</strong>
+                    <small>{current.amount}</small>
                   </div>
-                  <div className="mandate-rows">
-                    {current.rows.map(([label, value, tone]) => (
-                      <div className="mandate-row" key={label}>
-                        <span>{label}</span>
-                        <span className={tone}>{value}</span>
-                      </div>
-                    ))}
+                  <div
+                    id="decision-panel"
+                    role="tabpanel"
+                    tabIndex={0}
+                    aria-labelledby={`decision-tab-${activeCase}`}
+                    className={`decision-output ${current.tone}`}
+                    aria-live="polite"
+                  >
+                    <div>
+                      <span className="label">Decision</span>
+                      <strong>{current.decision}</strong>
+                    </div>
+                    <p>{current.reason}</p>
                   </div>
-                </div>
-                <div className={`decision-output ${current.tone}`}>
-                  <div>
-                    <div className="label">Decision</div>
-                    <div className="decision-word">{current.decision}</div>
-                    <div className="decision-meta">{current.meta}</div>
-                  </div>
-                  <div className="decision-reason">{current.reason}</div>
                 </div>
               </div>
-            </div>
+            </figure>
           </div>
         </header>
 
-        <section>
+        <section id="how-it-works">
           <div className="shell">
             <div className="section-head reveal">
-              <div className="section-kicker">The question changes</div>
-              <h2>A wallet proves access. Grantline defines authority.</h2>
-              <p className="section-copy">
-                Autonomous systems need more than permission to sign. They need
-                a precise answer to what an agent is allowed to do with that
-                access. Signing proves that an agent made the proposal;
-                Grantline determines whether that proposal can use the capital
-                and under what conditions.
+              <h2>Strategy. Authority. Execution.</h2>
+              <p>
+                Grantline owns the middle layer. It does not choose an
+                agent&apos;s strategy or pretend that an authorisation result
+                guarantees a downstream transaction will succeed.
               </p>
             </div>
-            <div className="question-frame reveal">
-              <div className="question-shift">
-                <article className="question-side">
-                  <div className="question-title">Wallet layer</div>
-                  <div>
-                    <div className="question-main">
-                      Who can access and sign for these assets?
-                    </div>
-                    <p className="question-note">
-                      Identity, custody and signing determine who can act.
-                    </p>
-                  </div>
-                </article>
-                <article className="question-side grantline">
-                  <div className="question-title">Authority layer</div>
-                  <div>
-                    <div className="question-main">
-                      What is this agent actually allowed to do?
-                    </div>
-                    <p className="question-note">
-                      Grantline turns access into bounded, conditional and
-                      revocable authority.
-                    </p>
-                  </div>
-                </article>
-              </div>
-              <div
-                className="authority-questions"
-                aria-label="Questions Grantline answers"
-              >
-                <div className="authority-question">
-                  <span></span>How much authority does it have?
-                </div>
-                <div className="authority-question">
-                  <span></span>Where did that authority come from?
-                </div>
-                <div className="authority-question">
-                  <span></span>What conditions must be satisfied?
-                </div>
-                <div className="authority-question">
-                  <span></span>When should another authority step in?
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
 
-        <section id="mechanism">
-          <div className="shell">
-            <div className="section-head reveal">
-              <div className="section-kicker">Authorisation flow</div>
-              <h2>Authority sits between intent and execution.</h2>
-              <p className="section-copy">
-                An agent chooses what it wants to do. Grantline evaluates
-                whether it has authority to do it, checks the configured safety
-                conditions, and returns <code>ALLOW</code>,{" "}
-                <code>ESCALATE</code>, or <code>DENY</code> before capital
-                moves.
-              </p>
-            </div>
-            <div className="flow-track reveal">
-              <div className="flow-step">
-                <div className="flow-node">Agent</div>
-                <h3>Proposes</h3>
-                <p>Turns intent into an action.</p>
-              </div>
-              <div className="flow-step control">
-                <div className="flow-node">Mandate</div>
+            <div className="role-grid reveal">
+              <article className="role-card">
+                <span className="card-number">01</span>
+                <div className="card-kicker">Your agent</div>
+                <h3>Chooses</h3>
+                <p>
+                  Models, workflows, and strategies determine what action the
+                  agent wants to propose.
+                </p>
+                <strong>What should I do?</strong>
+              </article>
+              <article className="role-card role-card-accent">
+                <span className="card-number">02</span>
+                <div className="card-kicker">Grantline</div>
                 <h3>Authorises</h3>
-                <p>Defines what the agent is allowed to do.</p>
-              </div>
-              <div className="flow-step control">
-                <div className="flow-node">Conditions</div>
-                <h3>Checks</h3>
-                <p>Runs the configured safety checks.</p>
-              </div>
-              <div className="flow-step control">
-                <div className="flow-node">Decision</div>
-                <h3>Resolves</h3>
-                <p>Allow, Escalate, Deny.</p>
-              </div>
-              <div className="flow-step">
-                <div className="flow-node">X Layer</div>
+                <p>
+                  Current Mandate authority and configured checks determine
+                  whether the exact proposal may proceed.
+                </p>
+                <strong>Am I allowed to do it?</strong>
+              </article>
+              <article className="role-card">
+                <span className="card-number">03</span>
+                <div className="card-kicker">Execution path</div>
                 <h3>Executes</h3>
-                <p>Moves capital only after authorisation.</p>
+                <p>
+                  The authorised path reaches controlled capital, while
+                  downstream systems can still accept or reject the action.
+                </p>
+                <strong>Did it complete?</strong>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section className="section-dark">
+          <div className="shell">
+            <div className="section-head reveal">
+              <h2>A signature proves intent. Grantline defines authority.</h2>
+              <p>
+                The signing key identifies the agent behind the proposal.
+                Grantline evaluates that proposal separately, and the Vault only
+                accepts calls from its configured execution authority.
+              </p>
+            </div>
+
+            <div className="access-frame reveal">
+              <div className="access-step">
+                <span className="label">Agent identity</span>
+                <strong>“This action came from Agent A.”</strong>
+                <small>Signature proves intent.</small>
               </div>
-              <div className="flow-step control">
-                <div className="flow-node">Record</div>
-                <h3>Traces</h3>
-                <p>Records successful outcomes onchain.</p>
+              <span className="access-arrow" aria-hidden="true">
+                →
+              </span>
+              <div className="access-step access-step-accent">
+                <span className="label">Grantline</span>
+                <strong>“Does Agent A have authority now?”</strong>
+                <small>Current rules are evaluated.</small>
+              </div>
+              <span className="access-arrow" aria-hidden="true">
+                →
+              </span>
+              <div className="access-step">
+                <span className="label">Vault boundary</span>
+                <strong>“Only the authorised path can move capital.”</strong>
+                <small>Owner custody remains separate.</small>
               </div>
             </div>
-            <div
-              className="condition-branch reveal"
-              aria-label="Optional authorisation conditions"
-            >
-              <div className="condition-item">
-                <strong>Guardians</strong>
+          </div>
+        </section>
+
+        <section id="where-it-fits">
+          <div className="shell">
+            <div className="section-head reveal">
+              <h2>The agent can change. The authority model stays the same.</h2>
+              <p>
+                Give different agents room to operate inside a defined boundary
+                while the owner keeps control of the capital.
+              </p>
+            </div>
+
+            <div className="use-case-grid reveal">
+              <article className="use-case-card">
+                <span className="label">Payments agents</span>
+                <h3>Routine payments</h3>
                 <p>
-                  Checks outside context, like asset eligibility, markets, or
-                  counterparties.
+                  Run ordinary transfers inside a defined boundary, with larger
+                  actions routed for review.
                 </p>
-              </div>
-              <div className="sep"></div>
-              <div className="condition-item">
-                <strong>Preflight</strong>
-                <p>Checks that the Vault stays inside its safety boundary.</p>
-              </div>
-              <div className="sep"></div>
-              <div className="condition-item">
-                <strong>Escalation</strong>
+              </article>
+              <article className="use-case-card">
+                <span className="label">Treasury operations</span>
+                <h3>Controlled capital movement</h3>
                 <p>
-                  Brings an owner into the decision when more authority is
-                  needed.
+                  Give an agent room to move capital without giving it
+                  unrestricted custody.
+                </p>
+              </article>
+              <article className="use-case-card">
+                <span className="label">Operational agents</span>
+                <h3>Automated workflows</h3>
+                <p>
+                  Connect recurring workflows to a defined capital pool while
+                  owner control remains intact.
+                </p>
+              </article>
+              <article className="use-case-card">
+                <span className="label">Agent teams</span>
+                <h3>Narrower authority</h3>
+                <p>
+                  Delegate specialised authority to sub-agents without losing
+                  the lineage above them.
+                </p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="live" className="section-dark">
+          <div className="shell">
+            <div className="section-head reveal">
+              <div className="eyebrow">Live on testnet</div>
+              <h2>The current X Layer testnet enforces the authority path.</h2>
+              <p>
+                The implementation covers signed proposals, inherited authority,
+                owner escalation, revocation, and committed execution evidence.
+              </p>
+            </div>
+
+            <div className="live-layout">
+              <ul className="capability-list reveal">
+                <li>Vault custody and controlled execution</li>
+                <li>Typed Action Plans with EIP-712 signatures</li>
+                <li>Active Mandates and inherited authority</li>
+                <li>
+                  <code className="code-allow">ALLOW</code>,{" "}
+                  <code className="code-escalate">ESCALATE</code>, and{" "}
+                  <code className="code-deny">DENY</code> evaluation
+                </li>
+                <li>Native amount limits and native-balance Preflight</li>
+                <li>Owner-approved escalation and re-evaluation</li>
+                <li>Delegation, revocation, and replay protection</li>
+                <li>Committed onchain execution evidence</li>
+              </ul>
+
+              <div className="proof-card reveal">
+                <div className="proof-head">
+                  <span>Inspect the enforcement</span>
+                  <span className="status">X LAYER TESTNET</span>
+                </div>
+                <div className="proof-links">
+                  <a
+                    href={`${repositoryUrl}/tree/main/contracts`}
+                    target="_blank"
+                    rel="noreferrer nofollow"
+                  >
+                    <strong>View the contracts</strong>
+                    <span>See the deployed implementation and manifest.</span>
+                    <span className="link-arrow" aria-hidden="true">
+                      ↗
+                    </span>
+                  </a>
+                  <Link href="/docs/enforcement/security-model">
+                    <strong>Read how enforcement works</strong>
+                    <span>
+                      Follow the boundary from agent intent to Vault custody.
+                    </span>
+                    <span className="link-arrow" aria-hidden="true">
+                      ↗
+                    </span>
+                  </Link>
+                  <Link href="/docs/execution/networks/x-layer-testnet">
+                    <strong>Inspect testnet evidence</strong>
+                    <span>
+                      Review the current network and exercised integration.
+                    </span>
+                    <span className="link-arrow" aria-hidden="true">
+                      ↗
+                    </span>
+                  </Link>
+                  <button
+                    type="button"
+                    className="proof-link-disabled coming-soon"
+                    disabled
+                  >
+                    <strong>Try the demo</strong>
+                    <span>Demo coming soon.</span>
+                    <span className="link-arrow" aria-hidden="true">
+                      ↗
+                    </span>
+                  </button>
+                </div>
+                <p className="proof-note">
+                  Committed authority changes, approvals, custody changes, and
+                  successful execution events are traceable onchain. A read-only{" "}
+                  <code className="code-deny">DENY</code> has no state change to
+                  record.
                 </p>
               </div>
             </div>
           </div>
         </section>
 
-        <section id="platform">
+        <section className="section-dark">
           <div className="shell">
             <div className="section-head reveal">
-              <div className="section-kicker">GRANTLINE PLATFORM</div>
-              <h2>Financial authority has four parts.</h2>
-              <p className="section-copy">
-                The system stays understandable by grouping the product around
-                what authority is, what capital it applies to, which conditions
-                matter, and what remains afterwards.
+              <div className="eyebrow">The authorisation path</div>
+              <h2>Every action starts as a proposal.</h2>
+              <p>
+                An <code className="inline-allow">ALLOW</code> result means the
+                proposal may enter the execution path. It does not mean that an
+                external protocol has already accepted it.
               </p>
             </div>
+
+            <div className="flow reveal">
+              <div className="flow-step">
+                <span>01</span>
+                <strong>Intent</strong>
+                <p>The agent decides what it wants to do.</p>
+              </div>
+              <div className="flow-step">
+                <span>02</span>
+                <strong>Signed proposal</strong>
+                <p>The exact intent becomes an Action Plan.</p>
+              </div>
+              <div className="flow-step flow-control">
+                <span>03</span>
+                <strong>Authority check</strong>
+                <p>Current Mandate and active lineage are evaluated.</p>
+              </div>
+              <div className="flow-step flow-control">
+                <span>04</span>
+                <strong>Decision</strong>
+                <p>
+                  <code className="code-allow">ALLOW</code>,{" "}
+                  <code className="code-escalate">ESCALATE</code>, or{" "}
+                  <code className="code-deny">DENY</code>.
+                </p>
+              </div>
+            </div>
+
+            <div className="branch reveal" aria-label="Authorisation outcomes">
+              <div>
+                <code>ALLOW</code>
+                <span>→</span>
+                <strong>Controlled execution</strong>
+              </div>
+              <div>
+                <code>ESCALATE</code>
+                <span>→</span>
+                <strong>Owner approval → re-evaluate → execute or stop</strong>
+              </div>
+              <div>
+                <code>DENY</code>
+                <span>→</span>
+                <strong>Stop</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="model">
+          <div className="shell">
+            <div className="section-head reveal">
+              <h2>Four concepts form Grantline&apos;s core authority model.</h2>
+              <p>
+                Delegation, Preflight, escalation, and revocation add controls
+                around this model while the signing key never becomes
+                unrestricted custody.
+              </p>
+            </div>
+
             <div className="model-grid reveal">
-              <article className="model-cell">
-                <div className="model-num">01 / AUTHORITY</div>
-                <div className="model-topic">Mandates + Delegation</div>
-                <h3>Define exactly what an agent may do.</h3>
+              <article className="model-card">
+                <span className="card-number">01 / AUTHORITY</span>
+                <h3>Mandate</h3>
                 <p>
-                  Define limits, actions, approvals, and delegation rights, then
-                  preserve the source of that authority as it moves between
-                  agents.
+                  Defines the authority an agent may exercise against controlled
+                  capital.
                 </p>
-                <div className="model-tags">
-                  <span className="tag">Limits</span>
-                  <span className="tag">Actions</span>
-                  <span className="tag">Approvals</span>
-                  <span className="tag">Delegation</span>
-                </div>
               </article>
-              <article className="model-cell">
-                <div className="model-num">02 / CAPITAL</div>
-                <div className="model-topic">Vaults</div>
-                <h3>Limit the capital that authority applies to.</h3>
+              <article className="model-card">
+                <span className="card-number">02 / INTENT</span>
+                <h3>Action Plan</h3>
                 <p>
-                  Keep capital behind a controlled Vault, so agents receive
-                  authority to act without receiving unrestricted ownership of
-                  the funds.
+                  Captures the exact structured proposal that the agent signs.
                 </p>
-                <div className="model-tags">
-                  <span className="tag">Capital scope</span>
-                  <span className="tag">Isolation</span>
-                </div>
               </article>
-              <article className="model-cell">
-                <div className="model-num">03 / CONDITIONS</div>
-                <div className="model-topic">Checks + Approval</div>
+              <article className="model-card">
+                <span className="card-number">03 / CUSTODY</span>
+                <h3>Vault</h3>
+                <p>
+                  Holds the controlled capital while the owner retains custody
+                  and administration.
+                </p>
+              </article>
+              <article className="model-card model-card-accent">
+                <span className="card-number">04 / AUTHORISATION</span>
+                <h3>Decision</h3>
+                <p>
+                  Resolves what Grantline permits next:{" "}
+                  <code className="code-allow">ALLOW</code>,{" "}
+                  <code className="code-escalate">ESCALATE</code>, or{" "}
+                  <code className="code-deny">DENY</code>.
+                </p>
+              </article>
+            </div>
+            <div className="model-followup reveal">
+              <h3>
+                Before execution, Grantline checks authority and Vault state.
+              </h3>
+              <p>
+                Mandate rules define authority. Preflight checks the projected
+                Vault state. Escalation routes a configured boundary crossing to
+                owner review.
+              </p>
+            </div>
+
+            <div className="condition-grid reveal">
+              <article>
+                <span className="label">Mandate rules</span>
+                <h3>Does the proposal fit the authority granted?</h3>
+                <p>
+                  Limits, permitted actions, delegation rights, and current
+                  lineage define the hard boundary.
+                </p>
+              </article>
+              <article>
+                <span className="label">Preflight</span>
                 <h3>
-                  Make authority conditional on what surrounds the action.
+                  Would the projected Vault balance stay above its reserve?
                 </h3>
                 <p>
-                  Preflight checks the Vault’s safety boundary after an action.
-                  Guardians will add context such as asset eligibility, markets,
-                  counterparties, or organisation policies.
+                  The current MVP checks the projected native Vault balance
+                  against an inherited reserve boundary.
                 </p>
-                <div className="model-tags">
-                  <span className="tag">Preflight</span>
-                  <span className="tag">Owner approval</span>
-                  <span className="tag">Guardians planned</span>
-                </div>
               </article>
-              <article className="model-cell">
-                <div className="model-num">04 / ACCOUNTABILITY</div>
-                <div className="model-topic">Records</div>
-                <h3>Connect authority to outcome.</h3>
+              <article>
+                <span className="label">Escalation</span>
+                <h3>Does crossing this boundary require owner review?</h3>
                 <p>
-                  Successful Mandate, approval, custody, and execution changes
-                  leave an onchain record, connecting the authority behind an
-                  action to its outcome.
+                  The owner approves or denies the exact stored proposal, and
+                  execution checks current state again.
                 </p>
-                <div className="model-tags">
-                  <span className="tag">Onchain records</span>
-                  <span className="tag">Traceability</span>
-                </div>
               </article>
             </div>
           </div>
         </section>
 
-        <section
-          className="thesis-break"
-          aria-label="Grantline authority principle"
-        >
-          <div className="shell reveal">
-            <p className="thesis-statement">
-              An agent can act freely within{" "}
-              <span className="accent">its Mandate.</span>
-              <br />
-              Beyond it, <span className="accent">authority ends.</span>
-            </p>
-          </div>
-        </section>
-
-        <section>
-          <div className="shell delegation-wrap">
-            <div className="delegation-copy reveal">
-              <div className="section-kicker">Illustrative delegation</div>
-              <h2>
-                Delegation passes authority down, but never beyond its source.
-              </h2>
-              <p>
-                Every delegation passes down a narrower version of the authority
-                above it: a smaller budget, fewer permitted actions, tighter
-                conditions, or less ability to delegate. Every sub-agent remains
-                tied to the authority above it and to the original source of
-                control.
-              </p>
-              <div className="delegation-principle">
-                Every delegation stays inside its parent Mandate and remains
-                traceable to the original authority.
-              </div>
-            </div>
-            <div
-              className="tree reveal"
-              aria-label="Illustrative delegation hierarchy"
-            >
-              <div className="tree-card">
-                <strong>Company</strong>
-                <small>$5M treasury authority</small>
-              </div>
-              <div className="authority-line" aria-hidden="true" />
-              <div className="tree-card">
-                <strong>Treasury Agent</strong>
-                <small>$500k operating authority</small>
-              </div>
-              <div className="authority-line" aria-hidden="true" />
-              <div className="tree-card">
-                <strong>Execution Agent</strong>
-                <small>
-                  $50k action authority &middot; no further delegation
-                </small>
-              </div>
-              <div className="denied-branch">
-                <div className="branch-item good">
-                  $25k ACTION
-                  <br />
-                  <span className="ok">WITHIN AUTHORITY</span>
-                </div>
-                <div className="branch-item bad">
-                  $250k ACTION
-                  <br />
-                  <span className="bad">AUTHORITY STOPS</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="scenario">
+        <section className="section-dark" id="authority-state">
           <div className="shell">
             <div className="section-head reveal">
-              <div className="section-kicker">Conditional authority</div>
-              <h2>One proposal can require more than a spending limit.</h2>
-              <p className="section-copy">
-                A Mandate can combine authority limits with resulting-state
-                checks and owner approval, so an action is evaluated against
-                both what the agent is allowed to do and what the action would
-                leave behind.
+              <h2>Authority stays bounded as things change.</h2>
+              <p>
+                Grantline evaluates current authority, preserves the active
+                lineage, and checks an approved escalation again before
+                execution.
               </p>
             </div>
 
-            <div
-              className="proof-artifact reveal"
-              aria-label="Illustrative Grantline authorisation trace"
-            >
-              <div className="proof-head">
-                <span className="proof-head-title">
-                  Illustrative authorisation trace
+            <div className="state-grid reveal">
+              <article>
+                <span className="label">Rules can tighten</span>
+                <h3>
+                  New Mandate rules are checked when the proposal is evaluated.
+                </h3>
+                <p>
+                  A proposal signed under a wider boundary can stop when the
+                  Mandate becomes more restrictive.
+                </p>
+              </article>
+              <article>
+                <span className="label">Authority can be revoked</span>
+                <h3>Revocation preserves history and stops future use.</h3>
+                <p>
+                  Revocation preserves the lineage while preventing an inactive
+                  Mandate or ancestor from authorising new execution.
+                </p>
+              </article>
+              <article>
+                <span className="label">Approval is not a bypass</span>
+                <h3>Approval is checked again before execution.</h3>
+                <p>
+                  An approved escalation is checked again before capital moves,
+                  so changed authority can still stop it.
+                </p>
+              </article>
+              <article>
+                <span className="label">
+                  Delegation cannot expand authority
                 </span>
-                <span className="proof-head-status">MANDATE ACTIVE</span>
-              </div>
-              <div className="proof-body">
-                <div className="proof-row">
-                  <div className="proof-label">Proposed by</div>
-                  <div className="proof-value">AI Treasury Agent</div>
-                </div>
-                <div className="proof-row">
-                  <div className="proof-label">Action</div>
-                  <div className="proof-value">
-                    Signed action plan for a $25,000 allocation
-                  </div>
-                </div>
-                <div className="proof-row">
-                  <div className="proof-label">Mandate</div>
-                  <div className="proof-value mono ok">PASS</div>
-                </div>
-                <div className="proof-row">
-                  <div className="proof-label">Preflight</div>
-                  <div className="proof-value mono ok">PASS</div>
-                </div>
-                <div className="proof-row">
-                  <div className="proof-label">Owner approval</div>
-                  <div className="proof-value mono muted">NOT REQUIRED</div>
-                </div>
-                <div className="proof-row emphasis">
-                  <div className="proof-label">Decision</div>
-                  <div className="proof-value mono ok">ALLOW</div>
-                </div>
-                <div className="proof-row evidence">
-                  <div className="proof-label">Execution</div>
-                  <div className="proof-value mono muted">
-                    X LAYER TESTNET &middot; CONFIRMED
-                  </div>
-                </div>
-                <div className="proof-row evidence">
-                  <div className="proof-label">Record</div>
-                  <div className="proof-value mono muted">
-                    EXECUTION RECORDED
-                  </div>
-                </div>
-              </div>
+                <h3>Delegation can narrow authority, never expand it.</h3>
+                <p>
+                  A sub-agent receives a narrower boundary, while restrictions
+                  above it continue to apply.
+                </p>
+              </article>
             </div>
 
-            <p className="proof-note reveal">
-              Guardians will extend this decision with context from outside the
-              action itself, helping determine whether an otherwise permitted
-              action should still proceed. Guardian checks are planned for a
-              future release.
-            </p>
+            <div className="delegation reveal">
+              <div className="delegation-note">
+                <span className="label">What that looks like in practice</span>
+                <h3>Effective authority follows the active lineage.</h3>
+                <p>
+                  Effective authority is the current Mandate intersected with
+                  active ancestor boundaries.
+                </p>
+              </div>
 
-            <div className="proof-cta reveal" aria-label="Proof and next steps">
-              <a
-                className="btn"
-                href={`${repositoryUrl}/tree/main/contracts`}
-                target="_blank"
-                rel="noreferrer nofollow"
+              <div
+                className="lineage"
+                aria-label="Illustrative delegated authority lineage"
               >
-                View the implementation
-              </a>
-              <Link className="btn" href="/docs/enforcement/enforcement-boundary">
-                Read how enforcement works
-              </Link>
+                <div className="lineage-card">
+                  <strong>Owner</strong>
+                  <small>source of authority</small>
+                </div>
+                <span className="lineage-line" aria-hidden="true">
+                  <span>→</span>
+                </span>
+                <div className="lineage-card lineage-card-accent">
+                  <strong>Primary agent</strong>
+                  <small>bounded operating authority</small>
+                </div>
+                <span className="lineage-line" aria-hidden="true">
+                  <span>→</span>
+                </span>
+                <div className="lineage-card">
+                  <strong>Sub-agent</strong>
+                  <small>narrower execution authority</small>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -705,96 +852,47 @@ export default function Home() {
         <section id="vision">
           <div className="shell">
             <div className="section-head reveal">
-              <div className="section-kicker">Vision</div>
-              <h2>Start with one agent. Scale to autonomous organisations.</h2>
-              <p className="section-copy">
-                The same authority model can expand from bounded agent spending
-                into richer policies, specialised agent hierarchies, external
-                control modules, and eventually behavioural history that other
-                financial systems can evaluate.
+              <div className="eyebrow">Where Grantline goes next</div>
+              <h2>Extend the authority model without opening a bypass.</h2>
+              <p>
+                Future work adds policy, external context, integrations, and
+                evidence around the same enforced execution boundary.
               </p>
             </div>
-            <div className="future-track reveal">
-              <div className="future-item">
-                <div className="future-phase">Now / Proven MVP</div>
-                <div className="future-card">
-                  <h3>Bounded agent authority</h3>
-                  <p>
-                    Prove that agents can operate autonomously with capital,
-                    then delegate narrower authority to sub-agents without
-                    giving them unrestricted control over it.
-                  </p>
-                  <div className="model-tags">
-                    <span className="tag">Vaults</span>
-                    <span className="tag">Mandates</span>
-                    <span className="tag">Delegation</span>
-                    <span className="tag">Preflight</span>
-                    <span className="tag">Revocation</span>
-                    <span className="tag">Records</span>
-                  </div>
-                </div>
-              </div>
-              <div className="future-item">
-                <div className="future-phase">Planned</div>
-                <div className="future-card">
-                  <h3>Guardian conditions</h3>
-                  <p>
-                    Guardians bring outside context into an authorisation
-                    decision, such as asset eligibility, market conditions,
-                    counterparty status, or organisation policy, so an action is
-                    judged on more than the Mandate alone.
-                  </p>
-                </div>
-              </div>
-              <div className="future-item">
-                <div className="future-phase">Expand</div>
-                <div className="future-card">
-                  <h3>Richer authority</h3>
-                  <p>
-                    Temporary permissions, multi-party approvals, reusable
-                    Mandates, expiry, emergency permissions, and conditional
-                    changes in authority.
-                  </p>
-                </div>
-              </div>
-              <div className="future-item">
-                <div className="future-phase">Scale</div>
-                <div className="future-card">
-                  <h3>Agent organisations</h3>
-                  <p>
-                    Extend today’s bounded delegation into connected treasury,
-                    payments, procurement, execution, and risk agents, each
-                    operating within its own authority boundary.
-                  </p>
-                </div>
-              </div>
-              <div className="future-item">
-                <div className="future-phase">Ecosystem</div>
-                <div className="future-card">
-                  <h3>Authorisation infrastructure</h3>
-                  <p>
-                    Guardian ecosystems, reusable policy templates, and
-                    organisation-specific preflight.
-                  </p>
-                </div>
-              </div>
-              <div className="future-item">
-                <div className="future-phase">Long term</div>
-                <div className="future-card">
-                  <h3>Economic accountability</h3>
-                  <p>
-                    Records can become trusted behavioural history for external
-                    reputation, credit, insurance, compliance, and risk systems.
-                  </p>
-                  <div className="model-tags">
-                    <span className="tag">Reputation</span>
-                    <span className="tag">Credit</span>
-                    <span className="tag">Insurance</span>
-                    <span className="tag">Compliance</span>
-                    <span className="tag">Risk</span>
-                  </div>
-                </div>
-              </div>
+
+            <div className="future-grid reveal">
+              <article>
+                <span className="label">Authority policy</span>
+                <h3>Validity and destination controls</h3>
+                <p>
+                  Pausing, validity windows, destination and capability
+                  policies, and shared authority budgets.
+                </p>
+              </article>
+              <article>
+                <span className="label">External conditions</span>
+                <h3>Guardians</h3>
+                <p>
+                  Planned conditions that can bring selected, attributable, and
+                  time-bounded external context into authorisation.
+                </p>
+              </article>
+              <article>
+                <span className="label">Integration</span>
+                <h3>SDK and API surfaces</h3>
+                <p>
+                  Client tools around the same underlying contract authority
+                  model.
+                </p>
+              </article>
+              <article>
+                <span className="label">Decision evidence</span>
+                <h3>Indexed decision evidence</h3>
+                <p>
+                  Indexing and assembled Decision Receipts that connect
+                  proposals, authority, approval, and execution.
+                </p>
+              </article>
             </div>
           </div>
         </section>
@@ -805,49 +903,52 @@ export default function Home() {
               <GrantlineMark className="brand-mark" />
               <span>Grantline</span>
             </div>
-            <h2>Give agents autonomy. Keep authority bounded.</h2>
+            <h2>Let agents act. Keep authority bounded.</h2>
             <p>
-              Define the authority before the action, then let agents act within
-              clear boundaries and owner control.
+              Give autonomous systems room to operate without turning their
+              signing keys into unrestricted control over capital.
             </p>
             <div className="cta-actions">
-              <span className="btn primary coming-soon" aria-disabled="true">
+              <button
+                type="button"
+                className="btn btn-primary coming-soon"
+                disabled
+              >
                 Demo coming soon
-              </span>
-              <Link className="btn" href="/docs">
+              </button>
+              <Link className="btn btn-quiet" href="/docs">
                 Read the documentation
               </Link>
+              <a
+                className="btn btn-quiet"
+                href={`${repositoryUrl}/tree/main/contracts`}
+                target="_blank"
+                rel="noreferrer nofollow"
+              >
+                View the contracts <span aria-hidden="true">↗</span>
+              </a>
             </div>
           </div>
         </section>
       </main>
 
-      <footer>
+      <footer className="footer">
         <div className="shell footer-row">
-          <div className="footer-top">
-            <a
-              className="footer-lockup"
-              href="#top"
-              aria-label="Grantline home"
-            >
+          <div className="footer-brand">
+            <a className="brand" href="#top" aria-label="Grantline home">
               <GrantlineMark className="brand-mark" />
               <span>Grantline</span>
             </a>
+            <p>The financial authorisation layer for AI agents.</p>
           </div>
-          <div className="footer-bottom">
-            <div className="footer-note">
-              Programmable financial authority for AI agents.
-            </div>
-            <div className="footer-links">
-              <a href="#mechanism">How it works</a>
-              <a href="#platform">Platform</a>
-              <a href="#vision">Vision</a>
-              <Link href="/docs">Documentation</Link>
-              <span className="footer-demo">Demo coming soon</span>
-              <a href={xUrl} target="_blank" rel="noreferrer nofollow">
-                X / @usegrantline &#8599;
-              </a>
-            </div>
+          <div className="footer-links">
+            <Link href="/docs">Documentation</Link>
+            <a href={repositoryUrl} target="_blank" rel="noreferrer nofollow">
+              GitHub ↗
+            </a>
+            <a href={xUrl} target="_blank" rel="noreferrer nofollow">
+              X / @usegrantline ↗
+            </a>
           </div>
         </div>
       </footer>

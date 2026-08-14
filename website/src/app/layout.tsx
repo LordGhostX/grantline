@@ -8,9 +8,9 @@ import "./global.css";
 
 export const metadata: Metadata = {
   metadataBase: siteUrl,
-  title: "Grantline | Programmable financial authority for AI agents",
+  title: "Grantline | Financial authorisation for AI agents",
   description:
-    "Grantline gives AI agents bounded authority over capital, with enforceable limits, delegation, owner approval, and traceable execution.",
+    "Grantline sits between an AI agent's signed intent and execution, checking current authority before controlled capital can move.",
 };
 
 const geist = Geist({
