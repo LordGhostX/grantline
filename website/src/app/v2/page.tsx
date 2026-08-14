@@ -683,9 +683,7 @@ export default function V2Page() {
         <section id="model">
           <div className="v2-shell">
             <div className="v2-section-head v2-reveal">
-              <h2>
-                Grantline separates authority, intent, custody, and decision.
-              </h2>
+              <h2>Four concepts form Grantline&apos;s core authority model.</h2>
               <p>
                 Delegation, Preflight, escalation, and revocation add controls
                 around this model while the signing key never becomes
@@ -760,7 +758,7 @@ export default function V2Page() {
               </article>
               <article>
                 <span className="v2-label">Escalation</span>
-                <h3>Does this boundary require owner review?</h3>
+                <h3>Does crossing this boundary require owner review?</h3>
                 <p>
                   The owner approves or denies the exact stored proposal, and
                   execution checks current state again.
@@ -822,6 +820,7 @@ export default function V2Page() {
 
             <div className="v2-delegation v2-reveal">
               <div className="v2-delegation-note">
+                <span className="v2-label">What that looks like in practice</span>
                 <h3>Effective authority follows the active lineage.</h3>
                 <p>
                   Effective authority is the current Mandate intersected with
@@ -841,7 +840,7 @@ export default function V2Page() {
                   <span>→</span>
                 </span>
                 <div className="v2-lineage-card v2-lineage-card-accent">
-                  <strong>Treasury agent</strong>
+                  <strong>Primary agent</strong>
                   <small>bounded operating authority</small>
                 </div>
                 <span className="v2-lineage-line" aria-hidden="true">
