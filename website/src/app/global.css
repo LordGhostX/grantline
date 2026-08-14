@@ -55,6 +55,7 @@ body {
 }
 
 :root {
+    color-scheme: dark;
     --bg: #0c0f0d;
     --surface: #131713;
     --surface-raised: #191e1a;

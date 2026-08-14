@@ -939,7 +939,7 @@ export default function Home() {
               <GrantlineMark className="brand-mark" />
               <span>Grantline</span>
             </a>
-            <p>The financial authorisation layer for AI agents.</p>
+            <p>The programmable financial authorisation layer for AI agents.</p>
           </div>
           <div className="footer-links">
             <Link href="/docs">Documentation</Link>

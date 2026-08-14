@@ -1,7 +1,7 @@
 import { RootProvider } from "fumadocs-ui/provider/next";
 import { Analytics } from "@vercel/analytics/next";
 import { Geist, Geist_Mono } from "next/font/google";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { siteUrl } from "@/lib/site";
 import "./global.css";
@@ -11,6 +11,11 @@ export const metadata: Metadata = {
   title: "Grantline | Financial authorisation for AI agents",
   description:
     "Grantline sits between an AI agent's signed intent and execution, checking current authority before controlled capital can move.",
+};
+
+export const viewport: Viewport = {
+  colorScheme: "dark",
+  themeColor: "#0c0f0d",
 };
 
 const geist = Geist({
