@@ -3,14 +3,23 @@ import { Analytics } from "@vercel/analytics/next";
 import { Geist, Geist_Mono } from "next/font/google";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import {
+  createSocialMetadata,
+  siteDescription,
+  siteTitle,
+} from "@/lib/metadata";
 import { siteUrl } from "@/lib/site";
 import "./global.css";
 
 export const metadata: Metadata = {
   metadataBase: siteUrl,
-  title: "Grantline | Financial authorisation for AI agents",
-  description:
-    "Grantline sits between an AI agent's signed intent and execution, checking current authority before controlled capital can move.",
+  title: siteTitle,
+  description: siteDescription,
+  ...createSocialMetadata({
+    title: siteTitle,
+    description: siteDescription,
+    path: "/",
+  }),
 };
 
 export const viewport: Viewport = {

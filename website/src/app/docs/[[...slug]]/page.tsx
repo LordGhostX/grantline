@@ -11,6 +11,7 @@ import { notFound } from "next/navigation";
 import { getMDXComponents } from "@/components/mdx";
 import type { Metadata } from "next";
 import { createRelativeLink } from "fumadocs-ui/mdx";
+import { createSocialMetadata } from "@/lib/metadata";
 import { repositoryUrl } from "@/lib/site-links";
 
 export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
@@ -65,11 +66,19 @@ export async function generateMetadata(
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
+  const title =
+    page.url === "/docs"
+      ? page.data.title
+      : `${page.data.title} | Grantline Documentation`;
+  const description = page.data.description;
+
   return {
-    title:
-      page.url === "/docs"
-        ? page.data.title
-        : `${page.data.title} | Grantline Documentation`,
-    description: page.data.description,
+    title,
+    description,
+    ...createSocialMetadata({
+      title,
+      description,
+      path: page.url,
+    }),
   };
 }
