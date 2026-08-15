@@ -334,6 +334,8 @@ contract TestnetIntegration is ScriptBase {
         _require(Vault(payable(state.secondVault)).owner() == state.hub, "second Vault owner mismatch");
         _require(Vault(payable(state.vault)).authority() == state.executor, "first Vault authority mismatch");
         _require(Vault(payable(state.secondVault)).authority() == state.executor, "second Vault authority mismatch");
+        _require(!Vault(payable(state.vault)).paused(), "first Vault is unexpectedly paused");
+        _require(!Vault(payable(state.secondVault)).paused(), "second Vault is unexpectedly paused");
         return state;
     }
 

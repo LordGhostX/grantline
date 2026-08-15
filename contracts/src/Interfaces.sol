@@ -68,6 +68,12 @@ interface IRegistry is IModule {
 
     function isLineageActive(uint256 mandateId) external view returns (bool);
 
+    function isLineagePaused(uint256 mandateId) external view returns (bool);
+
+    function pauseMandate(uint256 mandateId, address actor) external;
+
+    function unpauseMandate(uint256 mandateId, address actor) external;
+
     function mandateCount() external view returns (uint256);
 
     function nonceUsed(uint256 mandateId, address agent, uint256 nonce) external view returns (bool);
@@ -124,6 +130,8 @@ interface IVaultFactory is IModule {
 
     function createVault(address controller) external returns (address vault);
 
+    function validateVaultImplementation(address implementation, uint64 implementationVersion) external view;
+
     function setVaultImplementation(address implementation, uint64 implementationVersion) external;
 
     function vaultImplementation() external view returns (address);
@@ -139,6 +147,14 @@ interface IVaultFactory is IModule {
 
 interface IVault is IComponent {
     function initialize(address grantline, address authorityAddress) external;
+
+    function pause() external;
+
+    function unpause() external;
+
+    function paused() external view returns (bool);
+
+    function pauseInterfaceVersion() external pure returns (uint64);
 
     function owner() external view returns (address);
 

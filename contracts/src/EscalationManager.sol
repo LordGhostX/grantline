@@ -6,7 +6,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {ActionTypes} from "./ActionTypes.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
-import {IGrantlineContext, IEscalationManager, IEvaluator, IModule, IRegistry} from "./Interfaces.sol";
+import {IGrantlineContext, IEscalationManager, IEvaluator, IModule, IRegistry, IVault} from "./Interfaces.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
 contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUpgradeable, IEscalationManager {
@@ -27,6 +27,8 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
     error EscalationNotPending(bytes32 digest, Status status);
     error EscalationNotApproved(bytes32 digest, Status status);
     error MandateInactive(uint256 mandateId);
+    error MandatePaused(uint256 mandateId);
+    error VaultPaused(address vault);
     error NotEscalatable(uint8 decision, uint8 failureCode);
     error NonceNotConsumed(uint256 mandateId, address agent, uint256 nonce);
     error NotGrantline(address caller);
@@ -140,7 +142,13 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         if (
             mandate.status != GrantlineTypes.MandateStatus.ACTIVE
                 || !IRegistry(registry).isLineageActive(escalation.plan.mandateId)
-        ) revert MandateInactive(escalation.plan.mandateId);
+        ) {
+            if (IRegistry(registry).isLineagePaused(escalation.plan.mandateId)) {
+                revert MandatePaused(escalation.plan.mandateId);
+            }
+            revert MandateInactive(escalation.plan.mandateId);
+        }
+        if (IVault(mandate.vault).paused()) revert VaultPaused(mandate.vault);
         if (!IGrantlineContext(grantline).isController(mandate.vault, controller)) {
             revert NotController(controller);
         }
@@ -172,7 +180,13 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         if (
             mandate.status != GrantlineTypes.MandateStatus.ACTIVE
                 || !IRegistry(registry).isLineageActive(escalation.plan.mandateId)
-        ) revert MandateInactive(escalation.plan.mandateId);
+        ) {
+            if (IRegistry(registry).isLineagePaused(escalation.plan.mandateId)) {
+                revert MandatePaused(escalation.plan.mandateId);
+            }
+            revert MandateInactive(escalation.plan.mandateId);
+        }
+        if (IVault(mandate.vault).paused()) revert VaultPaused(mandate.vault);
         if (!IRegistry(registry).nonceUsed(escalation.plan.mandateId, escalation.plan.agent, escalation.plan.nonce)) {
             revert NonceNotConsumed(escalation.plan.mandateId, escalation.plan.agent, escalation.plan.nonce);
         }

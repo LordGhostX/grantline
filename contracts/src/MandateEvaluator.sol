@@ -7,7 +7,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {ActionTypes} from "./ActionTypes.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
-import {IGrantlineContext, IEvaluator, IRegistry} from "./Interfaces.sol";
+import {IGrantlineContext, IEvaluator, IRegistry, IVault} from "./Interfaces.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
 interface IUsdValueProvider {
@@ -40,7 +40,9 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         USD_AMOUNT_BELOW_MINIMUM,
         USD_AMOUNT_ABOVE_MAXIMUM,
         USD_VALUATION_UNAVAILABLE,
-        PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM
+        PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM,
+        MANDATE_PAUSED,
+        VAULT_PAUSED
     }
 
     bytes32 public constant EXECUTOR_MODULE = keccak256("EXECUTOR");
@@ -108,11 +110,20 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         }
 
         GrantlineTypes.Mandate memory mandate = registryContract.getMandate(plan.mandateId);
+        if (mandate.status == GrantlineTypes.MandateStatus.PAUSED) {
+            return _failure(FailureCode.MANDATE_PAUSED, type(uint256).max, 0, 0, false, 0);
+        }
         if (mandate.status != GrantlineTypes.MandateStatus.ACTIVE) {
             return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, false, 0);
         }
         if (!registryContract.isLineageActive(plan.mandateId)) {
+            if (registryContract.isLineagePaused(plan.mandateId)) {
+                return _failure(FailureCode.MANDATE_PAUSED, type(uint256).max, 0, 0, false, 0);
+            }
             return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, false, 0);
+        }
+        if (IVault(mandate.vault).paused()) {
+            return _failure(FailureCode.VAULT_PAUSED, type(uint256).max, 0, 0, false, 0);
         }
         GrantlineTypes.MandateRules memory effectiveRules = registryContract.getEffectiveRules(plan.mandateId);
 

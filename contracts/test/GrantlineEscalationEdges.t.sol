@@ -96,6 +96,61 @@ contract GrantlineEscalationEdgesTest is GrantlineTestFixture {
         assert(MandateRegistry(fixture.hub.registry()).reservedDigest(fixture.mandateId, fixture.agent, 54) == digest);
     }
 
+    function test_pausedMandateBlocksEscalationApprovalButAllowsDenial() public {
+        Fixture memory fixture = _escalatingFixture();
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId, fixture.agent, 62, 0, _transferAction(address(0), address(0xBEEF), 2 ether)
+        );
+        bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
+        bytes32 digest = fixture.hub.submitEscalation(plan, signature);
+
+        fixture.hub.pauseMandate(fixture.mandateId);
+        fixtureVm.expectRevert(abi.encodeWithSelector(EscalationManager.MandatePaused.selector, fixture.mandateId));
+        fixture.hub.approveEscalation(digest);
+        fixture.hub.denyEscalation(digest);
+
+        assert(fixture.hub.escalationStatus(digest) == uint8(EscalationManager.Status.DENIED));
+        assert(MandateRegistry(fixture.hub.registry()).reservedDigest(fixture.mandateId, fixture.agent, 62) == digest);
+    }
+
+    function test_pausedVaultBlocksEscalationApprovalButAllowsDenial() public {
+        Fixture memory fixture = _escalatingFixture();
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId, fixture.agent, 63, 0, _transferAction(address(0), address(0xBEEF), 2 ether)
+        );
+        bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
+        bytes32 digest = fixture.hub.submitEscalation(plan, signature);
+
+        fixture.hub.pauseVault(fixture.vault);
+        fixtureVm.expectRevert(abi.encodeWithSelector(EscalationManager.VaultPaused.selector, fixture.vault));
+        fixture.hub.approveEscalation(digest);
+        fixture.hub.denyEscalation(digest);
+
+        assert(fixture.hub.escalationStatus(digest) == uint8(EscalationManager.Status.DENIED));
+        assert(MandateRegistry(fixture.hub.registry()).reservedDigest(fixture.mandateId, fixture.agent, 63) == digest);
+    }
+
+    function test_approvedEscalationSurvivesVaultPauseAndRetriesAfterUnpause() public {
+        Fixture memory fixture = _escalatingFixture();
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId, fixture.agent, 64, 0, _transferAction(address(0), address(0xBEEF), 2 ether)
+        );
+        bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
+        bytes32 digest = fixture.hub.submitEscalation(plan, signature);
+        fixture.hub.approveEscalation(digest);
+
+        fixture.hub.pauseVault(fixture.vault);
+        fixtureVm.expectRevert();
+        fixture.hub.executeEscalated(digest);
+        assert(fixture.hub.escalationStatus(digest) == uint8(EscalationManager.Status.APPROVED));
+        assert(MandateRegistry(fixture.hub.registry()).reservedDigest(fixture.mandateId, fixture.agent, 64) == digest);
+
+        fixture.hub.unpauseVault(fixture.vault);
+        fixture.hub.executeEscalated(digest);
+        assert(fixture.hub.escalationStatus(digest) == uint8(EscalationManager.Status.EXECUTED));
+        assert(address(0xBEEF).balance == 2 ether);
+    }
+
     function test_pendingReservationBlocksNormalExecutionEvenAfterDenial() public {
         Fixture memory fixture = _escalatingFixture();
         ActionTypes.ActionPlan memory plan = _singleActionPlan(

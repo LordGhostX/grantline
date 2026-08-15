@@ -133,6 +133,11 @@ contract VerifyGrantlineDeployment is ScriptBase {
             vm.parseJsonAddress(manifest, string.concat(prefix, ".owner")),
             actual.owner
         );
+        _requireBool(
+            string.concat(component, ".paused"),
+            vm.parseJsonBool(manifest, string.concat(prefix, ".paused")),
+            actual.paused
+        );
         _requireAddress(
             string.concat(component, ".authority"),
             vm.parseJsonAddress(manifest, string.concat(prefix, ".authority")),

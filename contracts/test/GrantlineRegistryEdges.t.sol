@@ -120,4 +120,62 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
         fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.MandateNotActive.selector, fixture.mandateId));
         fixture.hub.revokeMandate(fixture.mandateId);
     }
+
+    function test_pauseMandateIsInheritedWithoutCascadingState() public {
+        Fixture memory fixture = _fixture();
+        address childAgent = fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY);
+        uint256 childId;
+        fixtureVm.prank(fixture.agent);
+        childId = fixture.hub
+            .createChildMandate(
+                fixture.mandateId, childAgent, _rules(1 ether, false, 0, 0, false, false), _preflight(0, false)
+            );
+
+        fixture.hub.pauseMandate(fixture.mandateId);
+        assert(fixture.hub.getMandate(fixture.mandateId).status == GrantlineTypes.MandateStatus.PAUSED);
+        assert(fixture.hub.getMandate(childId).status == GrantlineTypes.MandateStatus.ACTIVE);
+        assert(MandateRegistry(fixture.hub.registry()).isLineagePaused(childId));
+        assert(!MandateRegistry(fixture.hub.registry()).isLineageActive(childId));
+
+        fixture.hub.unpauseMandate(fixture.mandateId);
+        assert(MandateRegistry(fixture.hub.registry()).isLineageActive(childId));
+
+        fixtureVm.prank(fixture.agent);
+        fixture.hub.pauseMandate(childId);
+        fixture.hub.unpauseMandate(childId);
+        assert(fixture.hub.getMandate(childId).status == GrantlineTypes.MandateStatus.ACTIVE);
+
+        fixture.hub.pauseMandate(childId);
+        fixture.hub.updateMandate(childId, _rules(0.5 ether, false, 0, 0, false, false), _preflight(0, false));
+        fixture.hub.revokeMandate(childId);
+        assert(fixture.hub.getMandate(childId).status == GrantlineTypes.MandateStatus.REVOKED);
+    }
+
+    function test_pausedMandateRejectsInvalidTransitionsAndChildCreation() public {
+        Fixture memory fixture = _fixture();
+        fixture.hub.pauseMandate(fixture.mandateId);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.MandateNotActive.selector, fixture.mandateId));
+        fixture.hub.pauseMandate(fixture.mandateId);
+
+        fixtureVm.prank(fixture.agent);
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(Grantline.NotParentAgent.selector, fixture.mandateId, fixture.agent)
+        );
+        fixture.hub
+            .createChildMandate(
+                fixture.mandateId,
+                fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY),
+                _rules(1 ether, false, 0, 0, false, false),
+                _preflight(0, false)
+            );
+
+        fixture.hub.unpauseMandate(fixture.mandateId);
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.MandateNotPaused.selector, fixture.mandateId));
+        fixture.hub.unpauseMandate(fixture.mandateId);
+
+        fixture.hub.revokeMandate(fixture.mandateId);
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.MandateNotPaused.selector, fixture.mandateId));
+        fixture.hub.unpauseMandate(fixture.mandateId);
+    }
 }

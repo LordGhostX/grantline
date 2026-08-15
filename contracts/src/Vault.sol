@@ -3,13 +3,20 @@ pragma solidity ^0.8.28;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
-contract Vault is Initializable, GrantlineOwnable2StepUpgradeable, ReentrancyGuard, UUPSUpgradeable {
+contract Vault is
+    Initializable,
+    GrantlineOwnable2StepUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuard,
+    UUPSUpgradeable
+{
     using SafeERC20 for IERC20;
 
     error InvalidAddress();
@@ -49,6 +56,7 @@ contract Vault is Initializable, GrantlineOwnable2StepUpgradeable, ReentrancyGua
         authority = authorityAddress;
         __Ownable_init(grantlineAddress);
         __Ownable2Step_init();
+        __Pausable_init();
         emit VaultInitialized(grantlineAddress, authorityAddress);
     }
 
@@ -58,6 +66,18 @@ contract Vault is Initializable, GrantlineOwnable2StepUpgradeable, ReentrancyGua
 
     function componentType() external pure returns (bytes32) {
         return ComponentTypes.VAULT;
+    }
+
+    function pauseInterfaceVersion() external pure returns (uint64) {
+        return 1;
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
     }
 
     receive() external payable onlyOwner {
@@ -110,6 +130,7 @@ contract Vault is Initializable, GrantlineOwnable2StepUpgradeable, ReentrancyGua
     function execute(address target, uint256 value, bytes calldata data)
         external
         onlyAuthority
+        whenNotPaused
         nonReentrant
         returns (bool success, bytes memory result)
     {

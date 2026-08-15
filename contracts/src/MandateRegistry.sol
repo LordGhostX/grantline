@@ -24,6 +24,7 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
     error InvalidVault();
     error VaultNotRegistered(address vault);
     error MandateNotActive(uint256 mandateId);
+    error MandateNotPaused(uint256 mandateId);
     error MandateNotFound(uint256 mandateId);
     error MandateAgentMismatch(uint256 mandateId, address agent);
     error InvalidReservationDigest();
@@ -67,6 +68,8 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         uint64 updatedAt
     );
     event MandateRevoked(uint256 indexed mandateId, address indexed revokedBy, uint64 revokedAt);
+    event MandatePaused(uint256 indexed mandateId, address indexed pausedBy, uint64 pausedAt);
+    event MandateUnpaused(uint256 indexed mandateId, address indexed unpausedBy, uint64 unpausedAt);
     event NonceReservationCreated(
         uint256 indexed mandateId, address indexed agent, uint256 indexed nonce, bytes32 digest
     );
@@ -217,7 +220,7 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         GrantlineTypes.PreflightRules calldata preflightRules
     ) external {
         _onlyGrantline();
-        GrantlineTypes.Mandate storage mandate = _activeMandate(mandateId);
+        GrantlineTypes.Mandate storage mandate = _editableMandate(mandateId);
         _requireMandateAdministrator(mandateId, mandate, actor);
         if (mandate.delegationDepth == MAX_DELEGATION_DEPTH) {
             GrantlineTypes.MandateRules memory normalized = rules;
@@ -238,7 +241,7 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         _validateRules(rules);
         _validatePreflightRules(preflightRules);
         if (mandate.parentMandateId != 0) {
-            _requireActiveLineage(mandate.parentMandateId);
+            _requireEditableLineage(mandate.parentMandateId);
             _validateChildRules(mandate.parentMandateId, _effectiveRules(mandate.parentMandateId), rules);
             _validateChildPreflightRules(
                 mandate.parentMandateId, _effectivePreflightRules(mandate.parentMandateId), preflightRules
@@ -252,12 +255,31 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
 
     function revokeMandate(uint256 mandateId, address actor) external {
         _onlyGrantline();
-        GrantlineTypes.Mandate storage mandate = _activeMandate(mandateId);
+        GrantlineTypes.Mandate storage mandate = _editableMandate(mandateId);
         _requireMandateAdministrator(mandateId, mandate, actor);
         uint64 revokedAt = uint64(block.timestamp);
         mandate.status = GrantlineTypes.MandateStatus.REVOKED;
         mandate.revokedAt = revokedAt;
         emit MandateRevoked(mandateId, actor, revokedAt);
+    }
+
+    function pauseMandate(uint256 mandateId, address actor) external override {
+        _onlyGrantline();
+        GrantlineTypes.Mandate storage mandate = _activeMandate(mandateId);
+        _requireMandateAdministrator(mandateId, mandate, actor);
+        mandate.status = GrantlineTypes.MandateStatus.PAUSED;
+        emit MandatePaused(mandateId, actor, uint64(block.timestamp));
+    }
+
+    function unpauseMandate(uint256 mandateId, address actor) external override {
+        _onlyGrantline();
+        GrantlineTypes.Mandate storage mandate = _requireMandateExists(mandateId);
+        if (mandate.status != GrantlineTypes.MandateStatus.PAUSED) {
+            revert MandateNotPaused(mandateId);
+        }
+        _requireMandateAdministrator(mandateId, mandate, actor);
+        mandate.status = GrantlineTypes.MandateStatus.ACTIVE;
+        emit MandateUnpaused(mandateId, actor, uint64(block.timestamp));
     }
 
     function consumeNonce(uint256 mandateId, address agent, uint256 nonce) external override {
@@ -351,9 +373,26 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         return true;
     }
 
+    function isLineagePaused(uint256 mandateId) external view override returns (bool) {
+        if (mandateId == 0 || mandateId > mandateCount) return false;
+        uint256 currentMandateId = mandateId;
+        while (currentMandateId != 0) {
+            if (_mandates[currentMandateId].status == GrantlineTypes.MandateStatus.PAUSED) return true;
+            currentMandateId = _mandates[currentMandateId].parentMandateId;
+        }
+        return false;
+    }
+
     function _activeMandate(uint256 mandateId) private view returns (GrantlineTypes.Mandate storage mandate) {
         mandate = _requireMandateExists(mandateId);
         if (mandate.status != GrantlineTypes.MandateStatus.ACTIVE) {
+            revert MandateNotActive(mandateId);
+        }
+    }
+
+    function _editableMandate(uint256 mandateId) private view returns (GrantlineTypes.Mandate storage mandate) {
+        mandate = _requireMandateExists(mandateId);
+        if (mandate.status == GrantlineTypes.MandateStatus.REVOKED) {
             revert MandateNotActive(mandateId);
         }
     }
@@ -370,6 +409,17 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         while (currentMandateId != 0) {
             GrantlineTypes.Mandate storage current = _mandates[currentMandateId];
             if (current.status != GrantlineTypes.MandateStatus.ACTIVE) {
+                revert MandateLineageInactive(mandateId, currentMandateId);
+            }
+            currentMandateId = current.parentMandateId;
+        }
+    }
+
+    function _requireEditableLineage(uint256 mandateId) private view {
+        uint256 currentMandateId = mandateId;
+        while (currentMandateId != 0) {
+            GrantlineTypes.Mandate storage current = _mandates[currentMandateId];
+            if (current.status == GrantlineTypes.MandateStatus.REVOKED) {
                 revert MandateLineageInactive(mandateId, currentMandateId);
             }
             currentMandateId = current.parentMandateId;

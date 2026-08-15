@@ -17,6 +17,8 @@ import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
 
 interface GrantlineProtocolOwnership {
     function transferOwnership(address newOwner) external;
+
+    function unpause() external;
 }
 
 contract GrantlineProtocolVaultV2 is Vault {
@@ -57,7 +59,25 @@ contract GrantlineExecutorRegistryV2 is VaultExecutor {
     }
 }
 
+contract GrantlineIncompletePauseVaultImplementation is UUPSUpgradeable {
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
+    function componentType() external pure returns (bytes32) {
+        return ComponentTypes.VAULT;
+    }
+
+    function paused() external pure returns (bool) {
+        return false;
+    }
+
+    function _authorizeUpgrade(address) internal pure override {}
+}
+
 contract GrantlineReentrantVaultImplementation is UUPSUpgradeable {
+    bool private _paused;
+
     function initialize(address grantlineAddress, address) external {
         Grantline(grantlineAddress).createVault();
     }
@@ -68,6 +88,22 @@ contract GrantlineReentrantVaultImplementation is UUPSUpgradeable {
 
     function componentType() external pure returns (bytes32) {
         return ComponentTypes.VAULT;
+    }
+
+    function pauseInterfaceVersion() external pure returns (uint64) {
+        return 1;
+    }
+
+    function pause() external {
+        _paused = true;
+    }
+
+    function unpause() external {
+        _paused = false;
+    }
+
+    function paused() external view returns (bool) {
+        return _paused;
     }
 
     function _authorizeUpgrade(address) internal pure override {}
@@ -195,16 +231,31 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         fixture.hub.setVaultImplementation(address(implementation), 1);
 
         fixtureVm.expectRevert(
-            abi.encodeWithSelector(
-                Grantline.InvalidComponentType.selector,
-                "vault.implementation",
-                ComponentTypes.VAULT,
-                ComponentTypes.EXECUTOR
-            )
+            abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(implementation))
         );
         fixture.hub.upgradeVault(fixture.vault, address(implementation), 1, "");
 
         assert(fixture.hub.getVault(fixture.vault).implementation != address(implementation));
+        assert(Vault(payable(fixture.vault)).owner() == address(fixture.hub));
+        assert(Vault(payable(fixture.vault)).authority() == fixture.hub.executor());
+    }
+
+    function test_rejectsVaultImplementationWithoutPauseCapability() public {
+        Fixture memory fixture = _fixture();
+        GrantlineIncompletePauseVaultImplementation implementation = new GrantlineIncompletePauseVaultImplementation();
+        address previousImplementation = fixture.hub.getVault(fixture.vault).implementation;
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(implementation))
+        );
+        fixture.hub.setVaultImplementation(address(implementation), 1);
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(implementation))
+        );
+        fixture.hub.upgradeVault(fixture.vault, address(implementation), 1, "");
+
+        assert(fixture.hub.getVault(fixture.vault).implementation == previousImplementation);
         assert(Vault(payable(fixture.vault)).owner() == address(fixture.hub));
         assert(Vault(payable(fixture.vault)).authority() == fixture.hub.executor());
     }
@@ -363,6 +414,21 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         assert(fixture.hub.getVault(fixture.vault).implementation == previousImplementation);
         assert(Vault(payable(fixture.vault)).owner() == address(fixture.hub));
         assert(Vault(payable(fixture.vault)).pendingOwner() == address(0));
+    }
+
+    function test_existingVaultUpgradePreservesPauseState() public {
+        Fixture memory fixture = _fixture();
+        GrantlineProtocolVaultV2 implementation = new GrantlineProtocolVaultV2();
+
+        fixture.hub.pauseVault(fixture.vault);
+        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.InvalidModuleRelationship.selector, "vault.paused"));
+        fixture.hub
+            .upgradeVault(
+                fixture.vault, address(implementation), 1, abi.encodeCall(GrantlineProtocolOwnership.unpause, ())
+            );
+
+        assert(Vault(payable(fixture.vault)).paused());
+        assert(fixture.hub.getVault(fixture.vault).implementation != address(implementation));
     }
 
     function test_moduleUpgradeIsAtomicAndPreservesRegistryStorage() public {

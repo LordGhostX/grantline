@@ -94,6 +94,36 @@ contract GrantlineTest {
         assert(fixture.hub.isRegisteredVault(fixture.vault));
     }
 
+    function test_controllerCanPauseVaultAndRetainRecoveryOperations() public {
+        Fixture memory fixture = _fixture();
+        address otherController = address(0xCAFE);
+
+        vm.prank(otherController);
+        vm.expectRevert(abi.encodeWithSelector(Grantline.NotController.selector, fixture.vault, otherController));
+        fixture.hub.pauseVault(fixture.vault);
+
+        fixture.hub.pauseVault(fixture.vault);
+        assert(fixture.hub.getVault(fixture.vault).paused);
+
+        ActionTypes.ActionPlan memory plan =
+            _plan(fixture.mandateId, fixture.agent, 101, _transfer(address(0), address(0xBEEF), 1 ether));
+        GrantlineTypes.EvaluationResult memory result =
+            fixture.hub.evaluate(plan, _sign(AGENT_KEY, fixture.hub.actionDigest(plan)));
+        assert(result.failureCode == uint8(MandateEvaluator.FailureCode.VAULT_PAUSED));
+
+        vm.expectRevert(abi.encodeWithSelector(Grantline.VaultIsPaused.selector, fixture.vault));
+        fixture.hub.createMandate(fixture.vault, fixture.agent, _rules(1 ether, false), _preflight(0, false));
+
+        fixture.hub.withdrawNative(fixture.vault, payable(otherController), 1 ether);
+        fixture.hub.depositNative{value: 1 ether}(fixture.vault);
+
+        fixture.hub.unpauseVault(fixture.vault);
+        assert(!fixture.hub.getVault(fixture.vault).paused);
+        fixture.hub.execute(plan, _sign(AGENT_KEY, fixture.hub.actionDigest(plan)));
+        assert(otherController.balance == 1 ether);
+        assert(address(0xBEEF).balance == 1 ether);
+    }
+
     function test_controllerIsolationAndDirectModuleRejection() public {
         Fixture memory fixture = _fixture();
         address otherController = address(0xCAFE);

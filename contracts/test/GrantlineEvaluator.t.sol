@@ -105,6 +105,27 @@ contract GrantlineEvaluatorTest is GrantlineTestFixture {
         assert(result.failureCode == uint8(MandateEvaluator.FailureCode.MANDATE_INACTIVE));
     }
 
+    function test_pausedMandateAndVaultFailures() public {
+        Fixture memory fixture = _fixture();
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId, fixture.agent, 25, 0, _transferAction(address(0), address(0xBEEF), 1 ether)
+        );
+        bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
+
+        fixture.hub.pauseMandate(fixture.mandateId);
+        GrantlineTypes.EvaluationResult memory result = fixture.hub.evaluate(plan, signature);
+        assert(result.failureCode == uint8(MandateEvaluator.FailureCode.MANDATE_PAUSED));
+
+        fixture.hub.unpauseMandate(fixture.mandateId);
+        fixture.hub.pauseVault(fixture.vault);
+        result = fixture.hub.evaluate(plan, signature);
+        assert(result.failureCode == uint8(MandateEvaluator.FailureCode.VAULT_PAUSED));
+
+        fixture.hub.unpauseVault(fixture.vault);
+        result = fixture.hub.evaluate(plan, signature);
+        assert(result.decision == uint8(MandateEvaluator.Decision.ALLOW));
+    }
+
     function test_nativeAggregationAndBoundaries() public {
         GrantlineTypes.MandateRules memory rules = _rules(2 ether, false, 1 ether, 0, false, true);
         Fixture memory fixture = _fixtureWithRules(rules, _preflight(0, false), address(0), true);

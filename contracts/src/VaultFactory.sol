@@ -71,6 +71,11 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
         emit VaultCreated(vault, controller, vaultImplementation, vaultImplementationVersion);
     }
 
+    function validateVaultImplementation(address implementation, uint64 implementationVersion) external view override {
+        _onlyGrantline();
+        _requireVaultImplementation(implementation, implementationVersion);
+    }
+
     function setVaultImplementation(address implementation, uint64 implementationVersion) external override {
         _onlyGrantline();
         if (implementation == address(0)) revert InvalidImplementation(implementation);
@@ -107,6 +112,16 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
         _requireUUPSImplementation(implementation);
         try IVault(implementation).componentType() returns (bytes32 actualType) {
             if (actualType != ComponentTypes.VAULT) revert InvalidImplementation(implementation);
+        } catch {
+            revert InvalidImplementation(implementation);
+        }
+        try IVault(implementation).pauseInterfaceVersion() returns (uint64 interfaceVersion) {
+            if (interfaceVersion != 1) revert InvalidImplementation(implementation);
+        } catch {
+            revert InvalidImplementation(implementation);
+        }
+        try IVault(implementation).paused() returns (bool implementationPaused) {
+            if (implementationPaused) revert InvalidImplementation(implementation);
         } catch {
             revert InvalidImplementation(implementation);
         }

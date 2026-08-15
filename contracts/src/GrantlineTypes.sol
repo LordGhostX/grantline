@@ -6,7 +6,8 @@ import {ActionTypes} from "./ActionTypes.sol";
 library GrantlineTypes {
     enum MandateStatus {
         ACTIVE,
-        REVOKED
+        REVOKED,
+        PAUSED
     }
 
     struct MandateRules {

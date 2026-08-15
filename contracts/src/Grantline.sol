@@ -52,6 +52,7 @@ contract Grantline is
     error NotParentAgent(uint256 mandateId, address caller);
     error NotMandateAdministrator(uint256 mandateId, address caller);
     error InvalidController();
+    error VaultIsPaused(address vault);
 
     event ModulesConfigured(
         address indexed registry,
@@ -71,6 +72,10 @@ contract Grantline is
     event VaultControllerUpdated(
         address indexed vault, address indexed previousController, address indexed newController
     );
+    event VaultPaused(address indexed vault, address indexed pausedBy);
+    event VaultUnpaused(address indexed vault, address indexed unpausedBy);
+    event MandatePaused(uint256 indexed mandateId, address indexed pausedBy);
+    event MandateUnpaused(uint256 indexed mandateId, address indexed unpausedBy);
     event ActionPlanSubmitted(
         bytes32 indexed actionDigest, uint256 indexed mandateId, address indexed agent, address submittedBy
     );
@@ -99,6 +104,7 @@ contract Grantline is
         address implementation;
         uint64 version;
         uint256 nativeBalance;
+        bool paused;
     }
 
     mapping(bytes32 => address) private _modules;
@@ -193,6 +199,18 @@ contract Grantline is
         IVault(vault).depositNative{value: msg.value}(msg.sender);
     }
 
+    function pauseVault(address vault) external nonReentrant {
+        _onlyController(vault, msg.sender);
+        IVault(vault).pause();
+        emit VaultPaused(vault, msg.sender);
+    }
+
+    function unpauseVault(address vault) external nonReentrant {
+        _onlyController(vault, msg.sender);
+        IVault(vault).unpause();
+        emit VaultUnpaused(vault, msg.sender);
+    }
+
     function depositToken(address vault, address token, uint256 amount) external nonReentrant {
         _onlyController(vault, msg.sender);
         IVault(vault).depositTokenFrom(msg.sender, token, amount);
@@ -215,6 +233,7 @@ contract Grantline is
         GrantlineTypes.PreflightRules calldata preflightRules
     ) external nonReentrant returns (uint256 mandateId) {
         _onlyController(vault, msg.sender);
+        _requireVaultNotPaused(vault);
         mandateId = IRegistry(registry()).createMandate(vault, msg.sender, agent, rules, preflightRules);
     }
 
@@ -225,6 +244,7 @@ contract Grantline is
         GrantlineTypes.PreflightRules calldata preflightRules
     ) external nonReentrant returns (uint256 mandateId) {
         GrantlineTypes.Mandate memory parent = IRegistry(registry()).getMandate(parentMandateId);
+        _requireVaultNotPaused(parent.vault);
         if (parent.agent != msg.sender) {
             revert NotParentAgent(parentMandateId, msg.sender);
         }
@@ -247,6 +267,18 @@ contract Grantline is
     function revokeMandate(uint256 mandateId) external nonReentrant {
         _requireMandateAdministrator(mandateId, msg.sender);
         IRegistry(registry()).revokeMandate(mandateId, msg.sender);
+    }
+
+    function pauseMandate(uint256 mandateId) external nonReentrant {
+        _requireMandateAdministrator(mandateId, msg.sender);
+        IRegistry(registry()).pauseMandate(mandateId, msg.sender);
+        emit MandatePaused(mandateId, msg.sender);
+    }
+
+    function unpauseMandate(uint256 mandateId) external nonReentrant {
+        _requireMandateAdministrator(mandateId, msg.sender);
+        IRegistry(registry()).unpauseMandate(mandateId, msg.sender);
+        emit MandateUnpaused(mandateId, msg.sender);
     }
 
     function submitEscalation(ActionTypes.ActionPlan calldata plan, bytes calldata signature)
@@ -383,7 +415,8 @@ contract Grantline is
             authority: IVault(vault).authority(),
             implementation: record.implementation,
             version: record.version,
-            nativeBalance: vault.balance
+            nativeBalance: vault.balance,
+            paused: IVault(vault).paused()
         });
     }
 
@@ -424,8 +457,8 @@ contract Grantline is
         if (_vaultRecords[vault].controller == address(0)) {
             revert VaultNotRegistered(vault);
         }
-        _requireComponentType(implementation, ComponentTypes.VAULT, "vault.implementation");
-        _requireImplementationVersion(implementation, implementationVersion);
+        bool wasPaused = IVault(vault).paused();
+        IVaultFactory(vaultFactory()).validateVaultImplementation(implementation, implementationVersion);
 
         // The record is updated before the external upgrade call. If the UUPS upgrade or
         // its optional initializer reverts, transaction atomicity restores the old record.
@@ -441,6 +474,9 @@ contract Grantline is
         }
         if (IOwnable2Step(vault).pendingOwner() != address(0)) {
             revert InvalidModuleRelationship("vault.pendingOwner");
+        }
+        if (IVault(vault).paused() != wasPaused) {
+            revert InvalidModuleRelationship("vault.paused");
         }
         if (IVault(vault).authority() != executor()) {
             revert InvalidModuleRelationship("vault.authority");
@@ -462,6 +498,10 @@ contract Grantline is
     function _onlyController(address vault, address caller) private view {
         if (!_isRegistered(vault)) revert VaultNotRegistered(vault);
         if (!isController(vault, caller)) revert NotController(vault, caller);
+    }
+
+    function _requireVaultNotPaused(address vault) private view {
+        if (IVault(vault).paused()) revert VaultIsPaused(vault);
     }
 
     function _requireMandateAdministrator(uint256 mandateId, address caller) private view {

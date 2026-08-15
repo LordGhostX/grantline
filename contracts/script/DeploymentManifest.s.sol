@@ -90,6 +90,7 @@ library DeploymentManifest {
         json = string.concat(json, ',"controller":"', _address(viewData.controller), '"');
         json = string.concat(json, ',"owner":"', _address(viewData.owner), '"');
         json = string.concat(json, ',"authority":"', _address(viewData.authority), '"');
+        json = string.concat(json, ',"paused":', viewData.paused ? "true" : "false");
         json = string.concat(json, ',"implementation":"', _address(viewData.implementation), '"');
         json = string.concat(json, ',"implementationCodeHash":"', _bytes32(viewData.implementation.codehash), '"');
         json = string.concat(json, ',"version":', uint256(viewData.version).toString(), "}");

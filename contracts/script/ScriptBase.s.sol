@@ -18,6 +18,8 @@ interface GrantlineScriptVm {
 
     function parseJsonBytes32(string calldata json, string calldata key) external returns (bytes32 value);
 
+    function parseJsonBool(string calldata json, string calldata key) external returns (bool value);
+
     function load(address target, bytes32 slot) external returns (bytes32 value);
 
     function toString(uint256 value) external pure returns (string memory);
