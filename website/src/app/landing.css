@@ -551,14 +551,12 @@
     font-size: 10px;
 }
 
-.decision-output strong,
-.branch code {
+.decision-output strong {
     font-family: var(--font-geist-mono), monospace;
     letter-spacing: 0.05em;
 }
 
-.decision-output.allow strong,
-.branch code:first-child {
+.decision-output.allow strong {
     color: var(--allow);
 }
 
@@ -812,41 +810,6 @@ code.code-escalate {
 
 code.code-deny {
     color: var(--deny);
-}
-
-.branch {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1px;
-    margin-top: 20px;
-    border: 1px solid var(--border);
-    background: var(--border);
-}
-
-.branch > div {
-    display: flex;
-    min-height: 61px;
-    align-items: center;
-    gap: 10px;
-    padding: 13px 16px;
-    background: var(--surface);
-    font-size: 12px;
-}
-
-.branch > div:nth-child(2) code {
-    color: var(--escalate);
-}
-
-.branch > div:nth-child(3) code {
-    color: var(--deny);
-}
-
-.branch span {
-    color: var(--text-secondary);
-}
-
-.branch strong {
-    font-weight: 500;
 }
 
 .model-grid {
@@ -1372,7 +1335,6 @@ code.code-deny {
     .flow {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-
 }
 
 @media (max-width: 760px) {
@@ -1425,7 +1387,6 @@ code.code-deny {
 
     .flow,
     .model-grid,
-    .branch,
     .state-grid,
     .use-case-grid,
     .future-grid {

@@ -439,7 +439,6 @@ export default function Home() {
                 <strong>Did it complete?</strong>
               </article>
             </div>
-
           </div>
         </section>
 
@@ -589,9 +588,13 @@ export default function Home() {
               <div className="eyebrow">The authorisation path</div>
               <h2>Every action starts as a proposal.</h2>
               <p>
-                An <code className="inline-allow">ALLOW</code> result means the
-                proposal may enter the execution path. It does not mean that an
-                external protocol has already accepted it.
+                Grantline checks each signed proposal and returns{" "}
+                <code className="code-allow">ALLOW</code>,{" "}
+                <code className="code-escalate">ESCALATE</code>, or{" "}
+                <code className="code-deny">DENY</code>;{" "}
+                <code className="inline-allow">ALLOW</code> permits controlled
+                execution but does not guarantee that the downstream transaction
+                succeeds.
               </p>
             </div>
 
@@ -619,24 +622,6 @@ export default function Home() {
                   <code className="code-escalate">ESCALATE</code>, or{" "}
                   <code className="code-deny">DENY</code>.
                 </p>
-              </div>
-            </div>
-
-            <div className="branch reveal" aria-label="Authorisation outcomes">
-              <div>
-                <code>ALLOW</code>
-                <span>→</span>
-                <strong>Controlled execution</strong>
-              </div>
-              <div>
-                <code>ESCALATE</code>
-                <span>→</span>
-                <strong>Owner approval → re-evaluate → execute or stop</strong>
-              </div>
-              <div>
-                <code>DENY</code>
-                <span>→</span>
-                <strong>Stop</strong>
               </div>
             </div>
           </div>

@@ -1,39 +1,42 @@
 ---
 title: Contracts and deployments
-description: The tracked deployment manifest defines the current X Layer contract addresses, wiring, authority, and runtime hashes.
+description: The tracked deployment manifest defines the Grantline deployment identity, wiring, authority, and runtime hashes.
 ---
 
 import { DeploymentManifestTables } from "@/components/docs/deployment-manifest-table";
 
-The current X Layer testnet deployment is recorded in `contracts/deployments/xlayer-testnet.json`. The manifest contains the expected chain, contract addresses, dependency wiring, Vault owner and authority, evaluator valuation settings, deployment transactions, and runtime code hashes.
+The X Layer testnet manifest is `contracts/deployments/xlayer-testnet.json`. It currently contains only the expected chain because the fresh Grantline deployment has not been broadcast yet; once deployed, it will contain the Grantline proxy, internal module proxies and implementations, Vault template, ordered Vault records, dependency wiring, authority, versions, and runtime code hashes.
 
 ## Current wiring
 
 ```text
-MandateRegistry ← MandateEvaluator ← EscalationManager
-       ↑                 ↑                   ↑
-       └──────── VaultExecutor ──────────────┘
-                         ↓
-                       Vault
+Grantline
+├── MandateRegistry
+├── MandateEvaluator
+├── EscalationManager
+├── VaultExecutor
+├── VaultFactory
+└── Vault proxies
 ```
 
 > Arrows show contract dependency or call direction.
 
 The roles are separate so each part has one job:
 
-- `Vault` holds native and token capital, exposes owner custody operations, and accepts generic execution only from its configured authority.
+- `Grantline` is the stable public entrypoint for controller and agent workflows; the other components are internal modules.
+- `Vault` holds native and token capital, exposes controller custody through Grantline, and accepts agent execution only from its configured executor.
 - `MandateRegistry` stores Mandates, lineage, effective rules, nonce usage, and escalation reservations.
 - `MandateEvaluator` reads the registry and returns a structured authorisation result without moving capital.
-- `EscalationManager` stores complete escalated plans, accepts permissionless submission, and restricts approval or denial to the Vault owner.
+- `EscalationManager` stores complete escalated plans, accepts permissionless submission through Grantline, and restricts approval or denial to the current controller.
 - `VaultExecutor` binds the evaluator, escalation manager, registry, and Vault execution path, then translates supported actions into atomic Vault calls.
 
 ## Deployment manifests
 
-Each registered deployment produces its own table below in the declared order. The current manifest records these addresses:
+Each registered Grantline deployment will produce its own table below in the declared order. The bootstrap manifest has no deployed addresses yet:
 
 <DeploymentManifestTables />
 
-The evaluator points to the manifest registry and has a zero USD provider with unavailable valuation skipping enabled for this testnet deployment. The escalation manager points to the manifest evaluator. The executor points to the same evaluator and escalation manager, and the Vault authority is the manifest executor.
+After deployment, the verifier will check that the evaluator, escalation manager, executor, factory, and Vault proxies all match the manifest-defined wiring and versions.
 
 ## Verification before use
 
@@ -44,16 +47,14 @@ cd contracts
 set -a
 source .env
 set +a
-forge script script/VerifyDeployment.s.sol:VerifyDeployment --rpc-url xlayer_testnet
+forge script script/VerifyGrantlineDeployment.s.sol:VerifyGrantlineDeployment --rpc-url xlayer_testnet
 ```
 
-`VerifyDeployment` checks the expected chain and each recorded runtime hash. It also checks the Vault owner and authority, the evaluator's registry and USD settings, the escalation manager's evaluator, and the executor's evaluator and manager. A mismatch stops verification instead of allowing an internally inconsistent manifest to look valid.
-
-Authority configuration uses the same manifest checks before broadcasting. The Vault owner must explicitly set the executor as authority; the executor does not configure itself and cannot execute a Mandate against a different Vault than the one recorded in that Mandate.
+`VerifyGrantlineDeployment` checks the expected chain, proxy implementations, runtime hashes, initialiser state, UUPS identifiers, ownership, authority, controller assignments, module wiring, factory state, and every recorded Vault. A mismatch stops verification instead of allowing an internally inconsistent manifest to look valid.
 
 ## Updating a deployment
 
-Deploy a replacement component and verify its runtime code and dependency wiring before treating it as current. Update the tracked manifest only after the broadcast succeeds and the resulting address, transaction, authority, and code hash have been checked. This ordering keeps a failed or misdirected authority change visible instead of hiding it behind an edited record.
+Run `DeployGrantline` for the fresh Grantline stack, then verify its runtime code and dependency wiring before treating it as current. Update the tracked manifest only after the broadcast succeeds and the resulting addresses, authority, versions, and code hashes have been checked. This ordering keeps a failed or misdirected deployment visible instead of hiding it behind an edited record.
 
 Use the addresses from the current manifest rather than an old integration log. Deployment scripts verify those values, and the relevant network page should be updated whenever the deployment changes.
 
