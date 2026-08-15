@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.28;
+
+import {Grantline} from "../src/Grantline.sol";
+import {GrantlineTypes} from "../src/GrantlineTypes.sol";
+import {Vault} from "../src/Vault.sol";
+import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+
+contract GrantlineCustodyToken {
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    function mint(address account, uint256 amount) external {
+        balanceOf[account] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transfer(address recipient, uint256 amount) external returns (bool) {
+        if (balanceOf[msg.sender] < amount) return false;
+        balanceOf[msg.sender] -= amount;
+        balanceOf[recipient] += amount;
+        return true;
+    }
+
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool) {
+        if (balanceOf[sender] < amount || allowance[sender][msg.sender] < amount) return false;
+        allowance[sender][msg.sender] -= amount;
+        balanceOf[sender] -= amount;
+        balanceOf[recipient] += amount;
+        return true;
+    }
+}
+
+contract GrantlineCustodyEdgesTest is GrantlineTestFixture {
+    function test_controllersCannotOperateAnotherVault() public {
+        Fixture memory fixture = _fixture();
+        address controllerA = fixtureVm.addr(0xC0FFEE);
+        address controllerB = fixtureVm.addr(0xD00D);
+        address agentA = fixtureVm.addr(FIXTURE_AGENT_KEY);
+        address agentB = fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY);
+        fixtureVm.deal(controllerA, 10 ether);
+        fixtureVm.deal(controllerB, 10 ether);
+
+        fixtureVm.prank(controllerA);
+        address vaultA = fixture.hub.createVault();
+        fixtureVm.prank(controllerB);
+        address vaultB = fixture.hub.createVault();
+
+        fixtureVm.prank(controllerA);
+        fixture.hub.depositNative{value: 1 ether}(vaultA);
+        fixtureVm.prank(controllerB);
+        fixture.hub.depositNative{value: 2 ether}(vaultB);
+
+        GrantlineTypes.MandateRules memory rules = _rules(2 ether, false, 0, 0, false, true);
+        fixtureVm.prank(controllerA);
+        uint256 mandateA = fixture.hub.createMandate(vaultA, agentA, rules, _preflight(0, false));
+        fixtureVm.prank(controllerB);
+        uint256 mandateB = fixture.hub.createMandate(vaultB, agentB, rules, _preflight(0, false));
+
+        fixtureVm.prank(controllerA);
+        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.NotController.selector, vaultB, controllerA));
+        fixture.hub.depositNative{value: 0}(vaultB);
+
+        fixtureVm.prank(controllerA);
+        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.NotController.selector, vaultB, controllerA));
+        fixture.hub.withdrawNative(vaultB, payable(controllerA), 1 ether);
+
+        fixtureVm.prank(controllerB);
+        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.NotController.selector, vaultA, controllerB));
+        fixture.hub.withdrawNative(vaultA, payable(controllerB), 1 ether);
+
+        fixtureVm.prank(controllerA);
+        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.NotController.selector, vaultB, controllerA));
+        fixture.hub.createMandate(vaultB, agentA, rules, _preflight(0, false));
+
+        assert(fixture.hub.getMandate(mandateA).vault == vaultA);
+        assert(fixture.hub.getMandate(mandateB).vault == vaultB);
+        assert(address(vaultA).balance == 1 ether);
+        assert(address(vaultB).balance == 2 ether);
+    }
+
+    function test_controllerCanDepositAndWithdrawNativeAndTokens() public {
+        Fixture memory fixture = _fixture();
+        address recipient = address(0xBEEF);
+        fixture.hub.depositNative{value: 1 ether}(fixture.vault);
+        fixture.hub.withdrawNative(fixture.vault, payable(recipient), 0.5 ether);
+        assert(address(fixture.vault).balance == 5.5 ether);
+        assert(recipient.balance == 0.5 ether);
+
+        GrantlineCustodyToken token = new GrantlineCustodyToken();
+        token.mint(address(this), 100 ether);
+        token.approve(fixture.vault, 40 ether);
+        fixture.hub.depositToken(fixture.vault, address(token), 40 ether);
+        fixture.hub.withdrawToken(fixture.vault, address(token), recipient, 15 ether);
+        assert(token.balanceOf(fixture.vault) == 25 ether);
+        assert(token.balanceOf(recipient) == 15 ether);
+    }
+
+    function test_nonControllerCannotUseCustodyEntrypoints() public {
+        Fixture memory fixture = _fixture();
+        address outsider = address(0xCAFE);
+
+        fixtureVm.prank(outsider);
+        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.NotController.selector, fixture.vault, outsider));
+        fixture.hub.depositNative{value: 0}(fixture.vault);
+
+        fixtureVm.prank(outsider);
+        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.NotController.selector, fixture.vault, outsider));
+        fixture.hub.withdrawNative(fixture.vault, payable(outsider), 0);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.NotAuthority.selector, address(this)));
+        Vault(payable(fixture.vault)).execute(address(0xBEEF), 0, "");
+    }
+
+    function test_custodyRejectsInvalidTokenAndMissingApproval() public {
+        Fixture memory fixture = _fixture();
+        fixtureVm.expectRevert();
+        fixture.hub.depositToken(fixture.vault, address(0), 1 ether);
+
+        GrantlineCustodyToken token = new GrantlineCustodyToken();
+        token.mint(address(this), 1 ether);
+        fixtureVm.expectRevert();
+        fixture.hub.depositToken(fixture.vault, address(token), 1 ether);
+    }
+}

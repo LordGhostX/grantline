@@ -1,0 +1,10 @@
+{
+  "name": "grantline-contract-tools",
+  "private": true,
+  "scripts": {
+    "lint:solhint": "cd .. && solhint 'src/**/*.sol' --config security/.solhint.json --ignore-path security/.solhintignore --quiet"
+  },
+  "devDependencies": {
+    "solhint": "6.2.4"
+  }
+}

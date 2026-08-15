@@ -1,0 +1,5 @@
+{
+  "filter_paths": "lib|out|cache|broadcast|test|script",
+  "exclude_informational": true,
+  "exclude_optimization": true
+}

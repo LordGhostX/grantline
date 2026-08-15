@@ -1,81 +1,42 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
-interface IVaultOwner {
-    function owner() external view returns (address);
-}
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {GrantlineTypes} from "./GrantlineTypes.sol";
+import {IGrantlineContext, IRegistry} from "./Interfaces.sol";
+import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
-interface IVaultAuthority {
+interface IVaultIdentity {
+    function owner() external view returns (address);
+
     function authority() external view returns (address);
 }
 
-interface IVaultEscalationAuthority {
-    function escalationManager() external view returns (address);
-}
+contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUpgradeable, IRegistry {
+    bytes32 public constant EXECUTOR_MODULE = keccak256("EXECUTOR");
+    bytes32 public constant ESCALATION_MANAGER_MODULE = keccak256("ESCALATION_MANAGER");
 
-contract MandateRegistry {
     uint8 public constant MAX_DELEGATION_DEPTH = 2;
-
-    enum MandateStatus {
-        ACTIVE,
-        REVOKED
-    }
-
-    struct MandateRules {
-        bool canDelegate;
-        uint256 minNativeAmount;
-        uint256 maxNativeAmount;
-        bool escalateNativeAmount;
-        uint256 minUsdAmount;
-        uint256 maxUsdAmount;
-        bool escalateUsdAmount;
-    }
-
-    struct PreflightRules {
-        uint256 minNativeBalance;
-        bool escalateNativeBalance;
-    }
-
-    struct Mandate {
-        uint256 id;
-        address owner;
-        address vault;
-        address agent;
-        uint256 parentMandateId;
-        uint8 delegationDepth;
-        MandateStatus status;
-        MandateRules rules;
-        PreflightRules preflightRules;
-        uint64 createdAt;
-        uint64 revokedAt;
-    }
 
     error InvalidAddress();
     error InvalidVault();
+    error VaultNotRegistered(address vault);
     error MandateNotActive(uint256 mandateId);
     error MandateNotFound(uint256 mandateId);
     error MandateAgentMismatch(uint256 mandateId, address agent);
     error InvalidReservationDigest();
     error NonceAlreadyUsed(uint256 mandateId, address agent, uint256 nonce);
-    error NonceReserved(
-        uint256 mandateId,
-        address agent,
-        uint256 nonce,
-        bytes32 digest
-    );
+    error NonceReserved(uint256 mandateId, address agent, uint256 nonce, bytes32 digest);
     error NonceReservationMismatch(
-        uint256 mandateId,
-        address agent,
-        uint256 nonce,
-        bytes32 expectedDigest,
-        bytes32 reservedDigest
+        uint256 mandateId, address agent, uint256 nonce, bytes32 expectedDigest, bytes32 reservedDigest
     );
     error InvalidNativeAmountRange(uint256 minimum, uint256 maximum);
     error InvalidUsdAmountRange(uint256 minimum, uint256 maximum);
-    error NotVaultAuthority(address caller);
-    error NotVaultEscalationManager(address caller);
-    error NotVaultOwner(address caller);
-    error InvalidVaultAuthority(address authority);
+    error NotGrantline(address caller);
+    error NotExecutor(address caller);
+    error NotEscalationManager(address caller);
+    error NotController(uint256 mandateId, address caller);
     error MandateNotDelegatable(uint256 mandateId);
     error DelegationDepthExceeded(uint256 parentMandateId, uint8 depth);
     error InvalidDelegationAgent(address parentAgent, address childAgent);
@@ -85,116 +46,124 @@ contract MandateRegistry {
     error ChildRulesExceedParent(uint256 parentMandateId);
     error ChildPreflightRulesExceedParent(uint256 parentMandateId);
 
+    event VaultRegistered(address indexed vault);
     event MandateCreated(
         uint256 indexed mandateId,
-        address indexed owner,
         address indexed vault,
-        address agent,
+        address indexed agent,
         uint256 parentMandateId,
         uint8 delegationDepth,
-        MandateRules rules,
-        PreflightRules preflightRules,
+        GrantlineTypes.MandateRules rules,
+        GrantlineTypes.PreflightRules preflightRules,
         address createdBy,
         uint64 createdAt
     );
     event MandateUpdated(
         uint256 indexed mandateId,
-        MandateRules rules,
-        PreflightRules preflightRules,
+        GrantlineTypes.MandateRules rules,
+        GrantlineTypes.PreflightRules preflightRules,
         address indexed updatedBy,
         uint64 updatedAt
     );
-    event MandateRevoked(
-        uint256 indexed mandateId,
-        address indexed revokedBy,
-        uint64 revokedAt
-    );
+    event MandateRevoked(uint256 indexed mandateId, address indexed revokedBy, uint64 revokedAt);
     event NonceReservationCreated(
-        uint256 indexed mandateId,
-        address indexed agent,
-        uint256 indexed nonce,
-        bytes32 digest
+        uint256 indexed mandateId, address indexed agent, uint256 indexed nonce, bytes32 digest
     );
     event NonceReservationConsumed(
-        uint256 indexed mandateId,
-        address indexed agent,
-        uint256 indexed nonce,
-        bytes32 digest
+        uint256 indexed mandateId, address indexed agent, uint256 indexed nonce, bytes32 digest
     );
 
-    mapping(uint256 mandateId => Mandate mandate) private _mandates;
-    mapping(uint256 mandateId => mapping(address agent => mapping(uint256 nonce => bool)))
-        public nonceUsed;
-    mapping(uint256 mandateId => mapping(address agent => mapping(uint256 nonce => bytes32 digest)))
-        public reservedDigest;
-    uint256 public mandateCount;
+    address public grantline;
+    mapping(address => bool) public isRegisteredVault;
+    mapping(uint256 => GrantlineTypes.Mandate) private _mandates;
+    mapping(uint256 => mapping(address => mapping(uint256 => bool))) public override nonceUsed;
+    mapping(uint256 => mapping(address => mapping(uint256 => bytes32))) public override reservedDigest;
+    uint256 public override mandateCount;
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address grantlineAddress) external initializer {
+        if (grantlineAddress == address(0)) revert InvalidAddress();
+        grantline = grantlineAddress;
+        __Ownable_init(grantlineAddress);
+        __Ownable2Step_init();
+    }
+
+    function version() external pure override returns (uint64) {
+        return 1;
+    }
+
+    function registerVault(address vault) external {
+        _onlyGrantline();
+        if (vault == address(0) || vault.code.length == 0) {
+            revert InvalidVault();
+        }
+        address expectedAuthority = IGrantlineContext(grantline).moduleAddress(EXECUTOR_MODULE);
+        try IVaultIdentity(vault).owner() returns (address vaultOwner) {
+            if (vaultOwner != grantline) revert InvalidVault();
+        } catch {
+            revert InvalidVault();
+        }
+        try IVaultIdentity(vault).authority() returns (address authority) {
+            if (expectedAuthority == address(0) || authority != expectedAuthority) {
+                revert InvalidVault();
+            }
+        } catch {
+            revert InvalidVault();
+        }
+        isRegisteredVault[vault] = true;
+        emit VaultRegistered(vault);
+    }
 
     function createMandate(
         address vault,
+        address actor,
         address agent,
-        MandateRules calldata rules,
-        PreflightRules calldata preflightRules
+        GrantlineTypes.MandateRules calldata rules,
+        GrantlineTypes.PreflightRules calldata preflightRules
     ) external returns (uint256 mandateId) {
-        mandateId = _createMandate(vault, agent, rules, preflightRules);
-    }
-
-    function _createMandate(
-        address vault,
-        address agent,
-        MandateRules memory rules,
-        PreflightRules memory preflightRules
-    ) private returns (uint256 mandateId) {
-        _requireValidAddresses(vault, agent);
-        _requireVaultOwner(vault, msg.sender);
+        _onlyGrantline();
+        _requireController(vault, actor);
+        if (agent == address(0)) revert InvalidAddress();
         _validateRules(rules);
         _validatePreflightRules(preflightRules);
 
         mandateId = ++mandateCount;
         uint64 createdAt = uint64(block.timestamp);
-        _mandates[mandateId] = Mandate({
+        _mandates[mandateId] = GrantlineTypes.Mandate({
             id: mandateId,
-            owner: msg.sender,
             vault: vault,
             agent: agent,
             parentMandateId: 0,
             delegationDepth: 0,
-            status: MandateStatus.ACTIVE,
+            status: GrantlineTypes.MandateStatus.ACTIVE,
             rules: rules,
             preflightRules: preflightRules,
             createdAt: createdAt,
             revokedAt: 0
         });
 
-        emit MandateCreated(
-            mandateId,
-            msg.sender,
-            vault,
-            agent,
-            0,
-            0,
-            rules,
-            preflightRules,
-            msg.sender,
-            createdAt
-        );
+        emit MandateCreated(mandateId, vault, agent, 0, 0, rules, preflightRules, actor, createdAt);
     }
 
     function createChildMandate(
         uint256 parentMandateId,
+        address actor,
         address childAgent,
-        MandateRules calldata rules,
-        PreflightRules calldata preflightRules
+        GrantlineTypes.MandateRules calldata rules,
+        GrantlineTypes.PreflightRules calldata preflightRules
     ) external returns (uint256 mandateId) {
-        Mandate storage parent = _activeMandate(parentMandateId);
-        if (parent.agent != msg.sender) {
-            revert NotParentAgent(parentMandateId, msg.sender);
+        _onlyGrantline();
+        GrantlineTypes.Mandate storage parent = _activeMandate(parentMandateId);
+        if (parent.agent != actor) {
+            revert NotParentAgent(parentMandateId, actor);
         }
-
         _requireActiveLineage(parentMandateId);
-        MandateRules memory parentRules = _effectiveRules(parentMandateId);
-        PreflightRules memory parentPreflightRules = _effectivePreflightRules(
-            parentMandateId
-        );
+
+        GrantlineTypes.MandateRules memory parentRules = _effectiveRules(parentMandateId);
+        GrantlineTypes.PreflightRules memory parentPreflightRules = _effectivePreflightRules(parentMandateId);
         if (!parentRules.canDelegate) {
             revert MandateNotDelegatable(parentMandateId);
         }
@@ -214,23 +183,17 @@ contract MandateRegistry {
         _validateRules(rules);
         _validatePreflightRules(preflightRules);
         _validateChildRules(parentMandateId, parentRules, rules);
-        _validateChildPreflightRules(
-            parentMandateId,
-            parentPreflightRules,
-            preflightRules
-        );
-        address vaultOwner = _vaultOwner(parent.vault);
+        _validateChildPreflightRules(parentMandateId, parentPreflightRules, preflightRules);
 
         mandateId = ++mandateCount;
         uint64 createdAt = uint64(block.timestamp);
-        _mandates[mandateId] = Mandate({
+        _mandates[mandateId] = GrantlineTypes.Mandate({
             id: mandateId,
-            owner: vaultOwner,
             vault: parent.vault,
             agent: childAgent,
             parentMandateId: parentMandateId,
             delegationDepth: childDepth,
-            status: MandateStatus.ACTIVE,
+            status: GrantlineTypes.MandateStatus.ACTIVE,
             rules: rules,
             preflightRules: preflightRules,
             createdAt: createdAt,
@@ -238,87 +201,66 @@ contract MandateRegistry {
         });
 
         emit MandateCreated(
-            mandateId,
-            vaultOwner,
-            parent.vault,
-            childAgent,
-            parentMandateId,
-            childDepth,
-            rules,
-            preflightRules,
-            msg.sender,
-            createdAt
+            mandateId, parent.vault, childAgent, parentMandateId, childDepth, rules, preflightRules, actor, createdAt
         );
     }
 
     function updateMandate(
         uint256 mandateId,
-        MandateRules calldata rules,
-        PreflightRules calldata preflightRules
+        address actor,
+        GrantlineTypes.MandateRules calldata rules,
+        GrantlineTypes.PreflightRules calldata preflightRules
     ) external {
-        _updateMandate(mandateId, rules, preflightRules);
+        _onlyGrantline();
+        GrantlineTypes.Mandate storage mandate = _activeMandate(mandateId);
+        _requireMandateAdministrator(mandateId, mandate, actor);
+        if (mandate.delegationDepth == MAX_DELEGATION_DEPTH) {
+            GrantlineTypes.MandateRules memory normalized = rules;
+            normalized.canDelegate = false;
+            _updateMandate(mandateId, mandate, normalized, preflightRules, actor);
+            return;
+        }
+        _updateMandate(mandateId, mandate, rules, preflightRules, actor);
     }
 
     function _updateMandate(
         uint256 mandateId,
-        MandateRules memory rules,
-        PreflightRules memory preflightRules
+        GrantlineTypes.Mandate storage mandate,
+        GrantlineTypes.MandateRules memory rules,
+        GrantlineTypes.PreflightRules calldata preflightRules,
+        address actor
     ) private {
-        Mandate storage mandate = _activeMandate(mandateId);
-        _requireMandateAdministrator(mandateId, mandate);
-        if (mandate.delegationDepth == MAX_DELEGATION_DEPTH) {
-            rules.canDelegate = false;
-        }
         _validateRules(rules);
         _validatePreflightRules(preflightRules);
         if (mandate.parentMandateId != 0) {
             _requireActiveLineage(mandate.parentMandateId);
-            _validateChildRules(
-                mandate.parentMandateId,
-                _effectiveRules(mandate.parentMandateId),
-                rules
-            );
+            _validateChildRules(mandate.parentMandateId, _effectiveRules(mandate.parentMandateId), rules);
             _validateChildPreflightRules(
-                mandate.parentMandateId,
-                _effectivePreflightRules(mandate.parentMandateId),
-                preflightRules
+                mandate.parentMandateId, _effectivePreflightRules(mandate.parentMandateId), preflightRules
             );
         }
 
         mandate.rules = rules;
         mandate.preflightRules = preflightRules;
-
-        emit MandateUpdated(
-            mandateId,
-            rules,
-            preflightRules,
-            msg.sender,
-            uint64(block.timestamp)
-        );
+        emit MandateUpdated(mandateId, rules, preflightRules, actor, uint64(block.timestamp));
     }
 
-    function revokeMandate(uint256 mandateId) external {
-        Mandate storage mandate = _activeMandate(mandateId);
-        _requireMandateAdministrator(mandateId, mandate);
-
+    function revokeMandate(uint256 mandateId, address actor) external {
+        _onlyGrantline();
+        GrantlineTypes.Mandate storage mandate = _activeMandate(mandateId);
+        _requireMandateAdministrator(mandateId, mandate, actor);
         uint64 revokedAt = uint64(block.timestamp);
-        mandate.status = MandateStatus.REVOKED;
+        mandate.status = GrantlineTypes.MandateStatus.REVOKED;
         mandate.revokedAt = revokedAt;
-
-        emit MandateRevoked(mandateId, msg.sender, revokedAt);
+        emit MandateRevoked(mandateId, actor, revokedAt);
     }
 
-    function consumeNonce(
-        uint256 mandateId,
-        address agent,
-        uint256 nonce
-    ) external {
-        Mandate storage mandate = _activeMandate(mandateId);
+    function consumeNonce(uint256 mandateId, address agent, uint256 nonce) external override {
+        _onlyExecutor();
+        GrantlineTypes.Mandate storage mandate = _activeMandate(mandateId);
         _requireActiveLineage(mandateId);
         _requireMandateAgent(mandate, mandateId, agent);
-        _requireVaultAuthority(mandate.vault, msg.sender);
         _requireNonceUnused(mandateId, agent, nonce);
-
         bytes32 reservation = reservedDigest[mandateId][agent][nonce];
         if (reservation != bytes32(0)) {
             revert NonceReserved(mandateId, agent, nonce, reservation);
@@ -326,70 +268,42 @@ contract MandateRegistry {
         nonceUsed[mandateId][agent][nonce] = true;
     }
 
-    function reserveNonce(
-        uint256 mandateId,
-        address agent,
-        uint256 nonce,
-        bytes32 actionDigest
-    ) external {
-        if (actionDigest == bytes32(0)) revert InvalidReservationDigest();
-
-        Mandate storage mandate = _activeMandate(mandateId);
+    function reserveNonce(uint256 mandateId, address agent, uint256 nonce, bytes32 digest) external override {
+        _onlyEscalationManager();
+        if (digest == bytes32(0)) revert InvalidReservationDigest();
+        GrantlineTypes.Mandate storage mandate = _activeMandate(mandateId);
         _requireActiveLineage(mandateId);
         _requireMandateAgent(mandate, mandateId, agent);
-        _requireVaultEscalationManager(mandate.vault, msg.sender);
         _requireNonceUnused(mandateId, agent, nonce);
-
         bytes32 existingDigest = reservedDigest[mandateId][agent][nonce];
         if (existingDigest != bytes32(0)) {
             revert NonceReserved(mandateId, agent, nonce, existingDigest);
         }
-        reservedDigest[mandateId][agent][nonce] = actionDigest;
-        emit NonceReservationCreated(mandateId, agent, nonce, actionDigest);
+        reservedDigest[mandateId][agent][nonce] = digest;
+        emit NonceReservationCreated(mandateId, agent, nonce, digest);
     }
 
-    function consumeReservedNonce(
-        uint256 mandateId,
-        address agent,
-        uint256 nonce,
-        bytes32 actionDigest
-    ) external {
-        if (actionDigest == bytes32(0)) revert InvalidReservationDigest();
-
-        Mandate storage mandate = _activeMandate(mandateId);
+    function consumeReservedNonce(uint256 mandateId, address agent, uint256 nonce, bytes32 digest) external override {
+        _onlyExecutor();
+        if (digest == bytes32(0)) revert InvalidReservationDigest();
+        GrantlineTypes.Mandate storage mandate = _activeMandate(mandateId);
         _requireActiveLineage(mandateId);
         _requireMandateAgent(mandate, mandateId, agent);
-        _requireVaultAuthority(mandate.vault, msg.sender);
         _requireNonceUnused(mandateId, agent, nonce);
-
         bytes32 reservation = reservedDigest[mandateId][agent][nonce];
-        if (reservation != actionDigest) {
-            revert NonceReservationMismatch(
-                mandateId,
-                agent,
-                nonce,
-                actionDigest,
-                reservation
-            );
+        if (reservation != digest) {
+            revert NonceReservationMismatch(mandateId, agent, nonce, digest, reservation);
         }
-
         delete reservedDigest[mandateId][agent][nonce];
         nonceUsed[mandateId][agent][nonce] = true;
-        emit NonceReservationConsumed(mandateId, agent, nonce, actionDigest);
+        emit NonceReservationConsumed(mandateId, agent, nonce, digest);
     }
 
-    function getMandate(
-        uint256 mandateId
-    ) external view returns (Mandate memory) {
-        if (mandateId == 0 || mandateId > mandateCount) {
-            revert MandateNotFound(mandateId);
-        }
-        return _mandates[mandateId];
+    function getMandate(uint256 mandateId) external view override returns (GrantlineTypes.Mandate memory) {
+        return _requireMandateExists(mandateId);
     }
 
-    function getLineage(
-        uint256 mandateId
-    ) external view returns (uint256[] memory lineage) {
+    function getLineage(uint256 mandateId) external view override returns (uint256[] memory lineage) {
         _requireMandateExists(mandateId);
         uint256 length = uint256(_mandates[mandateId].delegationDepth) + 1;
         lineage = new uint256[](length);
@@ -400,308 +314,216 @@ contract MandateRegistry {
         }
     }
 
-    function getEffectiveRules(
-        uint256 mandateId
-    ) external view returns (MandateRules memory) {
+    function getEffectiveRules(uint256 mandateId) external view override returns (GrantlineTypes.MandateRules memory) {
+        _requireMandateExists(mandateId);
         _requireActiveLineage(mandateId);
         return _effectiveRules(mandateId);
     }
 
-    function getEffectivePreflightRules(
-        uint256 mandateId
-    ) external view returns (PreflightRules memory) {
+    function getEffectivePreflightRules(uint256 mandateId)
+        external
+        view
+        override
+        returns (GrantlineTypes.PreflightRules memory)
+    {
+        _requireMandateExists(mandateId);
         _requireActiveLineage(mandateId);
         return _effectivePreflightRules(mandateId);
     }
 
     function isActive(uint256 mandateId) external view returns (bool) {
         if (mandateId == 0 || mandateId > mandateCount) return false;
-        return _mandates[mandateId].status == MandateStatus.ACTIVE;
+        return _mandates[mandateId].status == GrantlineTypes.MandateStatus.ACTIVE;
     }
 
-    function isLineageActive(uint256 mandateId) external view returns (bool) {
+    function isLineageActive(uint256 mandateId) external view override returns (bool) {
         if (mandateId == 0 || mandateId > mandateCount) return false;
         uint256 currentMandateId = mandateId;
         while (currentMandateId != 0) {
-            if (_mandates[currentMandateId].status != MandateStatus.ACTIVE) {
-                return false;
-            }
+            if (_mandates[currentMandateId].status != GrantlineTypes.MandateStatus.ACTIVE) return false;
             currentMandateId = _mandates[currentMandateId].parentMandateId;
         }
         return true;
     }
 
-    function _activeMandate(
-        uint256 mandateId
-    ) private view returns (Mandate storage mandate) {
-        if (mandateId == 0 || mandateId > mandateCount) {
-            revert MandateNotFound(mandateId);
-        }
-
-        mandate = _mandates[mandateId];
-        if (mandate.status != MandateStatus.ACTIVE) {
+    function _activeMandate(uint256 mandateId) private view returns (GrantlineTypes.Mandate storage mandate) {
+        mandate = _requireMandateExists(mandateId);
+        if (mandate.status != GrantlineTypes.MandateStatus.ACTIVE) {
             revert MandateNotActive(mandateId);
         }
     }
 
-    function _requireMandateExists(
-        uint256 mandateId
-    ) private view returns (Mandate storage mandate) {
+    function _requireMandateExists(uint256 mandateId) private view returns (GrantlineTypes.Mandate storage mandate) {
         if (mandateId == 0 || mandateId > mandateCount) {
             revert MandateNotFound(mandateId);
         }
-        return _mandates[mandateId];
+        mandate = _mandates[mandateId];
     }
 
     function _requireActiveLineage(uint256 mandateId) private view {
-        _requireMandateExists(mandateId);
         uint256 currentMandateId = mandateId;
         while (currentMandateId != 0) {
-            Mandate storage current = _mandates[currentMandateId];
-            if (current.status != MandateStatus.ACTIVE) {
+            GrantlineTypes.Mandate storage current = _mandates[currentMandateId];
+            if (current.status != GrantlineTypes.MandateStatus.ACTIVE) {
                 revert MandateLineageInactive(mandateId, currentMandateId);
             }
             currentMandateId = current.parentMandateId;
         }
     }
 
-    function _effectiveRules(
-        uint256 mandateId
-    ) private view returns (MandateRules memory effective) {
-        effective = _mandates[mandateId].rules;
-        uint256 currentMandateId = _mandates[mandateId].parentMandateId;
+    function _effectiveRules(uint256 mandateId) private view returns (GrantlineTypes.MandateRules memory effective) {
+        uint256 currentMandateId = mandateId;
+        bool initialized;
         while (currentMandateId != 0) {
-            MandateRules storage parentRules = _mandates[currentMandateId]
-                .rules;
-            if (parentRules.minNativeAmount > effective.minNativeAmount) {
-                effective.minNativeAmount = parentRules.minNativeAmount;
+            GrantlineTypes.Mandate storage current = _mandates[currentMandateId];
+            if (!initialized) {
+                effective = current.rules;
+                initialized = true;
+            } else {
+                if (current.rules.minNativeAmount > effective.minNativeAmount) {
+                    effective.minNativeAmount = current.rules.minNativeAmount;
+                }
+                if (
+                    current.rules.maxNativeAmount != 0
+                        && (effective.maxNativeAmount == 0 || current.rules.maxNativeAmount < effective.maxNativeAmount)
+                ) {
+                    effective.maxNativeAmount = current.rules.maxNativeAmount;
+                }
+                if (current.rules.minUsdAmount > effective.minUsdAmount) {
+                    effective.minUsdAmount = current.rules.minUsdAmount;
+                }
+                if (
+                    current.rules.maxUsdAmount != 0
+                        && (effective.maxUsdAmount == 0 || current.rules.maxUsdAmount < effective.maxUsdAmount)
+                ) {
+                    effective.maxUsdAmount = current.rules.maxUsdAmount;
+                }
+                effective.canDelegate = effective.canDelegate && current.rules.canDelegate;
+                effective.escalateNativeAmount = effective.escalateNativeAmount && current.rules.escalateNativeAmount;
+                effective.escalateUsdAmount = effective.escalateUsdAmount && current.rules.escalateUsdAmount;
             }
-            if (
-                parentRules.maxNativeAmount != 0 &&
-                (effective.maxNativeAmount == 0 ||
-                    parentRules.maxNativeAmount < effective.maxNativeAmount)
-            ) {
-                effective.maxNativeAmount = parentRules.maxNativeAmount;
-            }
-            if (parentRules.minUsdAmount > effective.minUsdAmount) {
-                effective.minUsdAmount = parentRules.minUsdAmount;
-            }
-            if (
-                parentRules.maxUsdAmount != 0 &&
-                (effective.maxUsdAmount == 0 ||
-                    parentRules.maxUsdAmount < effective.maxUsdAmount)
-            ) {
-                effective.maxUsdAmount = parentRules.maxUsdAmount;
-            }
-            effective.escalateNativeAmount =
-                effective.escalateNativeAmount &&
-                parentRules.escalateNativeAmount;
-            effective.escalateUsdAmount =
-                effective.escalateUsdAmount &&
-                parentRules.escalateUsdAmount;
-            effective.canDelegate =
-                effective.canDelegate &&
-                parentRules.canDelegate;
-            currentMandateId = _mandates[currentMandateId].parentMandateId;
+            currentMandateId = current.parentMandateId;
         }
     }
 
-    function _effectivePreflightRules(
-        uint256 mandateId
-    ) private view returns (PreflightRules memory effective) {
-        effective = _mandates[mandateId].preflightRules;
-        uint256 currentMandateId = _mandates[mandateId].parentMandateId;
+    function _effectivePreflightRules(uint256 mandateId)
+        private
+        view
+        returns (GrantlineTypes.PreflightRules memory effective)
+    {
+        uint256 currentMandateId = mandateId;
+        bool initialized;
         while (currentMandateId != 0) {
-            PreflightRules storage parentRules = _mandates[currentMandateId]
-                .preflightRules;
-            if (parentRules.minNativeBalance > effective.minNativeBalance) {
-                effective.minNativeBalance = parentRules.minNativeBalance;
+            GrantlineTypes.Mandate storage current = _mandates[currentMandateId];
+            if (!initialized) {
+                effective = current.preflightRules;
+                initialized = true;
+            } else {
+                if (current.preflightRules.minNativeBalance > effective.minNativeBalance) {
+                    effective.minNativeBalance = current.preflightRules.minNativeBalance;
+                }
+                effective.escalateNativeBalance =
+                    effective.escalateNativeBalance && current.preflightRules.escalateNativeBalance;
             }
-            effective.escalateNativeBalance =
-                effective.escalateNativeBalance &&
-                parentRules.escalateNativeBalance;
-            currentMandateId = _mandates[currentMandateId].parentMandateId;
+            currentMandateId = current.parentMandateId;
         }
     }
 
-    function _validateChildRules(
-        uint256 parentMandateId,
-        MandateRules memory parentRules,
-        MandateRules memory childRules
-    ) private pure {
-        if (
-            (parentRules.minNativeAmount != 0 &&
-                (childRules.minNativeAmount == 0 ||
-                    childRules.minNativeAmount <
-                    parentRules.minNativeAmount)) ||
-            (parentRules.maxNativeAmount != 0 &&
-                (childRules.maxNativeAmount == 0 ||
-                    childRules.maxNativeAmount >
-                    parentRules.maxNativeAmount)) ||
-            (parentRules.minUsdAmount != 0 &&
-                (childRules.minUsdAmount == 0 ||
-                    childRules.minUsdAmount < parentRules.minUsdAmount)) ||
-            (parentRules.maxUsdAmount != 0 &&
-                (childRules.maxUsdAmount == 0 ||
-                    childRules.maxUsdAmount > parentRules.maxUsdAmount)) ||
-            (childRules.escalateNativeAmount &&
-                !parentRules.escalateNativeAmount) ||
-            (childRules.escalateUsdAmount && !parentRules.escalateUsdAmount) ||
-            (childRules.canDelegate && !parentRules.canDelegate)
-        ) {
-            revert ChildRulesExceedParent(parentMandateId);
+    function _requireController(address vault, address actor) private view {
+        if (!isRegisteredVault[vault]) revert VaultNotRegistered(vault);
+        if (!IGrantlineContext(grantline).isController(vault, actor)) {
+            revert NotController(0, actor);
         }
     }
 
-    function _validateChildPreflightRules(
-        uint256 parentMandateId,
-        PreflightRules memory parentRules,
-        PreflightRules memory childRules
-    ) private pure {
-        if (
-            (parentRules.minNativeBalance != 0 &&
-                (childRules.minNativeBalance == 0 ||
-                    childRules.minNativeBalance <
-                    parentRules.minNativeBalance)) ||
-            (childRules.escalateNativeBalance &&
-                !parentRules.escalateNativeBalance)
-        ) {
-            revert ChildPreflightRulesExceedParent(parentMandateId);
+    function _requireMandateAdministrator(uint256 mandateId, GrantlineTypes.Mandate storage mandate, address actor)
+        private
+        view
+    {
+        if (isRegisteredVault[mandate.vault] && IGrantlineContext(grantline).isController(mandate.vault, actor)) {
+            return;
         }
-    }
-
-    function _requireMandateAdministrator(
-        uint256 mandateId,
-        Mandate storage mandate
-    ) private view {
-        if (_isVaultOwner(mandate.vault, msg.sender)) return;
         if (mandate.parentMandateId != 0) {
-            Mandate storage parent = _mandates[mandate.parentMandateId];
-            if (parent.agent == msg.sender) {
+            GrantlineTypes.Mandate storage parent = _mandates[mandate.parentMandateId];
+            if (parent.agent == actor) {
                 _requireActiveLineage(mandate.parentMandateId);
                 return;
             }
         }
-        revert NotMandateAdministrator(mandateId, msg.sender);
+        revert NotMandateAdministrator(mandateId, actor);
     }
 
-    function _isVaultOwner(
-        address vault,
-        address caller
-    ) private view returns (bool) {
-        if (vault.code.length == 0) revert InvalidVault();
-        try IVaultOwner(vault).owner() returns (address vaultOwner) {
-            return vaultOwner == caller;
-        } catch {
-            revert InvalidVault();
-        }
+    function _validateChildRules(
+        uint256 parentMandateId,
+        GrantlineTypes.MandateRules memory parentRules,
+        GrantlineTypes.MandateRules memory childRules
+    ) private pure {
+        if (
+            (parentRules.minNativeAmount != 0
+                    && (childRules.minNativeAmount == 0 || childRules.minNativeAmount < parentRules.minNativeAmount))
+                || (parentRules.maxNativeAmount != 0
+                    && (childRules.maxNativeAmount == 0 || childRules.maxNativeAmount > parentRules.maxNativeAmount))
+                || (parentRules.minUsdAmount != 0
+                    && (childRules.minUsdAmount == 0 || childRules.minUsdAmount < parentRules.minUsdAmount))
+                || (parentRules.maxUsdAmount != 0
+                    && (childRules.maxUsdAmount == 0 || childRules.maxUsdAmount > parentRules.maxUsdAmount))
+                || (childRules.canDelegate && !parentRules.canDelegate)
+                || (childRules.escalateNativeAmount && !parentRules.escalateNativeAmount)
+                || (childRules.escalateUsdAmount && !parentRules.escalateUsdAmount)
+        ) revert ChildRulesExceedParent(parentMandateId);
     }
 
-    function _vaultOwner(address vault) private view returns (address owner) {
-        if (vault.code.length == 0) revert InvalidVault();
-        try IVaultOwner(vault).owner() returns (address vaultOwner) {
-            return vaultOwner;
-        } catch {
-            revert InvalidVault();
-        }
+    function _validateChildPreflightRules(
+        uint256 parentMandateId,
+        GrantlineTypes.PreflightRules memory parentRules,
+        GrantlineTypes.PreflightRules memory childRules
+    ) private pure {
+        if (
+            (parentRules.minNativeBalance != 0
+                    && (childRules.minNativeBalance == 0 || childRules.minNativeBalance < parentRules.minNativeBalance))
+                || (childRules.escalateNativeBalance && !parentRules.escalateNativeBalance)
+        ) revert ChildPreflightRulesExceedParent(parentMandateId);
     }
 
-    function _requireVaultOwner(address vault, address caller) private view {
-        if (vault.code.length == 0) revert InvalidVault();
-
-        try IVaultOwner(vault).owner() returns (address vaultOwner) {
-            if (vaultOwner != caller) revert NotVaultOwner(caller);
-        } catch {
-            revert InvalidVault();
-        }
-    }
-
-    function _requireVaultAuthority(
-        address vault,
-        address caller
-    ) private view {
-        if (vault.code.length == 0) revert InvalidVault();
-
-        try IVaultAuthority(vault).authority() returns (
-            address vaultAuthority
-        ) {
-            if (vaultAuthority != caller) revert NotVaultAuthority(caller);
-        } catch {
-            revert InvalidVault();
-        }
-    }
-
-    function _requireVaultEscalationManager(
-        address vault,
-        address caller
-    ) private view {
-        if (vault.code.length == 0) revert InvalidVault();
-
-        address vaultAuthority;
-        try IVaultAuthority(vault).authority() returns (address authority) {
-            vaultAuthority = authority;
-        } catch {
-            revert InvalidVault();
-        }
-        if (vaultAuthority.code.length == 0) {
-            revert InvalidVaultAuthority(vaultAuthority);
-        }
-
-        try
-            IVaultEscalationAuthority(vaultAuthority).escalationManager()
-        returns (address manager) {
-            if (manager != caller) revert NotVaultEscalationManager(caller);
-        } catch {
-            revert InvalidVaultAuthority(vaultAuthority);
-        }
-    }
-
-    function _requireMandateAgent(
-        Mandate storage mandate,
-        uint256 mandateId,
-        address agent
-    ) private view {
+    function _requireMandateAgent(GrantlineTypes.Mandate storage mandate, uint256 mandateId, address agent)
+        private
+        view
+    {
         if (mandate.agent != agent) {
             revert MandateAgentMismatch(mandateId, agent);
         }
     }
 
-    function _requireNonceUnused(
-        uint256 mandateId,
-        address agent,
-        uint256 nonce
-    ) private view {
+    function _requireNonceUnused(uint256 mandateId, address agent, uint256 nonce) private view {
         if (nonceUsed[mandateId][agent][nonce]) {
             revert NonceAlreadyUsed(mandateId, agent, nonce);
         }
     }
 
-    function _requireValidAddresses(address vault, address agent) private pure {
-        if (vault == address(0) || agent == address(0)) revert InvalidAddress();
-    }
-
-    function _validateRules(MandateRules memory rules) private pure {
-        if (
-            rules.minNativeAmount != 0 &&
-            rules.maxNativeAmount != 0 &&
-            rules.minNativeAmount > rules.maxNativeAmount
-        ) {
-            revert InvalidNativeAmountRange(
-                rules.minNativeAmount,
-                rules.maxNativeAmount
-            );
+    function _validateRules(GrantlineTypes.MandateRules memory rules) private pure {
+        if (rules.minNativeAmount != 0 && rules.maxNativeAmount != 0 && rules.minNativeAmount > rules.maxNativeAmount) {
+            revert InvalidNativeAmountRange(rules.minNativeAmount, rules.maxNativeAmount);
         }
-        if (
-            rules.minUsdAmount != 0 &&
-            rules.maxUsdAmount != 0 &&
-            rules.minUsdAmount > rules.maxUsdAmount
-        ) {
-            revert InvalidUsdAmountRange(
-                rules.minUsdAmount,
-                rules.maxUsdAmount
-            );
+        if (rules.minUsdAmount != 0 && rules.maxUsdAmount != 0 && rules.minUsdAmount > rules.maxUsdAmount) {
+            revert InvalidUsdAmountRange(rules.minUsdAmount, rules.maxUsdAmount);
         }
     }
 
-    function _validatePreflightRules(PreflightRules memory) private pure {}
+    function _validatePreflightRules(GrantlineTypes.PreflightRules memory) private pure {}
+
+    function _onlyGrantline() private view {
+        if (msg.sender != grantline) revert NotGrantline(msg.sender);
+    }
+
+    function _onlyExecutor() private view {
+        if (msg.sender != IGrantlineContext(grantline).moduleAddress(EXECUTOR_MODULE)) revert NotExecutor(msg.sender);
+    }
+
+    function _onlyEscalationManager() private view {
+        if (msg.sender != IGrantlineContext(grantline).moduleAddress(ESCALATION_MANAGER_MODULE)) {
+            revert NotEscalationManager(msg.sender);
+        }
+    }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 }

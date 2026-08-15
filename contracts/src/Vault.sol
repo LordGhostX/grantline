@@ -1,35 +1,25 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
-interface IERC20Like {
-    function balanceOf(address account) external view returns (uint256);
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
-    function transfer(
-        address recipient,
-        uint256 amount
-    ) external returns (bool);
+contract Vault is Initializable, GrantlineOwnable2StepUpgradeable, ReentrancyGuard, UUPSUpgradeable {
+    using SafeERC20 for IERC20;
 
-    function transferFrom(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) external returns (bool);
-}
-
-contract Vault {
     error InvalidAddress();
     error InvalidAmount();
     error InsufficientNativeBalance();
     error NativeTransferFailed();
     error NotAuthority(address caller);
-    error NotOwner(address caller);
     error InvalidTokenTarget(address token);
-    error TokenTransferFailed();
 
-    event AuthorityUpdated(
-        address indexed previousAuthority,
-        address indexed newAuthority
-    );
+    event VaultInitialized(address indexed grantline, address indexed authority);
+    event AuthorityUpdated(address indexed previousAuthority, address indexed newAuthority);
     event ExecutionAttempted(
         address indexed authority,
         address indexed target,
@@ -40,150 +30,104 @@ contract Vault {
     );
     event NativeDeposited(address indexed from, uint256 amount);
     event NativeWithdrawn(address indexed to, uint256 amount);
-    event OwnershipTransferred(
-        address indexed previousOwner,
-        address indexed newOwner
-    );
-    event TokenDeposited(
-        address indexed token,
-        address indexed from,
-        uint256 amount
-    );
-    event TokenWithdrawn(
-        address indexed token,
-        address indexed to,
-        uint256 amount
-    );
+    event TokenDeposited(address indexed token, address indexed from, uint256 amount);
+    event TokenWithdrawn(address indexed token, address indexed to, uint256 amount);
 
-    address public owner;
+    address public grantline;
     address public authority;
 
     constructor() {
-        owner = msg.sender;
-        emit OwnershipTransferred(address(0), msg.sender);
+        _disableInitializers();
     }
 
-    receive() external payable {
+    function initialize(address grantlineAddress, address authorityAddress) external initializer {
+        if (grantlineAddress == address(0) || authorityAddress == address(0) || authorityAddress.code.length == 0) {
+            revert InvalidAddress();
+        }
+        grantline = grantlineAddress;
+        authority = authorityAddress;
+        __Ownable_init(grantlineAddress);
+        __Ownable2Step_init();
+        emit VaultInitialized(grantlineAddress, authorityAddress);
+    }
+
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
+    receive() external payable onlyOwner {
         emit NativeDeposited(msg.sender, msg.value);
     }
 
-    function depositNative() external payable {
-        emit NativeDeposited(msg.sender, msg.value);
+    function depositNative(address from) external payable onlyOwner nonReentrant {
+        if (from == address(0)) revert InvalidAddress();
+        emit NativeDeposited(from, msg.value);
     }
 
-    function depositToken(address token, uint256 amount) external {
+    function depositTokenFrom(address from, address token, uint256 amount) external onlyOwner nonReentrant {
+        if (from == address(0)) revert InvalidAddress();
         _requireTokenAndAmount(token, amount);
-        _safeTokenCall(
-            token,
-            abi.encodeWithSelector(
-                IERC20Like.transferFrom.selector,
-                msg.sender,
-                address(this),
-                amount
-            )
-        );
-        emit TokenDeposited(token, msg.sender, amount);
+        IERC20(token).safeTransferFrom(from, address(this), amount);
+        emit TokenDeposited(token, from, amount);
     }
 
-    function withdrawNative(
-        address payable recipient,
-        uint256 amount
-    ) external onlyOwner {
+    function withdrawNative(address payable recipient, uint256 amount) external onlyOwner nonReentrant {
         if (recipient == address(0)) revert InvalidAddress();
         if (amount > address(this).balance) revert InsufficientNativeBalance();
-
-        (bool success, ) = recipient.call{value: amount}("");
+        (bool success,) = recipient.call{value: amount}("");
         if (!success) revert NativeTransferFailed();
-
         emit NativeWithdrawn(recipient, amount);
     }
 
-    function withdrawToken(
-        address token,
-        address recipient,
-        uint256 amount
-    ) external onlyOwner {
+    function withdrawToken(address token, address recipient, uint256 amount) external onlyOwner nonReentrant {
         _requireTokenAndAmount(token, amount);
         if (recipient == address(0)) revert InvalidAddress();
-
-        _safeTokenCall(
-            token,
-            abi.encodeWithSelector(
-                IERC20Like.transfer.selector,
-                recipient,
-                amount
-            )
-        );
+        IERC20(token).safeTransfer(recipient, amount);
         emit TokenWithdrawn(token, recipient, amount);
     }
 
     function setAuthority(address newAuthority) external onlyOwner {
+        if (newAuthority == address(0) || newAuthority.code.length == 0) {
+            revert InvalidAddress();
+        }
         address previousAuthority = authority;
         authority = newAuthority;
         emit AuthorityUpdated(previousAuthority, newAuthority);
     }
 
-    function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) revert InvalidAddress();
-
-        address previousOwner = owner;
-        owner = newOwner;
-        emit OwnershipTransferred(previousOwner, newOwner);
-    }
-
     function tokenBalance(address token) external view returns (uint256) {
-        if (token == address(0)) revert InvalidAddress();
-        return IERC20Like(token).balanceOf(address(this));
+        if (token == address(0) || token.code.length == 0) {
+            revert InvalidTokenTarget(token);
+        }
+        return IERC20(token).balanceOf(address(this));
     }
 
-    function execute(
-        address target,
-        uint256 value,
-        bytes calldata data
-    ) external onlyAuthority returns (bool success, bytes memory result) {
+    function execute(address target, uint256 value, bytes calldata data)
+        external
+        onlyAuthority
+        nonReentrant
+        returns (bool success, bytes memory result)
+    {
+        if (msg.sender != authority) revert NotAuthority(msg.sender);
         if (target == address(0) || target == address(this)) {
             revert InvalidAddress();
         }
-
         (success, result) = target.call{value: value}(data);
-        emit ExecutionAttempted(
-            msg.sender,
-            target,
-            value,
-            keccak256(data),
-            success,
-            keccak256(result)
-        );
+        emit ExecutionAttempted(msg.sender, target, value, keccak256(data), success, keccak256(result));
     }
 
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner(msg.sender);
-        _;
+    function _requireTokenAndAmount(address token, uint256 amount) private view {
+        if (token == address(0)) revert InvalidAddress();
+        if (amount == 0) revert InvalidAmount();
+        if (token.code.length == 0) revert InvalidTokenTarget(token);
     }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 
     modifier onlyAuthority() {
         if (authority == address(0) || msg.sender != authority) {
             revert NotAuthority(msg.sender);
         }
         _;
-    }
-
-    function _requireTokenAndAmount(
-        address token,
-        uint256 amount
-    ) private view {
-        if (token == address(0)) revert InvalidAddress();
-        if (amount == 0) revert InvalidAmount();
-        if (token.code.length == 0) revert InvalidTokenTarget(token);
-    }
-
-    function _safeTokenCall(address token, bytes memory callData) private {
-        (bool success, bytes memory returnData) = token.call(callData);
-        if (
-            !success ||
-            (returnData.length != 0 && !abi.decode(returnData, (bool)))
-        ) {
-            revert TokenTransferFailed();
-        }
     }
 }

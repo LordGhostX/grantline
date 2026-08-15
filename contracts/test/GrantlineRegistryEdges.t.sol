@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.28;
+
+import {Grantline} from "../src/Grantline.sol";
+import {GrantlineTypes} from "../src/GrantlineTypes.sol";
+import {MandateRegistry} from "../src/MandateRegistry.sol";
+import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+
+contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
+    function test_rejectsInvalidMandateAddressesAndRanges() public {
+        Fixture memory fixture = _fixture();
+        GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, 0, false, true);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.InvalidAddress.selector));
+        fixture.hub.createMandate(fixture.vault, address(0), rules, _preflight(0, false));
+
+        rules.minNativeAmount = 2 ether;
+        rules.maxNativeAmount = 1 ether;
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(MandateRegistry.InvalidNativeAmountRange.selector, 2 ether, 1 ether)
+        );
+        fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false));
+
+        rules = _rules(0, false, 0, 2 ether, false, true);
+        rules.maxUsdAmount = 1 ether;
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.InvalidUsdAmountRange.selector, 2 ether, 1 ether));
+        fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false));
+    }
+
+    function test_childRulesAndPreflightRulesOnlyNarrowAuthority() public {
+        GrantlineTypes.MandateRules memory parentRules = _rules(5 ether, true, 1 ether, 2 ether, true, true);
+        parentRules.maxUsdAmount = 8 ether;
+        Fixture memory fixture = _fixtureWithRules(parentRules, _preflight(1 ether, true), address(0), true);
+
+        GrantlineTypes.MandateRules memory childRules = _rules(4 ether, true, 2 ether, 3 ether, true, true);
+        childRules.maxUsdAmount = 6 ether;
+        fixtureVm.prank(fixture.agent);
+        uint256 childId = fixture.hub
+            .createChildMandate(
+                fixture.mandateId, fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY), childRules, _preflight(2 ether, true)
+            );
+
+        GrantlineTypes.MandateRules memory effectiveRules = fixture.hub.getEffectiveRules(childId);
+        GrantlineTypes.PreflightRules memory effectivePreflight = fixture.hub.getEffectivePreflightRules(childId);
+        assert(effectiveRules.minNativeAmount == 2 ether);
+        assert(effectiveRules.maxNativeAmount == 4 ether);
+        assert(effectiveRules.minUsdAmount == 3 ether);
+        assert(effectiveRules.maxUsdAmount == 6 ether);
+        assert(effectiveRules.canDelegate);
+        assert(effectivePreflight.minNativeBalance == 2 ether);
+        assert(effectivePreflight.escalateNativeBalance);
+
+        GrantlineTypes.MandateRules memory grandchildRules = _rules(3 ether, true, 3 ether, 4 ether, true, false);
+        grandchildRules.maxUsdAmount = 5 ether;
+        fixtureVm.prank(fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY));
+        uint256 grandchildId =
+            fixture.hub.createChildMandate(childId, fixtureVm.addr(0xCAFE), grandchildRules, _preflight(3 ether, true));
+
+        GrantlineTypes.MandateView memory grandchild = fixture.hub.getMandate(grandchildId);
+        assert(grandchild.delegationDepth == 2);
+        assert(!grandchild.rules.canDelegate);
+
+        grandchildRules.canDelegate = true;
+        fixtureVm.prank(fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY));
+        fixture.hub.updateMandate(grandchildId, grandchildRules, _preflight(3 ether, true));
+        assert(!fixture.hub.getMandate(grandchildId).rules.canDelegate);
+    }
+
+    function test_rejectsBroaderChildRulesAndPreflightRules() public {
+        GrantlineTypes.MandateRules memory parentRules = _rules(4 ether, false, 2 ether, 2 ether, false, true);
+        parentRules.maxUsdAmount = 6 ether;
+        Fixture memory fixture = _fixtureWithRules(parentRules, _preflight(2 ether, false), address(0), true);
+        address childAgent = fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY);
+
+        GrantlineTypes.MandateRules memory broadRules = _rules(4 ether, false, 1 ether, 2 ether, false, true);
+        broadRules.maxUsdAmount = 6 ether;
+        fixtureVm.prank(fixture.agent);
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(MandateRegistry.ChildRulesExceedParent.selector, fixture.mandateId)
+        );
+        fixture.hub.createChildMandate(fixture.mandateId, childAgent, broadRules, _preflight(2 ether, false));
+
+        GrantlineTypes.MandateRules memory validRules = _rules(4 ether, false, 2 ether, 2 ether, false, true);
+        validRules.maxUsdAmount = 6 ether;
+        fixtureVm.prank(fixture.agent);
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(MandateRegistry.ChildPreflightRulesExceedParent.selector, fixture.mandateId)
+        );
+        fixture.hub.createChildMandate(fixture.mandateId, childAgent, validRules, _preflight(1 ether, false));
+    }
+
+    function test_delegationRequiresTheParentAgentAndActiveLineage() public {
+        Fixture memory fixture = _fixture();
+        address childAgent = fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY);
+        GrantlineTypes.MandateRules memory childRules = _rules(1 ether, false, 0, 0, false, false);
+
+        fixtureVm.prank(address(0xCAFE));
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(Grantline.NotParentAgent.selector, fixture.mandateId, address(0xCAFE))
+        );
+        fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false));
+
+        fixture.hub.revokeMandate(fixture.mandateId);
+        fixtureVm.prank(fixture.agent);
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(Grantline.NotParentAgent.selector, fixture.mandateId, fixture.agent)
+        );
+        fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false));
+    }
+
+    function test_revokePreservesHistoryButBlocksFutureAdministration() public {
+        Fixture memory fixture = _fixture();
+        fixture.hub.revokeMandate(fixture.mandateId);
+
+        GrantlineTypes.MandateView memory revoked = fixture.hub.getMandate(fixture.mandateId);
+        assert(revoked.status == GrantlineTypes.MandateStatus.REVOKED);
+        assert(revoked.revokedAt != 0);
+        assert(!fixture.hub.isController(fixture.vault, fixture.agent));
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.MandateNotActive.selector, fixture.mandateId));
+        fixture.hub.revokeMandate(fixture.mandateId);
+    }
+}

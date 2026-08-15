@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
-import {ActionSignature} from "./ActionSignature.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ActionTypes} from "./ActionTypes.sol";
-import {MandateEvaluator} from "./MandateEvaluator.sol";
-import {IVaultAuthority, IVaultOwner, MandateRegistry} from "./MandateRegistry.sol";
+import {GrantlineTypes} from "./GrantlineTypes.sol";
+import {IGrantlineContext, IEscalationManager, IEvaluator, IModule, IRegistry} from "./Interfaces.sol";
+import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
-contract EscalationManager {
+contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUpgradeable, IEscalationManager {
     enum Status {
         NONE,
         PENDING,
@@ -15,32 +17,26 @@ contract EscalationManager {
         EXECUTED
     }
 
-    struct Escalation {
-        ActionTypes.ActionPlan plan;
-        bytes signature;
-        Status status;
-        uint64 submittedAt;
-    }
+    bytes32 public constant EXECUTOR_MODULE = keccak256("EXECUTOR");
 
+    error InvalidAddress();
     error InvalidEvaluator();
     error EscalationNotFound(bytes32 digest);
     error EscalationAlreadyExists(bytes32 digest);
     error EscalationNotPending(bytes32 digest, Status status);
     error EscalationNotApproved(bytes32 digest, Status status);
     error MandateInactive(uint256 mandateId);
-    error NotEscalatable(
-        MandateEvaluator.Decision decision,
-        MandateEvaluator.FailureCode failureCode
-    );
+    error NotEscalatable(uint8 decision, uint8 failureCode);
     error NonceNotConsumed(uint256 mandateId, address agent, uint256 nonce);
-    error InvalidVault();
-    error NotVaultOwner(address caller);
-    error NotVaultAuthority(address caller);
+    error NotGrantline(address caller);
+    error NotExecutor(address caller);
+    error NotController(address caller);
 
     event EscalationSubmitted(
         bytes32 indexed actionDigest,
         uint256 indexed mandateId,
         address indexed agent,
+        address submittedBy,
         uint256 nonce,
         uint256 nativeAmount,
         uint256 usdAmount,
@@ -48,67 +44,62 @@ contract EscalationManager {
         uint64 submittedAt
     );
     event EscalationApproved(
-        bytes32 indexed actionDigest,
-        uint256 indexed mandateId,
-        address indexed owner,
-        uint64 approvedAt
+        bytes32 indexed actionDigest, uint256 indexed mandateId, address indexed controller, uint64 approvedAt
     );
     event EscalationDenied(
-        bytes32 indexed actionDigest,
-        uint256 indexed mandateId,
-        address indexed owner,
-        uint64 deniedAt
+        bytes32 indexed actionDigest, uint256 indexed mandateId, address indexed controller, uint64 deniedAt
     );
     event EscalationExecuted(
-        bytes32 indexed actionDigest,
-        uint256 indexed mandateId,
-        address indexed agent,
-        uint256 nonce,
-        uint64 executedAt
+        bytes32 indexed actionDigest, uint256 indexed mandateId, address indexed agent, uint256 nonce, uint64 executedAt
     );
 
-    MandateEvaluator public immutable evaluator;
-    mapping(bytes32 digest => Escalation escalation) private _escalations;
+    address public grantline;
+    address public override evaluator;
+    address public registry;
+    mapping(bytes32 => GrantlineTypes.Escalation) private _escalations;
 
-    constructor(address evaluatorAddress) {
-        if (
-            evaluatorAddress == address(0) || evaluatorAddress.code.length == 0
-        ) {
-            revert InvalidEvaluator();
-        }
-        evaluator = MandateEvaluator(evaluatorAddress);
+    constructor() {
+        _disableInitializers();
     }
 
-    function submit(
-        ActionTypes.ActionPlan calldata plan,
-        bytes calldata signature
-    ) external returns (bytes32 actionDigest) {
-        MandateEvaluator.EvaluationResult memory evaluation = evaluator
-            .evaluate(plan, signature);
-        if (evaluation.decision != MandateEvaluator.Decision.ESCALATE) {
+    function initialize(address grantlineAddress, address evaluatorAddress, address registryAddress)
+        external
+        initializer
+    {
+        if (grantlineAddress == address(0)) revert InvalidAddress();
+        if (evaluatorAddress == address(0) || evaluatorAddress.code.length == 0) {
+            revert InvalidEvaluator();
+        }
+        if (registryAddress == address(0) || registryAddress.code.length == 0) {
+            revert InvalidAddress();
+        }
+        grantline = grantlineAddress;
+        evaluator = evaluatorAddress;
+        registry = registryAddress;
+        __Ownable_init(grantlineAddress);
+        __Ownable2Step_init();
+    }
+
+    function version() external pure override returns (uint64) {
+        return 1;
+    }
+
+    function submit(ActionTypes.ActionPlan calldata plan, bytes calldata signature, bytes32 digest, address submittedBy)
+        external
+        override
+    {
+        _onlyGrantline();
+        GrantlineTypes.EvaluationResult memory evaluation = IEvaluator(evaluator).evaluate(plan, signature, digest);
+        if (evaluation.decision != 1) {
             revert NotEscalatable(evaluation.decision, evaluation.failureCode);
         }
-
-        actionDigest = ActionSignature.digest(
-            plan,
-            address(evaluator),
-            block.chainid
-        );
-        Status existingStatus = _escalations[actionDigest].status;
-        if (existingStatus != Status.NONE) {
-            revert EscalationAlreadyExists(actionDigest);
+        if (_escalations[digest].status != uint8(Status.NONE)) {
+            revert EscalationAlreadyExists(digest);
         }
 
-        MandateRegistry registry = evaluator.registry();
-        registry.reserveNonce(
-            plan.mandateId,
-            plan.agent,
-            plan.nonce,
-            actionDigest
-        );
-
-        Escalation storage escalation = _escalations[actionDigest];
-        escalation.status = Status.PENDING;
+        GrantlineTypes.Escalation storage escalation = _escalations[digest];
+        escalation.status = uint8(Status.PENDING);
+        escalation.submittedBy = submittedBy;
         escalation.submittedAt = uint64(block.timestamp);
         escalation.plan.mandateId = plan.mandateId;
         escalation.plan.agent = plan.agent;
@@ -116,163 +107,115 @@ contract EscalationManager {
         escalation.plan.deadline = plan.deadline;
         for (uint256 index; index < plan.actions.length; index++) {
             escalation.plan.actions.push();
-            escalation.plan.actions[index].actionType = plan
-                .actions[index]
-                .actionType;
-            escalation.plan.actions[index].version = plan
-                .actions[index]
-                .version;
-            escalation.plan.actions[index].parameters = plan
-                .actions[index]
-                .parameters;
+            escalation.plan.actions[index].actionType = plan.actions[index].actionType;
+            escalation.plan.actions[index].version = plan.actions[index].version;
+            escalation.plan.actions[index].parameters = plan.actions[index].parameters;
         }
         escalation.signature = signature;
 
         emit EscalationSubmitted(
-            actionDigest,
+            digest,
             plan.mandateId,
             plan.agent,
+            submittedBy,
             plan.nonce,
             evaluation.nativeAmount,
             evaluation.usdAmount,
             evaluation.usdLimitSkipped,
             escalation.submittedAt
         );
+
+        IRegistry(registry).reserveNonce(plan.mandateId, plan.agent, plan.nonce, digest);
     }
 
-    function approve(bytes32 actionDigest) external {
-        Escalation storage escalation = _pending(actionDigest);
-        MandateRegistry.Mandate memory mandate = evaluator
-            .registry()
-            .getMandate(escalation.plan.mandateId);
-        if (mandate.status != MandateRegistry.MandateStatus.ACTIVE) {
-            revert MandateInactive(escalation.plan.mandateId);
-        }
-        if (!evaluator.registry().isLineageActive(escalation.plan.mandateId)) {
-            revert MandateInactive(escalation.plan.mandateId);
-        }
-        _requireVaultOwner(mandate.vault, msg.sender);
-
-        escalation.status = Status.APPROVED;
-        emit EscalationApproved(
-            actionDigest,
-            escalation.plan.mandateId,
-            msg.sender,
-            uint64(block.timestamp)
-        );
-    }
-
-    function deny(bytes32 actionDigest) external {
-        Escalation storage escalation = _pending(actionDigest);
-        MandateRegistry.Mandate memory mandate = evaluator
-            .registry()
-            .getMandate(escalation.plan.mandateId);
-        _requireVaultOwner(mandate.vault, msg.sender);
-
-        escalation.status = Status.DENIED;
-        emit EscalationDenied(
-            actionDigest,
-            escalation.plan.mandateId,
-            msg.sender,
-            uint64(block.timestamp)
-        );
-    }
-
-    function markExecuted(bytes32 actionDigest) external {
-        Escalation storage escalation = _escalations[actionDigest];
-        if (escalation.status == Status.NONE) {
-            revert EscalationNotFound(actionDigest);
-        }
-        if (escalation.status != Status.APPROVED) {
-            revert EscalationNotApproved(actionDigest, escalation.status);
-        }
-
-        MandateRegistry.Mandate memory mandate = evaluator
-            .registry()
-            .getMandate(escalation.plan.mandateId);
-        if (mandate.status != MandateRegistry.MandateStatus.ACTIVE) {
-            revert MandateInactive(escalation.plan.mandateId);
-        }
-        _requireVaultAuthority(mandate.vault, msg.sender);
+    function approve(bytes32 digest, address controller) external override {
+        _onlyGrantline();
+        GrantlineTypes.Escalation storage escalation = _pending(digest);
+        GrantlineTypes.Mandate memory mandate = IRegistry(registry).getMandate(escalation.plan.mandateId);
         if (
-            !evaluator.registry().nonceUsed(
-                escalation.plan.mandateId,
-                escalation.plan.agent,
-                escalation.plan.nonce
-            )
-        ) {
-            revert NonceNotConsumed(
-                escalation.plan.mandateId,
-                escalation.plan.agent,
-                escalation.plan.nonce
-            );
+            mandate.status != GrantlineTypes.MandateStatus.ACTIVE
+                || !IRegistry(registry).isLineageActive(escalation.plan.mandateId)
+        ) revert MandateInactive(escalation.plan.mandateId);
+        if (!IGrantlineContext(grantline).isController(mandate.vault, controller)) {
+            revert NotController(controller);
         }
+        escalation.status = uint8(Status.APPROVED);
+        emit EscalationApproved(digest, escalation.plan.mandateId, controller, uint64(block.timestamp));
+    }
 
-        escalation.status = Status.EXECUTED;
+    function deny(bytes32 digest, address controller) external override {
+        _onlyGrantline();
+        GrantlineTypes.Escalation storage escalation = _pending(digest);
+        GrantlineTypes.Mandate memory mandate = IRegistry(registry).getMandate(escalation.plan.mandateId);
+        if (!IGrantlineContext(grantline).isController(mandate.vault, controller)) {
+            revert NotController(controller);
+        }
+        escalation.status = uint8(Status.DENIED);
+        emit EscalationDenied(digest, escalation.plan.mandateId, controller, uint64(block.timestamp));
+    }
+
+    function markExecuted(bytes32 digest) external override {
+        _onlyExecutor();
+        GrantlineTypes.Escalation storage escalation = _escalations[digest];
+        if (escalation.status == uint8(Status.NONE)) {
+            revert EscalationNotFound(digest);
+        }
+        if (escalation.status != uint8(Status.APPROVED)) {
+            revert EscalationNotApproved(digest, Status(escalation.status));
+        }
+        GrantlineTypes.Mandate memory mandate = IRegistry(registry).getMandate(escalation.plan.mandateId);
+        if (
+            mandate.status != GrantlineTypes.MandateStatus.ACTIVE
+                || !IRegistry(registry).isLineageActive(escalation.plan.mandateId)
+        ) revert MandateInactive(escalation.plan.mandateId);
+        if (!IRegistry(registry).nonceUsed(escalation.plan.mandateId, escalation.plan.agent, escalation.plan.nonce)) {
+            revert NonceNotConsumed(escalation.plan.mandateId, escalation.plan.agent, escalation.plan.nonce);
+        }
+        escalation.status = uint8(Status.EXECUTED);
         emit EscalationExecuted(
-            actionDigest,
-            escalation.plan.mandateId,
-            escalation.plan.agent,
-            escalation.plan.nonce,
-            uint64(block.timestamp)
+            digest, escalation.plan.mandateId, escalation.plan.agent, escalation.plan.nonce, uint64(block.timestamp)
         );
     }
 
-    function getEscalation(
-        bytes32 actionDigest
-    ) external view returns (Escalation memory escalation) {
-        escalation = _escalations[actionDigest];
-        if (escalation.status == Status.NONE) {
-            revert EscalationNotFound(actionDigest);
+    function getEscalation(bytes32 digest)
+        external
+        view
+        override
+        returns (GrantlineTypes.Escalation memory escalation)
+    {
+        escalation = _escalations[digest];
+        if (escalation.status == uint8(Status.NONE)) {
+            revert EscalationNotFound(digest);
         }
     }
 
-    function statusOf(bytes32 actionDigest) external view returns (Status) {
-        return _escalations[actionDigest].status;
+    function statusOf(bytes32 digest) external view returns (Status) {
+        return Status(_escalations[digest].status);
     }
 
-    function reservedDigest(
-        uint256 mandateId,
-        address agent,
-        uint256 nonce
-    ) external view returns (bytes32) {
-        return evaluator.registry().reservedDigest(mandateId, agent, nonce);
+    function reservedDigest(uint256 mandateId, address agent, uint256 nonce) external view returns (bytes32) {
+        return IRegistry(registry).reservedDigest(mandateId, agent, nonce);
     }
 
-    function _pending(
-        bytes32 actionDigest
-    ) private view returns (Escalation storage escalation) {
-        escalation = _escalations[actionDigest];
-        if (escalation.status == Status.NONE) {
-            revert EscalationNotFound(actionDigest);
+    function _pending(bytes32 digest) private view returns (GrantlineTypes.Escalation storage escalation) {
+        escalation = _escalations[digest];
+        if (escalation.status == uint8(Status.NONE)) {
+            revert EscalationNotFound(digest);
         }
-        if (escalation.status != Status.PENDING) {
-            revert EscalationNotPending(actionDigest, escalation.status);
+        if (escalation.status != uint8(Status.PENDING)) {
+            revert EscalationNotPending(digest, Status(escalation.status));
         }
     }
 
-    function _requireVaultOwner(address vault, address caller) private view {
-        if (vault.code.length == 0) revert InvalidVault();
+    function _onlyGrantline() private view {
+        if (msg.sender != grantline) revert NotGrantline(msg.sender);
+    }
 
-        try IVaultOwner(vault).owner() returns (address vaultOwner) {
-            if (vaultOwner != caller) revert NotVaultOwner(caller);
-        } catch {
-            revert InvalidVault();
+    function _onlyExecutor() private view {
+        if (msg.sender != IGrantlineContext(grantline).moduleAddress(EXECUTOR_MODULE)) {
+            revert NotExecutor(msg.sender);
         }
     }
 
-    function _requireVaultAuthority(
-        address vault,
-        address caller
-    ) private view {
-        if (vault.code.length == 0) revert InvalidVault();
-
-        try IVaultAuthority(vault).authority() returns (
-            address vaultAuthority
-        ) {
-            if (vaultAuthority != caller) revert NotVaultAuthority(caller);
-        } catch {
-            revert InvalidVault();
-        }
-    }
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 }

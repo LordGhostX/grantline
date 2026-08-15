@@ -1,747 +1,899 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
-import {ActionSignature} from "../src/ActionSignature.sol";
 import {ActionTypes} from "../src/ActionTypes.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
+import {Grantline} from "../src/Grantline.sol";
+import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
+import {VaultFactory} from "../src/VaultFactory.sol";
+import {DeploymentManifest} from "./DeploymentManifest.s.sol";
+import {VerifyGrantlineDeployment} from "./VerifyGrantlineDeployment.s.sol";
 import {ScriptBase} from "./ScriptBase.s.sol";
 
 interface TestnetIntegrationVm {
     function envAddress(string calldata name) external returns (address value);
 
-    function sign(
-        uint256 privateKey,
-        bytes32 digest
-    ) external returns (uint8 v, bytes32 r, bytes32 s);
+    function sign(uint256 privateKey, bytes32 digest) external returns (uint8 v, bytes32 r, bytes32 s);
+
+    function expectRevert() external;
+
+    function prank(address sender) external;
+
+    function toString(uint256 value) external pure returns (string memory);
+
+    function toString(address value) external pure returns (string memory);
+
+    function toString(bytes32 value) external pure returns (string memory);
+}
+
+contract IntegrationToken {
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    function mint(address account, uint256 amount) external {
+        balanceOf[account] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transfer(address recipient, uint256 amount) external returns (bool) {
+        if (balanceOf[msg.sender] < amount) return false;
+        balanceOf[msg.sender] -= amount;
+        balanceOf[recipient] += amount;
+        return true;
+    }
+
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool) {
+        if (balanceOf[sender] < amount || allowance[sender][msg.sender] < amount) return false;
+        allowance[sender][msg.sender] -= amount;
+        balanceOf[sender] -= amount;
+        balanceOf[recipient] += amount;
+        return true;
+    }
+}
+
+contract RejectingRecipient {
+    receive() external payable {
+        revert();
+    }
+}
+
+contract ReentrantRecipient {
+    address public target;
+    bytes public callData;
+    bool public attempted;
+    bool public callSucceeded;
+
+    function configure(address target_, bytes calldata callData_) external {
+        target = target_;
+        callData = callData_;
+        attempted = false;
+        callSucceeded = false;
+    }
+
+    receive() external payable {
+        if (attempted) return;
+        attempted = true;
+        (callSucceeded,) = target.call(callData);
+    }
+}
+
+contract VaultV2 is Vault {
+    function marker() external pure returns (uint256) {
+        return 2;
+    }
+}
+
+contract MandateRegistryV2 is MandateRegistry {
+    function marker() external pure returns (uint256) {
+        return 2;
+    }
 }
 
 contract TestnetIntegration is ScriptBase {
-    uint256 internal constant DEPOSIT_AMOUNT = 20_000_000_000_000_000;
-    uint256 internal constant TRANSACTION_LIMIT = 1_000_000_000_000_000;
-    uint256 internal constant SUCCESS_AMOUNT = 1_000_000_000_000_000;
-    uint256 internal constant DENIED_AMOUNT = 1_100_000_000_000_000;
-    uint256 internal constant REUSED_NONCE_AMOUNT = 500_000_000_000_000;
-    uint256 internal constant ESCALATED_AMOUNT = 2_000_000_000_000_000;
-    uint256 internal constant SECOND_ESCALATED_AMOUNT = 2_100_000_000_000_000;
-    uint256 internal constant ROOT_PREFLIGHT_FLOOR = 15_500_000_000_000_000;
-    uint256 internal constant CHILD_TRANSACTION_LIMIT = 1_500_000_000_000_000;
-    uint256 internal constant CHILD_SUCCESS_AMOUNT = 500_000_000_000_000;
-    uint256 internal constant GRANDCHILD_TRANSACTION_LIMIT =
-        1_400_000_000_000_000;
-    uint256 internal constant ROOT_LOOSENED_LIMIT = 3_000_000_000_000_000;
-    uint256 internal constant ROOT_TIGHTENED_LIMIT = 1_200_000_000_000_000;
-    uint256 internal constant SUCCESS_NONCE = 1;
-    uint256 internal constant DENIED_NONCE = 2;
-    uint256 internal constant FIRST_ESCALATION_NONCE = 3;
-    uint256 internal constant CHILD_PREFLIGHT_NONCE = 2;
+    uint256 internal constant DEPOSIT_AMOUNT = 0.05 ether;
+    uint256 internal constant SECOND_VAULT_DEPOSIT = 0.002 ether;
+    uint256 internal constant ROOT_TRANSACTION_LIMIT = 0.001 ether;
+    uint256 internal constant ESCALATED_AMOUNT = 0.002 ether;
+    uint256 internal constant CHILD_TRANSACTION_LIMIT = 0.0005 ether;
+    uint256 internal constant GRANDCHILD_TRANSACTION_LIMIT = 0.0003 ether;
+    uint256 internal constant ROOT_TIGHTENED_LIMIT = 0.0004 ether;
+    uint256 internal constant ROOT_PREFLIGHT_FLOOR = 0.04 ether;
+    uint256 internal constant TIGHTENED_PREFLIGHT_FLOOR = 0.049 ether;
+    uint256 internal constant MIN_USD_AMOUNT = 1e18;
+    uint256 internal constant TOKEN_DEPOSIT = 1_000 ether;
+    uint256 internal constant TOKEN_TRANSFER = 300 ether;
+
+    uint256 internal constant ROOT_ALLOW_NONCE = 1;
+    uint256 internal constant ROOT_DENY_NONCE = 2;
+    uint256 internal constant ROOT_ATOMIC_NONCE = 3;
+    uint256 internal constant ROOT_REENTRANCY_NONCE = 4;
+    uint256 internal constant ROOT_ESCALATION_NONCE = 5;
+    uint256 internal constant ROOT_TOKEN_NONCE = 6;
+    uint256 internal constant ROOT_REVOKED_ESCALATION_NONCE = 7;
+    uint256 internal constant CHILD_ALLOW_NONCE = 1;
+    uint256 internal constant CHILD_ESCALATION_NONCE = 2;
+    uint256 internal constant GRANDCHILD_ALLOW_NONCE = 1;
+    uint256 internal constant REENTRY_NONCE = 90;
+    uint256 internal constant CHILD_TOKEN_EVALUATION_NONCE = 50;
+
+    address internal constant SUCCESS_RECIPIENT = address(0x1001);
+    address internal constant TOKEN_RECIPIENT = address(0x1002);
+    address internal constant ATOMIC_RECIPIENT = address(0x1003);
+    address internal constant ESCALATION_RECIPIENT = address(0x1004);
+    address internal constant CHILD_RECIPIENT = address(0x1005);
+    address internal constant GRANDCHILD_RECIPIENT = address(0x1006);
+    address internal constant PENDING_RECIPIENT = address(0x1007);
 
     TestnetIntegrationVm private constant integrationVm =
         TestnetIntegrationVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
     error AgentKeyMismatch(address expectedAgent, address actualAgent);
-    error UnexpectedVaultAuthority(
-        address expectedAuthority,
-        address actualAuthority
+    error IntegrationInvariant(string check);
+
+    event IntegrationCompleted(
+        address indexed grantline,
+        address indexed vault,
+        address indexed secondVault,
+        address thirdVault,
+        uint256 rootMandate,
+        uint256 childMandate,
+        uint256 grandchildMandate,
+        bytes32 rootEscalation,
+        bytes32 childEscalation,
+        bytes32 deniedEscalation
     );
-    error UnexpectedVaultOwner(address expectedOwner, address actualOwner);
-    error UnexpectedVaultBalance(uint256 actualBalance);
 
-    struct Stack {
-        Vault vault;
-        MandateRegistry registry;
-        MandateEvaluator evaluator;
-        EscalationManager manager;
-        VaultExecutor executor;
+    struct State {
+        string network;
+        uint256 expectedChainId;
+        address hub;
+        address hubImplementation;
+        address registry;
+        address registryImplementation;
+        address evaluator;
+        address evaluatorImplementation;
+        address escalationManager;
+        address escalationManagerImplementation;
+        address executor;
+        address executorImplementation;
+        address vaultFactory;
+        address vaultFactoryImplementation;
+        address initialVaultImplementation;
+        uint256 ownerKey;
+        uint256 agentKey;
+        uint256 delegatedKey;
+        address owner;
+        address agent;
+        address delegatedAgent;
+        address expectedProtocolAdmin;
+        address vault;
+        address secondVault;
+        address thirdVault;
+        address token;
+        address rejectingRecipient;
+        address reentrantRecipient;
+        address vaultV2;
+        address registryV2;
+        uint256 rootMandate;
+        uint256 childMandate;
+        uint256 grandchildMandate;
+        bytes32 rootEscalation;
+        bytes32 childEscalation;
+        bytes32 deniedEscalation;
     }
 
-    function fundAndCreate() external returns (uint256 mandateId) {
-        Stack memory stack = _stack();
-        uint256 ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        address owner = vm.addr(ownerKey);
-        address agent = _agentAddress();
+    function run() external {
+        State memory state = _loadState();
+        _validateStack(state);
+        state = _createVaults(state);
+        state = _deployFixtures(state);
+        state = _fundVaultsAndCreateRoot(state);
+        _assertControllerIsolationAndBypasses(state);
+        state = _runNativeExecutionAndEscalation(state);
+        state = _runTokenExecution(state);
+        state = _runDelegationAndPreflight(state);
+        state = _runUpgrades(state);
+        _runRevocationAndReservationChecks(state);
+        _cleanupVaults(state);
+        _verifyFinalDeployment(state);
 
-        if (stack.vault.owner() != owner) {
-            revert UnexpectedVaultOwner(owner, stack.vault.owner());
-        }
-        if (stack.vault.authority() != address(stack.executor)) {
-            revert UnexpectedVaultAuthority(
-                address(stack.executor),
-                stack.vault.authority()
-            );
-        }
-        if (address(stack.vault).balance != 0) {
-            revert UnexpectedVaultBalance(address(stack.vault).balance);
-        }
-
-        mandateId = stack.registry.mandateCount() + 1;
-
-        vm.startBroadcast(ownerKey);
-        stack.vault.depositNative{value: DEPOSIT_AMOUNT}();
-        stack.registry.createMandate(
-            address(stack.vault),
-            agent,
-            _rules(TRANSACTION_LIMIT, true, true),
-            _preflight(ROOT_PREFLIGHT_FLOOR, true)
-        );
-        vm.stopBroadcast();
-    }
-
-    function success(
-        uint256 mandateId
-    ) external returns (bytes32 actionDigest) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _primaryKey();
-        ActionTypes.ActionPlan memory plan = _plan(
-            mandateId,
-            SUCCESS_NONCE,
-            SUCCESS_AMOUNT,
-            _ownerAddress()
-        );
-        bytes memory signature = _sign(plan, stack.evaluator, agentKey);
-
-        vm.startBroadcast(agentKey);
-        actionDigest = stack.executor.execute(stack.vault, plan, signature);
-        vm.stopBroadcast();
-    }
-
-    function reuseDeniedNonce(
-        uint256 mandateId
-    ) external returns (bytes32 actionDigest) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _primaryKey();
-        ActionTypes.ActionPlan memory plan = _plan(
-            mandateId,
-            DENIED_NONCE,
-            REUSED_NONCE_AMOUNT,
-            _ownerAddress()
-        );
-        bytes memory signature = _sign(plan, stack.evaluator, agentKey);
-
-        vm.startBroadcast(agentKey);
-        actionDigest = stack.executor.execute(stack.vault, plan, signature);
-        vm.stopBroadcast();
-    }
-
-    function deniedCalldata(
-        uint256 mandateId
-    ) external returns (bytes memory callData) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _primaryKey();
-        ActionTypes.ActionPlan memory plan = _plan(
-            mandateId,
-            DENIED_NONCE,
-            DENIED_AMOUNT,
-            _ownerAddress()
-        );
-        bytes memory signature = _sign(plan, stack.evaluator, agentKey);
-        callData = _callData(stack.vault, plan, signature);
-    }
-
-    function replayCalldata(
-        uint256 mandateId
-    ) external returns (bytes memory callData) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _primaryKey();
-        ActionTypes.ActionPlan memory plan = _plan(
-            mandateId,
-            SUCCESS_NONCE,
-            SUCCESS_AMOUNT,
-            _ownerAddress()
-        );
-        bytes memory signature = _sign(plan, stack.evaluator, agentKey);
-        callData = _callData(stack.vault, plan, signature);
-    }
-
-    function reservedNormalCalldata(
-        uint256 mandateId
-    ) external returns (bytes memory callData) {
-        callData = normalCalldata(
-            mandateId,
-            FIRST_ESCALATION_NONCE,
-            ESCALATED_AMOUNT
+        emit IntegrationCompleted(
+            state.hub,
+            state.vault,
+            state.secondVault,
+            state.thirdVault,
+            state.rootMandate,
+            state.childMandate,
+            state.grandchildMandate,
+            state.rootEscalation,
+            state.childEscalation,
+            state.deniedEscalation
         );
     }
 
-    function normalCalldata(
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount
-    ) public returns (bytes memory callData) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _primaryKey();
-        ActionTypes.ActionPlan memory plan = _plan(
-            mandateId,
-            nonce,
-            amount,
-            _ownerAddress()
-        );
-        bytes memory signature = _sign(plan, stack.evaluator, agentKey);
-        callData = _callData(stack.vault, plan, signature);
-    }
-
-    function updateRootMandate(
-        uint256 mandateId,
-        uint256 maxNativeAmount,
-        bool escalateNativeAmount
-    ) external {
-        _updateMandate(
-            mandateId,
-            _rules(maxNativeAmount, escalateNativeAmount, true),
-            _preflight(ROOT_PREFLIGHT_FLOOR, true)
-        );
-    }
-
-    function loosenRoot(uint256 mandateId) external {
-        _updateMandate(
-            mandateId,
-            _rules(ROOT_LOOSENED_LIMIT, true, true),
-            _preflight(ROOT_PREFLIGHT_FLOOR, true)
-        );
-    }
-
-    function submitEscalation(
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount
-    ) external returns (bytes32 actionDigest) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _primaryKey();
-        (
-            ActionTypes.ActionPlan memory plan,
-            bytes memory signature
-        ) = _signedPlan(stack.evaluator, mandateId, nonce, amount);
-
-        vm.startBroadcast(agentKey);
-        actionDigest = stack.manager.submit(plan, signature);
-        vm.stopBroadcast();
-    }
-
-    function duplicateEscalationCalldata(
-        uint256 mandateId
-    ) external returns (bytes memory callData) {
-        Stack memory stack = _stack();
-        (
-            ActionTypes.ActionPlan memory plan,
-            bytes memory signature
-        ) = _signedPlan(
-                stack.evaluator,
-                mandateId,
-                FIRST_ESCALATION_NONCE,
-                ESCALATED_AMOUNT
-            );
-        callData = abi.encodeWithSelector(
-            EscalationManager.submit.selector,
-            plan,
-            signature
-        );
-    }
-
-    function reservedEscalationCalldata(
-        uint256 mandateId
-    ) external returns (bytes memory callData) {
-        Stack memory stack = _stack();
-        (
-            ActionTypes.ActionPlan memory plan,
-            bytes memory signature
-        ) = _signedPlan(
-                stack.evaluator,
-                mandateId,
-                FIRST_ESCALATION_NONCE,
-                SECOND_ESCALATED_AMOUNT
-            );
-        callData = abi.encodeWithSelector(
-            EscalationManager.submit.selector,
-            plan,
-            signature
-        );
-    }
-
-    function approveEscalation(
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount
-    ) external {
-        Stack memory stack = _stack();
-        uint256 ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        bytes32 actionDigest = _digest(
-            stack.evaluator,
-            mandateId,
-            nonce,
-            amount
-        );
-
-        vm.startBroadcast(ownerKey);
-        stack.manager.approve(actionDigest);
-        vm.stopBroadcast();
-    }
-
-    function approveEscalationCalldata(
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount
-    ) external returns (bytes memory callData) {
-        Stack memory stack = _stack();
-        bytes32 actionDigest = _digest(
-            stack.evaluator,
-            mandateId,
-            nonce,
-            amount
-        );
-        callData = abi.encodeWithSelector(
-            EscalationManager.approve.selector,
-            actionDigest
-        );
-    }
-
-    function executeEscalated(
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount
-    ) external returns (bytes32 actionDigest) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _primaryKey();
-        actionDigest = _digest(stack.evaluator, mandateId, nonce, amount);
-
-        vm.startBroadcast(agentKey);
-        stack.executor.executeEscalated(actionDigest);
-        vm.stopBroadcast();
-    }
-
-    function createChildMandate(
-        uint256 parentMandateId
-    ) external returns (uint256 mandateId) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _primaryKey();
-        address delegatedAgent = _delegatedAgentAddress();
-
-        vm.startBroadcast(agentKey);
-        mandateId = stack.registry.createChildMandate(
-            parentMandateId,
-            delegatedAgent,
-            _rules(CHILD_TRANSACTION_LIMIT, false, true),
-            _preflight(ROOT_PREFLIGHT_FLOOR, false)
-        );
-        vm.stopBroadcast();
-    }
-
-    function childSuccess(
-        uint256 childMandateId
-    ) external returns (bytes32 actionDigest) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _delegatedKey();
-        ActionTypes.ActionPlan memory plan = _delegatedPlan(
-            childMandateId,
-            SUCCESS_NONCE,
-            CHILD_SUCCESS_AMOUNT,
-            _ownerAddress()
-        );
-        bytes memory signature = _sign(plan, stack.evaluator, agentKey);
-
-        vm.startBroadcast(agentKey);
-        actionDigest = stack.executor.execute(stack.vault, plan, signature);
-        vm.stopBroadcast();
-    }
-
-    function childPreflightCalldata(
-        uint256 childMandateId
-    ) external returns (bytes memory callData) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _delegatedKey();
-        ActionTypes.ActionPlan memory plan = _delegatedPlan(
-            childMandateId,
-            CHILD_PREFLIGHT_NONCE,
-            CHILD_TRANSACTION_LIMIT,
-            _ownerAddress()
-        );
-        bytes memory signature = _sign(plan, stack.evaluator, agentKey);
-        callData = _callData(stack.vault, plan, signature);
-    }
-
-    function updateChildPreflight(
-        uint256 childMandateId,
-        bool escalateNativeBalance
-    ) external {
-        _updateMandate(
-            childMandateId,
-            _rules(CHILD_TRANSACTION_LIMIT, false, true),
-            _preflight(ROOT_PREFLIGHT_FLOOR, escalateNativeBalance)
-        );
-    }
-
-    function submitDelegatedEscalation(
-        uint256 childMandateId,
-        uint256 nonce,
-        uint256 amount
-    ) external returns (bytes32 actionDigest) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _delegatedKey();
-        (
-            ActionTypes.ActionPlan memory plan,
-            bytes memory signature
-        ) = _signedDelegatedPlan(
-                stack.evaluator,
-                childMandateId,
-                nonce,
-                amount
-            );
-
-        vm.startBroadcast(agentKey);
-        actionDigest = stack.manager.submit(plan, signature);
-        vm.stopBroadcast();
-    }
-
-    function approveDelegatedEscalation(
-        uint256 childMandateId,
-        uint256 nonce,
-        uint256 amount
-    ) external {
-        Stack memory stack = _stack();
-        uint256 ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        bytes32 actionDigest = _delegatedDigest(
-            stack.evaluator,
-            childMandateId,
-            nonce,
-            amount
-        );
-
-        vm.startBroadcast(ownerKey);
-        stack.manager.approve(actionDigest);
-        vm.stopBroadcast();
-    }
-
-    function executeDelegatedEscalated(
-        uint256 childMandateId,
-        uint256 nonce,
-        uint256 amount
-    ) external returns (bytes32 actionDigest) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _delegatedKey();
-        actionDigest = _delegatedDigest(
-            stack.evaluator,
-            childMandateId,
-            nonce,
-            amount
-        );
-
-        vm.startBroadcast(agentKey);
-        stack.executor.executeEscalated(actionDigest);
-        vm.stopBroadcast();
-    }
-
-    function createGrandchildMandate(
-        uint256 childMandateId
-    ) external returns (uint256 mandateId) {
-        Stack memory stack = _stack();
-        uint256 agentKey = _delegatedKey();
-
-        vm.startBroadcast(agentKey);
-        mandateId = stack.registry.createChildMandate(
-            childMandateId,
-            _agentAddress(),
-            _rules(GRANDCHILD_TRANSACTION_LIMIT, false, false),
-            _preflight(ROOT_PREFLIGHT_FLOOR, false)
-        );
-        vm.stopBroadcast();
-    }
-
-    function tightenRoot(uint256 rootMandateId) external {
-        _updateMandate(
-            rootMandateId,
-            _rules(ROOT_TIGHTENED_LIMIT, false, true),
-            _preflight(ROOT_PREFLIGHT_FLOOR, true)
-        );
-    }
-
-    function grandchildRevokeCalldata(
-        uint256 grandchildMandateId
-    ) external returns (bytes memory callData) {
-        _delegatedKey();
-        callData = abi.encodeWithSelector(
-            MandateRegistry.revokeMandate.selector,
-            grandchildMandateId
-        );
-    }
-
-    function revokeMandate(uint256 mandateId) external {
-        Stack memory stack = _stack();
-        uint256 ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-
-        vm.startBroadcast(ownerKey);
-        stack.registry.revokeMandate(mandateId);
-        vm.stopBroadcast();
-    }
-
-    function withdraw() external returns (uint256 amount) {
-        Stack memory stack = _stack();
-        uint256 ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        address payable recipient = payable(vm.addr(ownerKey));
-        amount = address(stack.vault).balance;
-
-        vm.startBroadcast(ownerKey);
-        stack.vault.withdrawNative(recipient, amount);
-        vm.stopBroadcast();
-    }
-
-    function _stack() private returns (Stack memory stack) {
+    function _loadState() private returns (State memory state) {
         string memory manifest = _manifest();
-        stack.vault = Vault(
-            payable(vm.parseJsonAddress(manifest, ".vault.address"))
-        );
-        stack.registry = MandateRegistry(
-            vm.parseJsonAddress(manifest, ".mandateRegistry.address")
-        );
-        stack.evaluator = MandateEvaluator(
-            vm.parseJsonAddress(manifest, ".mandateEvaluator.address")
-        );
-        stack.manager = EscalationManager(
-            vm.parseJsonAddress(manifest, ".escalationManager.address")
-        );
-        stack.executor = VaultExecutor(
-            vm.parseJsonAddress(manifest, ".vaultExecutor.address")
-        );
+        state.network = vm.parseJsonString(manifest, ".network");
+        state.expectedChainId = vm.parseJsonUint(manifest, ".chainId");
+        state.expectedProtocolAdmin = vm.parseJsonAddress(manifest, ".grantline.protocolAdmin");
+        state.hub = vm.parseJsonAddress(manifest, ".grantline.proxy");
+        state.hubImplementation = vm.parseJsonAddress(manifest, ".grantline.implementation");
+        state.registry = vm.parseJsonAddress(manifest, ".modules.registry.proxy");
+        state.registryImplementation = vm.parseJsonAddress(manifest, ".modules.registry.implementation");
+        state.evaluator = vm.parseJsonAddress(manifest, ".modules.evaluator.proxy");
+        state.evaluatorImplementation = vm.parseJsonAddress(manifest, ".modules.evaluator.implementation");
+        state.escalationManager = vm.parseJsonAddress(manifest, ".modules.escalationManager.proxy");
+        state.escalationManagerImplementation =
+            vm.parseJsonAddress(manifest, ".modules.escalationManager.implementation");
+        state.executor = vm.parseJsonAddress(manifest, ".modules.executor.proxy");
+        state.executorImplementation = vm.parseJsonAddress(manifest, ".modules.executor.implementation");
+        state.vaultFactory = vm.parseJsonAddress(manifest, ".modules.vaultFactory.proxy");
+        state.vaultFactoryImplementation = vm.parseJsonAddress(manifest, ".modules.vaultFactory.implementation");
+        state.initialVaultImplementation = vm.parseJsonAddress(manifest, ".vaultImplementation.address");
+
+        state.ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        state.agentKey = vm.envUint("AGENT_PRIVATE_KEY");
+        state.delegatedKey = vm.envUint("DELEGATED_AGENT_PRIVATE_KEY");
+        state.owner = vm.addr(state.ownerKey);
+        state.agent = vm.addr(state.agentKey);
+        state.delegatedAgent = vm.addr(state.delegatedKey);
+
+        _requireAgentAddress(state.agent, integrationVm.envAddress("AGENT_PUBLIC_KEY"));
+        _requireAgentAddress(state.delegatedAgent, integrationVm.envAddress("DELEGATED_AGENT_PUBLIC_KEY"));
     }
 
-    function _updateMandate(
-        uint256 mandateId,
-        MandateRegistry.MandateRules memory rules,
-        MandateRegistry.PreflightRules memory preflightRules
-    ) private {
-        Stack memory stack = _stack();
-        uint256 ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+    function _validateStack(State memory state) private view {
+        Grantline hub = Grantline(state.hub);
+        _require(block.chainid == state.expectedChainId, "manifest chain ID does not match RPC chain");
+        _require(hub.owner() == state.owner, "protocol admin does not match deployer");
+        _require(hub.owner() == state.expectedProtocolAdmin, "manifest protocol admin mismatch");
+        _require(hub.configured(), "Grantline is not configured");
+        _require(hub.registry() == state.registry, "registry proxy mismatch");
+        _require(hub.evaluator() == state.evaluator, "evaluator proxy mismatch");
+        _require(hub.escalationManager() == state.escalationManager, "escalation manager proxy mismatch");
+        _require(hub.executor() == state.executor, "executor proxy mismatch");
+        _require(hub.vaultFactory() == state.vaultFactory, "Vault factory proxy mismatch");
+        _require(hub.vaultCount() == 0, "integration requires a fresh Grantline deployment");
 
-        vm.startBroadcast(ownerKey);
-        stack.registry.updateMandate(mandateId, rules, preflightRules);
+        _require(MandateRegistry(state.registry).grantline() == state.hub, "registry Grantline mismatch");
+        _require(MandateEvaluator(state.evaluator).grantline() == state.hub, "evaluator Grantline mismatch");
+        _require(EscalationManager(state.escalationManager).grantline() == state.hub, "manager Grantline mismatch");
+        _require(VaultExecutor(state.executor).grantline() == state.hub, "executor Grantline mismatch");
+        _require(VaultFactory(state.vaultFactory).grantline() == state.hub, "factory Grantline mismatch");
+        _require(MandateEvaluator(state.evaluator).registry() == state.registry, "evaluator registry mismatch");
+        _require(
+            EscalationManager(state.escalationManager).evaluator() == state.evaluator, "manager evaluator mismatch"
+        );
+        _require(VaultExecutor(state.executor).evaluator() == state.evaluator, "executor evaluator mismatch");
+        _require(
+            VaultExecutor(state.executor).escalationManager() == state.escalationManager, "executor manager mismatch"
+        );
+        _require(VaultFactory(state.vaultFactory).executor() == state.executor, "factory executor mismatch");
+        _require(VaultFactory(state.vaultFactory).vaultCount() == 0, "factory is not fresh");
+    }
+
+    function _createVaults(State memory state) private returns (State memory) {
+        vm.startBroadcast(state.ownerKey);
+        state.vault = Grantline(state.hub).createVault();
         vm.stopBroadcast();
+
+        vm.startBroadcast(state.delegatedKey);
+        state.secondVault = Grantline(state.hub).createVault();
+        vm.stopBroadcast();
+
+        _require(Grantline(state.hub).controllerOf(state.vault) == state.owner, "first Vault controller mismatch");
+        _require(
+            Grantline(state.hub).controllerOf(state.secondVault) == state.delegatedAgent,
+            "second Vault controller mismatch"
+        );
+        _require(Vault(payable(state.vault)).owner() == state.hub, "first Vault owner bypass is possible");
+        _require(Vault(payable(state.secondVault)).owner() == state.hub, "second Vault owner mismatch");
+        _require(Vault(payable(state.vault)).authority() == state.executor, "first Vault authority mismatch");
+        _require(Vault(payable(state.secondVault)).authority() == state.executor, "second Vault authority mismatch");
+        return state;
     }
 
-    function _primaryKey() private returns (uint256 key) {
-        key = vm.envUint("AGENT_PRIVATE_KEY");
-        _requireAgentAddress(key, "AGENT_PUBLIC_KEY");
+    function _deployFixtures(State memory state) private returns (State memory) {
+        vm.startBroadcast(state.ownerKey);
+        state.token = address(new IntegrationToken());
+        IntegrationToken(state.token).mint(state.owner, TOKEN_DEPOSIT);
+        state.rejectingRecipient = address(new RejectingRecipient());
+        state.reentrantRecipient = address(new ReentrantRecipient());
+        state.vaultV2 = address(new VaultV2());
+        state.registryV2 = address(new MandateRegistryV2());
+        vm.stopBroadcast();
+        return state;
     }
 
-    function _delegatedKey() private returns (uint256 key) {
-        key = vm.envUint("DELEGATED_AGENT_PRIVATE_KEY");
-        _requireAgentAddress(key, "DELEGATED_AGENT_PUBLIC_KEY");
+    function _fundVaultsAndCreateRoot(State memory state) private returns (State memory) {
+        Grantline hub = Grantline(state.hub);
+        GrantlineTypes.MandateRules memory rootRules = _rules(ROOT_TRANSACTION_LIMIT, true, true, MIN_USD_AMOUNT);
+        GrantlineTypes.PreflightRules memory rootPreflight = _preflight(ROOT_PREFLIGHT_FLOOR, true);
+
+        vm.startBroadcast(state.delegatedKey);
+        hub.depositNative{value: SECOND_VAULT_DEPOSIT}(state.secondVault);
+        vm.stopBroadcast();
+
+        vm.startBroadcast(state.ownerKey);
+        hub.depositNative{value: DEPOSIT_AMOUNT}(state.vault);
+        state.rootMandate = hub.createMandate(state.vault, state.agent, rootRules, rootPreflight);
+        IntegrationToken(state.token).approve(state.vault, TOKEN_DEPOSIT);
+        hub.depositToken(state.vault, state.token, TOKEN_DEPOSIT);
+        vm.stopBroadcast();
+
+        _require(address(state.vault).balance == DEPOSIT_AMOUNT, "first Vault native deposit mismatch");
+        _require(address(state.secondVault).balance == SECOND_VAULT_DEPOSIT, "second Vault native deposit mismatch");
+        _require(IntegrationToken(state.token).balanceOf(state.vault) == TOKEN_DEPOSIT, "token deposit mismatch");
+        _require(hub.getMandate(state.rootMandate).agent == state.agent, "root agent mismatch");
+        return state;
     }
 
-    function _requireAgentAddress(
-        uint256 agentKey,
-        string memory publicKeyName
-    ) private {
-        address actualAgent = vm.addr(agentKey);
-        address expectedAgent = integrationVm.envAddress(publicKeyName);
+    function _assertControllerIsolationAndBypasses(State memory state) private {
+        Grantline hub = Grantline(state.hub);
+        GrantlineTypes.MandateRules memory rules = _rules(ROOT_TRANSACTION_LIMIT, false, false, MIN_USD_AMOUNT);
+        GrantlineTypes.PreflightRules memory preflight = _preflight(0, false);
+
+        integrationVm.prank(state.owner);
+        integrationVm.expectRevert();
+        hub.withdrawNative(state.secondVault, payable(state.owner), 1);
+
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        hub.createMandate(state.secondVault, state.agent, rules, preflight);
+
+        ActionTypes.ActionPlan memory probe = _nativePlan(state.rootMandate, state.agent, 70, 1, SUCCESS_RECIPIENT, 0);
+        bytes32 digest = hub.actionDigest(probe);
+
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        hub.setVaultController(state.secondVault, state.agent);
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        MandateEvaluator(state.evaluator).evaluate(probe, bytes(""), digest);
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        EscalationManager(state.escalationManager).submit(probe, bytes(""), digest, state.agent);
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        VaultExecutor(state.executor).execute(probe, bytes(""), digest);
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        MandateRegistry(state.registry).revokeMandate(state.rootMandate, state.agent);
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        VaultFactory(state.vaultFactory).createVault(state.agent);
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        Vault(payable(state.vault)).withdrawNative(payable(state.agent), 1);
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        Vault(payable(state.vault)).execute(SUCCESS_RECIPIENT, 0, bytes(""));
+    }
+
+    function _runNativeExecutionAndEscalation(State memory state) private returns (State memory) {
+        Grantline hub = Grantline(state.hub);
+
+        ActionTypes.ActionPlan memory allowPlan =
+            _nativePlan(state.rootMandate, state.agent, ROOT_ALLOW_NONCE, 0.001 ether, SUCCESS_RECIPIENT, 0);
+        bytes memory allowSignature = _sign(state, allowPlan, state.agentKey);
+        GrantlineTypes.EvaluationResult memory evaluation = hub.evaluate(allowPlan, allowSignature);
+        _require(evaluation.decision == 0, "normal plan was not ALLOW");
+        uint256 recipientBalance = SUCCESS_RECIPIENT.balance;
+        vm.startBroadcast(state.delegatedKey);
+        hub.execute(allowPlan, allowSignature);
+        vm.stopBroadcast();
+        _require(SUCCESS_RECIPIENT.balance == recipientBalance + 0.001 ether, "normal transfer mismatch");
+        _require(
+            MandateRegistry(state.registry).nonceUsed(state.rootMandate, state.agent, ROOT_ALLOW_NONCE),
+            "normal nonce not consumed"
+        );
+
+        ActionTypes.ActionPlan memory deniedPlan =
+            _nativePlan(state.rootMandate, state.agent, ROOT_DENY_NONCE, 1, SUCCESS_RECIPIENT, 0);
+        evaluation = hub.evaluate(deniedPlan, bytes(""));
+        _require(evaluation.decision == 2, "invalid signature was not DENY");
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        hub.execute(deniedPlan, bytes(""));
+        _require(
+            !MandateRegistry(state.registry).nonceUsed(state.rootMandate, state.agent, ROOT_DENY_NONCE),
+            "denied nonce was consumed"
+        );
+
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        hub.execute(allowPlan, allowSignature);
+
+        ActionTypes.ActionPlan memory atomicPlan = _twoActionNativePlan(
+            state.rootMandate,
+            state.agent,
+            ROOT_ATOMIC_NONCE,
+            ATOMIC_RECIPIENT,
+            0.0001 ether,
+            state.rejectingRecipient,
+            1
+        );
+        bytes memory atomicSignature = _sign(state, atomicPlan, state.agentKey);
+        evaluation = hub.evaluate(atomicPlan, atomicSignature);
+        _require(evaluation.decision == 0, "atomic plan was not ALLOW");
+        uint256 atomicBalance = ATOMIC_RECIPIENT.balance;
+        uint256 vaultBalance = address(state.vault).balance;
+        integrationVm.prank(state.delegatedAgent);
+        integrationVm.expectRevert();
+        hub.execute(atomicPlan, atomicSignature);
+        _require(ATOMIC_RECIPIENT.balance == atomicBalance, "failed atomic plan moved the first action");
+        _require(address(state.vault).balance == vaultBalance, "failed atomic plan changed Vault balance");
+        _require(
+            !MandateRegistry(state.registry).nonceUsed(state.rootMandate, state.agent, ROOT_ATOMIC_NONCE),
+            "failed atomic plan consumed nonce"
+        );
+
+        ActionTypes.ActionPlan memory reentryPlan =
+            _nativePlan(state.rootMandate, state.agent, REENTRY_NONCE, 1, SUCCESS_RECIPIENT, 0);
+        bytes memory reentrySignature = _sign(state, reentryPlan, state.agentKey);
+        bytes memory reentryCall = abi.encodeCall(Grantline.execute, (reentryPlan, reentrySignature));
+        vm.startBroadcast(state.ownerKey);
+        ReentrantRecipient(payable(state.reentrantRecipient)).configure(state.hub, reentryCall);
+        vm.stopBroadcast();
+
+        ActionTypes.ActionPlan memory reentrantPlan = _nativePlan(
+            state.rootMandate, state.agent, ROOT_REENTRANCY_NONCE, 0.0001 ether, state.reentrantRecipient, 0
+        );
+        bytes memory reentrantSignature = _sign(state, reentrantPlan, state.agentKey);
+        vm.startBroadcast(state.delegatedKey);
+        hub.execute(reentrantPlan, reentrantSignature);
+        vm.stopBroadcast();
+        _require(
+            ReentrantRecipient(payable(state.reentrantRecipient)).attempted(), "reentrant recipient was not called"
+        );
+        _require(
+            !ReentrantRecipient(payable(state.reentrantRecipient)).callSucceeded(),
+            "nested Grantline execution succeeded"
+        );
+        _require(
+            !MandateRegistry(state.registry).nonceUsed(state.rootMandate, state.agent, REENTRY_NONCE),
+            "nested execution consumed a nonce"
+        );
+
+        ActionTypes.ActionPlan memory escalationPlan = _nativePlan(
+            state.rootMandate, state.agent, ROOT_ESCALATION_NONCE, ESCALATED_AMOUNT, ESCALATION_RECIPIENT, 0
+        );
+        bytes memory escalationSignature = _sign(state, escalationPlan, state.agentKey);
+        evaluation = hub.evaluate(escalationPlan, escalationSignature);
+        _require(evaluation.decision == 1, "over-limit plan was not ESCALATE");
+        vm.startBroadcast(state.agentKey);
+        state.rootEscalation = hub.submitEscalation(escalationPlan, escalationSignature);
+        vm.stopBroadcast();
+        _require(hub.escalationStatus(state.rootEscalation) == 1, "escalation was not pending");
+        _require(hub.getEscalation(state.rootEscalation).submittedBy == state.agent, "escalation submitter mismatch");
+
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        hub.execute(escalationPlan, escalationSignature);
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        hub.submitEscalation(escalationPlan, escalationSignature);
+
+        ActionTypes.ActionPlan memory conflictingPlan =
+            _nativePlan(state.rootMandate, state.agent, ROOT_ESCALATION_NONCE, 0.0021 ether, ESCALATION_RECIPIENT, 0);
+        bytes memory conflictingSignature = _sign(state, conflictingPlan, state.agentKey);
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        hub.submitEscalation(conflictingPlan, conflictingSignature);
+
+        vm.startBroadcast(state.ownerKey);
+        hub.approveEscalation(state.rootEscalation);
+        vm.stopBroadcast();
+        _require(hub.escalationStatus(state.rootEscalation) == 2, "escalation was not approved");
+        uint256 escalationBalance = ESCALATION_RECIPIENT.balance;
+        vm.startBroadcast(state.delegatedKey);
+        hub.executeEscalated(state.rootEscalation);
+        vm.stopBroadcast();
+        _require(ESCALATION_RECIPIENT.balance == escalationBalance + ESCALATED_AMOUNT, "escalated transfer mismatch");
+        _require(hub.escalationStatus(state.rootEscalation) == 4, "escalation was not executed");
+        _require(
+            MandateRegistry(state.registry).nonceUsed(state.rootMandate, state.agent, ROOT_ESCALATION_NONCE),
+            "escalated nonce not consumed"
+        );
+        return state;
+    }
+
+    function _runTokenExecution(State memory state) private returns (State memory) {
+        Grantline hub = Grantline(state.hub);
+        ActionTypes.ActionPlan memory tokenPlan = _assetPlan(
+            state.rootMandate, state.agent, ROOT_TOKEN_NONCE, TOKEN_TRANSFER, state.token, TOKEN_RECIPIENT, 0
+        );
+        bytes memory tokenSignature = _sign(state, tokenPlan, state.agentKey);
+        GrantlineTypes.EvaluationResult memory evaluation = hub.evaluate(tokenPlan, tokenSignature);
+        _require(evaluation.decision == 0, "token plan was not ALLOW");
+        _require(evaluation.nativeAmount == 0, "token plan reported native value");
+        _require(evaluation.usdLimitSkipped, "unavailable USD valuation was not marked");
+        vm.startBroadcast(state.agentKey);
+        hub.execute(tokenPlan, tokenSignature);
+        vm.stopBroadcast();
+        _require(IntegrationToken(state.token).balanceOf(TOKEN_RECIPIENT) == TOKEN_TRANSFER, "token transfer mismatch");
+        _require(
+            IntegrationToken(state.token).balanceOf(state.vault) == TOKEN_DEPOSIT - TOKEN_TRANSFER,
+            "Vault token balance mismatch"
+        );
+        return state;
+    }
+
+    function _runDelegationAndPreflight(State memory state) private returns (State memory) {
+        Grantline hub = Grantline(state.hub);
+        GrantlineTypes.MandateRules memory childRules = _rules(CHILD_TRANSACTION_LIMIT, true, true, MIN_USD_AMOUNT);
+        GrantlineTypes.PreflightRules memory childPreflight = _preflight(ROOT_PREFLIGHT_FLOOR, true);
+
+        vm.startBroadcast(state.agentKey);
+        state.childMandate = hub.createChildMandate(state.rootMandate, state.delegatedAgent, childRules, childPreflight);
+        vm.stopBroadcast();
+
+        vm.startBroadcast(state.agentKey);
+        hub.updateMandate(state.childMandate, childRules, childPreflight);
+        vm.stopBroadcast();
+
+        ActionTypes.ActionPlan memory childPlan = _nativePlan(
+            state.childMandate, state.delegatedAgent, CHILD_ALLOW_NONCE, CHILD_TRANSACTION_LIMIT, CHILD_RECIPIENT, 0
+        );
+        bytes memory childSignature = _sign(state, childPlan, state.delegatedKey);
+        GrantlineTypes.EvaluationResult memory evaluation = hub.evaluate(childPlan, childSignature);
+        _require(evaluation.decision == 0, "child plan was not ALLOW");
+        uint256 childBalance = CHILD_RECIPIENT.balance;
+        vm.startBroadcast(state.delegatedKey);
+        hub.execute(childPlan, childSignature);
+        vm.stopBroadcast();
+        _require(CHILD_RECIPIENT.balance == childBalance + CHILD_TRANSACTION_LIMIT, "child transfer mismatch");
+
+        GrantlineTypes.MandateRules memory grandchildRules =
+            _rules(GRANDCHILD_TRANSACTION_LIMIT, false, false, MIN_USD_AMOUNT);
+        vm.startBroadcast(state.delegatedKey);
+        state.grandchildMandate =
+            hub.createChildMandate(state.childMandate, state.agent, grandchildRules, childPreflight);
+        vm.stopBroadcast();
+
+        ActionTypes.ActionPlan memory grandchildPlan = _nativePlan(
+            state.grandchildMandate,
+            state.agent,
+            GRANDCHILD_ALLOW_NONCE,
+            GRANDCHILD_TRANSACTION_LIMIT,
+            GRANDCHILD_RECIPIENT,
+            0
+        );
+        bytes memory grandchildSignature = _sign(state, grandchildPlan, state.agentKey);
+        evaluation = hub.evaluate(grandchildPlan, grandchildSignature);
+        _require(evaluation.decision == 0, "grandchild plan was not ALLOW");
+        vm.startBroadcast(state.agentKey);
+        hub.execute(grandchildPlan, grandchildSignature);
+        vm.stopBroadcast();
+        _require(GRANDCHILD_RECIPIENT.balance == GRANDCHILD_TRANSACTION_LIMIT, "grandchild transfer mismatch");
+
+        integrationVm.prank(state.agent);
+        integrationVm.expectRevert();
+        hub.createChildMandate(
+            state.grandchildMandate, state.delegatedAgent, _rules(1, false, false, MIN_USD_AMOUNT), childPreflight
+        );
+
+        vm.startBroadcast(state.ownerKey);
+        hub.updateMandate(
+            state.rootMandate,
+            _rules(ROOT_TIGHTENED_LIMIT, true, true, MIN_USD_AMOUNT),
+            _preflight(TIGHTENED_PREFLIGHT_FLOOR, true)
+        );
+        vm.stopBroadcast();
+
+        GrantlineTypes.MandateRules memory effectiveChildRules = hub.getEffectiveRules(state.childMandate);
+        GrantlineTypes.MandateRules memory effectiveGrandchildRules = hub.getEffectiveRules(state.grandchildMandate);
+        GrantlineTypes.PreflightRules memory effectiveChildPreflight =
+            hub.getEffectivePreflightRules(state.childMandate);
+        _require(effectiveChildRules.maxNativeAmount == ROOT_TIGHTENED_LIMIT, "root tightening did not reach child");
+        _require(
+            effectiveGrandchildRules.maxNativeAmount == GRANDCHILD_TRANSACTION_LIMIT,
+            "grandchild effective limit widened"
+        );
+        _require(
+            effectiveChildPreflight.minNativeBalance == TIGHTENED_PREFLIGHT_FLOOR,
+            "root Preflight tightening did not reach child"
+        );
+
+        ActionTypes.ActionPlan memory tokenOnlyPlan = _assetPlan(
+            state.childMandate, state.delegatedAgent, CHILD_TOKEN_EVALUATION_NONCE, 1, state.token, TOKEN_RECIPIENT, 0
+        );
+        bytes memory tokenOnlySignature = _sign(state, tokenOnlyPlan, state.delegatedKey);
+        evaluation = hub.evaluate(tokenOnlyPlan, tokenOnlySignature);
+        _require(evaluation.decision == 1, "token-only Preflight breach was not ESCALATE");
+        _require(evaluation.nativeAmount == 0, "token-only plan has native amount");
+
+        ActionTypes.ActionPlan memory childEscalationPlan = _nativePlan(
+            state.childMandate, state.delegatedAgent, CHILD_ESCALATION_NONCE, 0.0001 ether, CHILD_RECIPIENT, 0
+        );
+        bytes memory childEscalationSignature = _sign(state, childEscalationPlan, state.delegatedKey);
+        evaluation = hub.evaluate(childEscalationPlan, childEscalationSignature);
+        _require(evaluation.decision == 1, "child Preflight breach was not ESCALATE");
+        vm.startBroadcast(state.delegatedKey);
+        state.childEscalation = hub.submitEscalation(childEscalationPlan, childEscalationSignature);
+        vm.stopBroadcast();
+        vm.startBroadcast(state.ownerKey);
+        hub.approveEscalation(state.childEscalation);
+        hub.executeEscalated(state.childEscalation);
+        vm.stopBroadcast();
+        _require(hub.escalationStatus(state.childEscalation) == 4, "child escalation was not executed");
+
+        ActionTypes.ActionPlan memory pendingPlan = _nativePlan(
+            state.rootMandate, state.agent, ROOT_REVOKED_ESCALATION_NONCE, 0.0005 ether, PENDING_RECIPIENT, 0
+        );
+        bytes memory pendingSignature = _sign(state, pendingPlan, state.agentKey);
+        evaluation = hub.evaluate(pendingPlan, pendingSignature);
+        _require(evaluation.decision == 1, "pending revoked plan was not ESCALATE");
+        vm.startBroadcast(state.agentKey);
+        state.deniedEscalation = hub.submitEscalation(pendingPlan, pendingSignature);
+        vm.stopBroadcast();
+        _require(hub.escalationStatus(state.deniedEscalation) == 1, "revocation fixture was not pending");
+        return state;
+    }
+
+    function _runUpgrades(State memory state) private returns (State memory) {
+        Grantline hub = Grantline(state.hub);
+        Grantline.VaultView memory firstBefore = hub.getVault(state.vault);
+        Grantline.VaultView memory secondBefore = hub.getVault(state.secondVault);
+
+        vm.startBroadcast(state.ownerKey);
+        hub.setVaultImplementation(state.vaultV2, 1);
+        state.thirdVault = hub.createVault();
+        hub.setVaultController(state.thirdVault, state.agent);
+        vm.stopBroadcast();
+
+        Grantline.VaultView memory thirdView = hub.getVault(state.thirdVault);
+        _require(firstBefore.implementation == state.initialVaultImplementation, "first Vault changed with template");
+        _require(secondBefore.implementation == state.initialVaultImplementation, "second Vault changed with template");
+        _require(thirdView.implementation == state.vaultV2, "new Vault did not use new template");
+        _require(thirdView.controller == state.agent, "Vault controller assignment failed");
+        _require(VaultV2(payable(state.thirdVault)).marker() == 2, "new Vault implementation marker missing");
+
+        uint256 nativeBalanceBefore = address(state.vault).balance;
+        uint256 tokenBalanceBefore = IntegrationToken(state.token).balanceOf(state.vault);
+        vm.startBroadcast(state.ownerKey);
+        hub.upgradeVault(state.vault, state.vaultV2, 1, bytes(""));
+        vm.stopBroadcast();
+        _require(VaultV2(payable(state.vault)).marker() == 2, "existing Vault upgrade did not apply");
+        _require(address(state.vault).balance == nativeBalanceBefore, "Vault upgrade changed native balance");
+        _require(
+            IntegrationToken(state.token).balanceOf(state.vault) == tokenBalanceBefore,
+            "Vault upgrade changed token balance"
+        );
+        _require(hub.getVault(state.vault).implementation == state.vaultV2, "Vault implementation metadata not updated");
+        _require(
+            hub.getVault(state.secondVault).implementation == state.initialVaultImplementation,
+            "other Vault upgraded unexpectedly"
+        );
+
+        address secondImplementation = hub.getVault(state.secondVault).implementation;
+        integrationVm.prank(state.owner);
+        integrationVm.expectRevert();
+        hub.upgradeVault(state.secondVault, state.vaultV2, 2, bytes(""));
+        _require(
+            hub.getVault(state.secondVault).implementation == secondImplementation,
+            "failed Vault upgrade changed metadata"
+        );
+
+        Grantline.ModuleUpgrade[] memory upgrades = new Grantline.ModuleUpgrade[](1);
+        upgrades[0] = Grantline.ModuleUpgrade({
+            key: hub.REGISTRY_MODULE(), implementation: state.registryV2, version: 1, data: bytes("")
+        });
+        uint256 mandateCountBefore = MandateRegistry(state.registry).mandateCount();
+        vm.startBroadcast(state.ownerKey);
+        hub.upgradeModules(upgrades);
+        vm.stopBroadcast();
+        state.registryImplementation = state.registryV2;
+        _require(MandateRegistryV2(state.registry).marker() == 2, "registry module upgrade did not apply");
+        _require(
+            MandateRegistry(state.registry).mandateCount() == mandateCountBefore, "registry state was lost on upgrade"
+        );
+        _require(
+            MandateRegistry(state.registry).isRegisteredVault(state.vault), "registry Vault state was lost on upgrade"
+        );
+        return state;
+    }
+
+    function _runRevocationAndReservationChecks(State memory state) private {
+        Grantline hub = Grantline(state.hub);
+        ActionTypes.ActionPlan memory pendingPlan = _nativePlan(
+            state.rootMandate, state.agent, ROOT_REVOKED_ESCALATION_NONCE, 0.0005 ether, PENDING_RECIPIENT, 0
+        );
+        bytes memory pendingSignature = _sign(state, pendingPlan, state.agentKey);
+
+        vm.startBroadcast(state.ownerKey);
+        hub.revokeMandate(state.rootMandate);
+        vm.stopBroadcast();
+        integrationVm.prank(state.owner);
+        integrationVm.expectRevert();
+        hub.approveEscalation(state.deniedEscalation);
+        vm.startBroadcast(state.ownerKey);
+        hub.denyEscalation(state.deniedEscalation);
+        vm.stopBroadcast();
+
+        _require(hub.escalationStatus(state.deniedEscalation) == 3, "revoked escalation was not denied");
+        _require(
+            MandateRegistry(state.registry)
+                    .reservedDigest(state.rootMandate, state.agent, ROOT_REVOKED_ESCALATION_NONCE)
+                == state.deniedEscalation,
+            "denied escalation reservation was released"
+        );
+
+        GrantlineTypes.EvaluationResult memory evaluation = hub.evaluate(pendingPlan, pendingSignature);
+        _require(evaluation.decision == 2, "revoked root plan was not DENY");
+        integrationVm.prank(state.delegatedAgent);
+        integrationVm.expectRevert();
+        hub.execute(pendingPlan, pendingSignature);
+
+        ActionTypes.ActionPlan memory childPlan = _nativePlan(
+            state.childMandate, state.delegatedAgent, CHILD_ALLOW_NONCE, CHILD_TRANSACTION_LIMIT, CHILD_RECIPIENT, 0
+        );
+        bytes memory childSignature = _sign(state, childPlan, state.delegatedKey);
+        evaluation = hub.evaluate(childPlan, childSignature);
+        _require(evaluation.decision == 2, "revoked ancestor did not DENY child plan");
+        _require(
+            !MandateRegistry(state.registry).isLineageActive(state.childMandate), "revoked child lineage remains active"
+        );
+        _require(
+            !MandateRegistry(state.registry).isLineageActive(state.grandchildMandate),
+            "revoked grandchild lineage remains active"
+        );
+
+        integrationVm.prank(state.delegatedAgent);
+        integrationVm.expectRevert();
+        hub.revokeMandate(state.grandchildMandate);
+    }
+
+    function _cleanupVaults(State memory state) private {
+        Grantline hub = Grantline(state.hub);
+        uint256 nativeBalance = address(state.vault).balance;
+        uint256 tokenBalance = IntegrationToken(state.token).balanceOf(state.vault);
+        vm.startBroadcast(state.ownerKey);
+        hub.withdrawNative(state.vault, payable(state.owner), nativeBalance);
+        hub.withdrawToken(state.vault, state.token, state.owner, tokenBalance);
+        vm.stopBroadcast();
+
+        uint256 secondBalance = address(state.secondVault).balance;
+        vm.startBroadcast(state.delegatedKey);
+        hub.withdrawNative(state.secondVault, payable(state.delegatedAgent), secondBalance);
+        vm.stopBroadcast();
+
+        _require(address(state.vault).balance == 0, "first Vault cleanup failed");
+        _require(address(state.secondVault).balance == 0, "second Vault cleanup failed");
+        _require(IntegrationToken(state.token).balanceOf(state.vault) == 0, "token cleanup failed");
+    }
+
+    function _verifyFinalDeployment(State memory state) private {
+        string memory manifest = _verificationManifest(state);
+        vm.writeJson(manifest, _manifestPath());
+        VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
+        verifier.runWithManifest(manifest);
+    }
+
+    function _verificationManifest(State memory state) private view returns (string memory) {
+        DeploymentManifest.Snapshot memory snapshot;
+        snapshot.network = state.network;
+        snapshot.chainId = block.chainid;
+        snapshot.grantline = state.hub;
+        snapshot.grantlineImplementation = state.hubImplementation;
+        snapshot.grantlineProxyCodeHash = state.hub.codehash;
+        snapshot.protocolAdmin = state.owner;
+        snapshot.modules[0] = DeploymentManifest.ModuleSnapshot(state.registry, state.registryImplementation);
+        snapshot.modules[1] = DeploymentManifest.ModuleSnapshot(state.evaluator, state.evaluatorImplementation);
+        snapshot.modules[2] =
+            DeploymentManifest.ModuleSnapshot(state.escalationManager, state.escalationManagerImplementation);
+        snapshot.modules[3] = DeploymentManifest.ModuleSnapshot(state.executor, state.executorImplementation);
+        snapshot.modules[4] = DeploymentManifest.ModuleSnapshot(state.vaultFactory, state.vaultFactoryImplementation);
+        snapshot.vaults = new address[](3);
+        snapshot.vaults[0] = state.vault;
+        snapshot.vaults[1] = state.secondVault;
+        snapshot.vaults[2] = state.thirdVault;
+        return DeploymentManifest.build(snapshot);
+    }
+
+    function _nativePlan(
+        uint256 mandateId,
+        address agent,
+        uint256 nonce,
+        uint256 amount,
+        address recipient,
+        uint256 deadline
+    ) private pure returns (ActionTypes.ActionPlan memory) {
+        return _assetPlan(mandateId, agent, nonce, amount, address(0), recipient, deadline);
+    }
+
+    function _assetPlan(
+        uint256 mandateId,
+        address agent,
+        uint256 nonce,
+        uint256 amount,
+        address asset,
+        address recipient,
+        uint256 deadline
+    ) private pure returns (ActionTypes.ActionPlan memory plan) {
+        ActionTypes.Action[] memory actions = new ActionTypes.Action[](1);
+        actions[0] = _action(asset, recipient, amount);
+        plan = ActionTypes.ActionPlan({
+            mandateId: mandateId, agent: agent, nonce: nonce, deadline: deadline, actions: actions
+        });
+    }
+
+    function _twoActionNativePlan(
+        uint256 mandateId,
+        address agent,
+        uint256 nonce,
+        address firstRecipient,
+        uint256 firstAmount,
+        address secondRecipient,
+        uint256 secondAmount
+    ) private pure returns (ActionTypes.ActionPlan memory plan) {
+        ActionTypes.Action[] memory actions = new ActionTypes.Action[](2);
+        actions[0] = _action(address(0), firstRecipient, firstAmount);
+        actions[1] = _action(address(0), secondRecipient, secondAmount);
+        plan = ActionTypes.ActionPlan({mandateId: mandateId, agent: agent, nonce: nonce, deadline: 0, actions: actions});
+    }
+
+    function _action(address asset, address recipient, uint256 amount)
+        private
+        pure
+        returns (ActionTypes.Action memory action)
+    {
+        action = ActionTypes.Action({
+            actionType: ActionTypes.ActionType.TRANSFER,
+            version: ActionTypes.TRANSFER_VERSION,
+            parameters: abi.encode(ActionTypes.TransferParameters({asset: asset, recipient: recipient, amount: amount}))
+        });
+    }
+
+    function _sign(State memory state, ActionTypes.ActionPlan memory plan, uint256 key)
+        private
+        returns (bytes memory signature)
+    {
+        (uint8 v, bytes32 r, bytes32 s) = integrationVm.sign(key, Grantline(state.hub).actionDigest(plan));
+        signature = abi.encodePacked(r, s, v);
+    }
+
+    function _rules(uint256 maxNativeAmount, bool escalateNativeAmount, bool canDelegate, uint256 minUsdAmount)
+        private
+        pure
+        returns (GrantlineTypes.MandateRules memory)
+    {
+        return GrantlineTypes.MandateRules({
+            canDelegate: canDelegate,
+            minNativeAmount: 0,
+            maxNativeAmount: maxNativeAmount,
+            escalateNativeAmount: escalateNativeAmount,
+            minUsdAmount: minUsdAmount,
+            maxUsdAmount: 0,
+            escalateUsdAmount: false
+        });
+    }
+
+    function _preflight(uint256 minNativeBalance, bool escalateNativeBalance)
+        private
+        pure
+        returns (GrantlineTypes.PreflightRules memory)
+    {
+        return GrantlineTypes.PreflightRules({
+            minNativeBalance: minNativeBalance, escalateNativeBalance: escalateNativeBalance
+        });
+    }
+
+    function _requireAgentAddress(address actualAgent, address expectedAgent) private pure {
         if (actualAgent != expectedAgent) {
             revert AgentKeyMismatch(expectedAgent, actualAgent);
         }
     }
 
-    function _ownerAddress() private returns (address) {
-        return vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
-    }
-
-    function _agentAddress() private returns (address agent) {
-        uint256 agentKey = _primaryKey();
-        agent = vm.addr(agentKey);
-    }
-
-    function _delegatedAgentAddress() private returns (address agent) {
-        uint256 agentKey = _delegatedKey();
-        agent = vm.addr(agentKey);
-    }
-
-    function _plan(
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount,
-        address recipient
-    ) private returns (ActionTypes.ActionPlan memory plan) {
-        plan = _planForAgent(
-            mandateId,
-            nonce,
-            amount,
-            recipient,
-            _agentAddress()
-        );
-    }
-
-    function _delegatedPlan(
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount,
-        address recipient
-    ) private returns (ActionTypes.ActionPlan memory plan) {
-        plan = _planForAgent(
-            mandateId,
-            nonce,
-            amount,
-            recipient,
-            _delegatedAgentAddress()
-        );
-    }
-
-    function _planForAgent(
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount,
-        address recipient,
-        address agent
-    ) private pure returns (ActionTypes.ActionPlan memory plan) {
-        ActionTypes.TransferParameters memory transfer = ActionTypes
-            .TransferParameters({
-                asset: address(0),
-                recipient: recipient,
-                amount: amount
-            });
-        ActionTypes.Action[] memory actions = new ActionTypes.Action[](1);
-        actions[0] = ActionTypes.Action({
-            actionType: ActionTypes.ActionType.TRANSFER,
-            version: ActionTypes.TRANSFER_VERSION,
-            parameters: abi.encode(transfer)
-        });
-        plan = ActionTypes.ActionPlan({
-            mandateId: mandateId,
-            agent: agent,
-            nonce: nonce,
-            deadline: 0,
-            actions: actions
-        });
-    }
-
-    function _sign(
-        ActionTypes.ActionPlan memory plan,
-        MandateEvaluator evaluator,
-        uint256 agentKey
-    ) private returns (bytes memory signature) {
-        bytes32 digest = ActionSignature.digest(
-            plan,
-            address(evaluator),
-            block.chainid
-        );
-        (uint8 v, bytes32 r, bytes32 s) = integrationVm.sign(agentKey, digest);
-        signature = abi.encodePacked(r, s, v);
-    }
-
-    function _callData(
-        Vault vault,
-        ActionTypes.ActionPlan memory plan,
-        bytes memory signature
-    ) private pure returns (bytes memory callData) {
-        callData = abi.encodeWithSelector(
-            VaultExecutor.execute.selector,
-            vault,
-            plan,
-            signature
-        );
-    }
-
-    function _signedPlan(
-        MandateEvaluator evaluator,
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount
-    )
-        private
-        returns (ActionTypes.ActionPlan memory plan, bytes memory signature)
-    {
-        uint256 agentKey = _primaryKey();
-        plan = _plan(mandateId, nonce, amount, _ownerAddress());
-        signature = _sign(plan, evaluator, agentKey);
-    }
-
-    function _signedDelegatedPlan(
-        MandateEvaluator evaluator,
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount
-    )
-        private
-        returns (ActionTypes.ActionPlan memory plan, bytes memory signature)
-    {
-        uint256 agentKey = _delegatedKey();
-        plan = _delegatedPlan(mandateId, nonce, amount, _ownerAddress());
-        signature = _sign(plan, evaluator, agentKey);
-    }
-
-    function _digest(
-        MandateEvaluator evaluator,
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount
-    ) private returns (bytes32 actionDigest) {
-        actionDigest = _digestForAgent(
-            evaluator,
-            mandateId,
-            nonce,
-            amount,
-            _agentAddress()
-        );
-    }
-
-    function _delegatedDigest(
-        MandateEvaluator evaluator,
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount
-    ) private returns (bytes32 actionDigest) {
-        actionDigest = _digestForAgent(
-            evaluator,
-            mandateId,
-            nonce,
-            amount,
-            _delegatedAgentAddress()
-        );
-    }
-
-    function _digestForAgent(
-        MandateEvaluator evaluator,
-        uint256 mandateId,
-        uint256 nonce,
-        uint256 amount,
-        address agent
-    ) private returns (bytes32 actionDigest) {
-        ActionTypes.ActionPlan memory plan = _planForAgent(
-            mandateId,
-            nonce,
-            amount,
-            _ownerAddress(),
-            agent
-        );
-        actionDigest = ActionSignature.digest(
-            plan,
-            address(evaluator),
-            block.chainid
-        );
-    }
-
-    function _rules(
-        uint256 maxNativeAmount,
-        bool escalateNativeAmount,
-        bool canDelegate
-    ) private pure returns (MandateRegistry.MandateRules memory) {
-        return
-            MandateRegistry.MandateRules({
-                canDelegate: canDelegate,
-                minNativeAmount: 0,
-                maxNativeAmount: maxNativeAmount,
-                escalateNativeAmount: escalateNativeAmount,
-                minUsdAmount: 0,
-                maxUsdAmount: 0,
-                escalateUsdAmount: false
-            });
-    }
-
-    function _preflight(
-        uint256 minNativeBalance,
-        bool escalateNativeBalance
-    ) private pure returns (MandateRegistry.PreflightRules memory) {
-        return
-            MandateRegistry.PreflightRules({
-                minNativeBalance: minNativeBalance,
-                escalateNativeBalance: escalateNativeBalance
-            });
+    function _require(bool condition, string memory check) private pure {
+        if (!condition) revert IntegrationInvariant(check);
     }
 }
