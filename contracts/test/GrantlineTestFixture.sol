@@ -5,6 +5,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {ActionTypes} from "../src/ActionTypes.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
 import {Grantline} from "../src/Grantline.sol";
+import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
@@ -36,6 +37,7 @@ abstract contract GrantlineTestFixture {
 
     struct Fixture {
         Grantline hub;
+        GrantlineAdmin admin;
         address vault;
         uint256 mandateId;
         address controller;
@@ -54,7 +56,7 @@ abstract contract GrantlineTestFixture {
     ) internal returns (Fixture memory fixture) {
         fixture.controller = address(this);
         fixture.agent = fixtureVm.addr(FIXTURE_AGENT_KEY);
-        fixture.hub = _deployHub(usdProvider, skipUnavailableUsdValuation);
+        (fixture.hub, fixture.admin) = _deployHub(usdProvider, skipUnavailableUsdValuation);
 
         fixtureVm.deal(fixture.controller, 20 ether);
         fixture.vault = fixture.hub.createVault();
@@ -62,7 +64,10 @@ abstract contract GrantlineTestFixture {
         fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, preflightRules);
     }
 
-    function _deployHub(address usdProvider, bool skipUnavailableUsdValuation) internal returns (Grantline hub) {
+    function _deployHub(address usdProvider, bool skipUnavailableUsdValuation)
+        internal
+        returns (Grantline hub, GrantlineAdmin admin)
+    {
         Grantline grantlineImplementation = new Grantline();
         MandateRegistry registryImplementation = new MandateRegistry();
         MandateEvaluator evaluatorImplementation = new MandateEvaluator();
@@ -78,39 +83,46 @@ abstract contract GrantlineTestFixture {
                 )
             )
         );
+        admin = new GrantlineAdmin(address(hub));
+        hub.setAdminController(address(admin));
         address registry = address(
             new ERC1967Proxy(
-                address(registryImplementation), abi.encodeCall(MandateRegistry.initialize, (address(hub)))
+                address(registryImplementation),
+                abi.encodeCall(MandateRegistry.initialize, (address(hub), address(admin)))
             )
         );
         address evaluator = address(
             new ERC1967Proxy(
                 address(evaluatorImplementation),
                 abi.encodeCall(
-                    MandateEvaluator.initialize, (address(hub), registry, usdProvider, skipUnavailableUsdValuation)
+                    MandateEvaluator.initialize,
+                    (address(hub), registry, usdProvider, skipUnavailableUsdValuation, address(admin))
                 )
             )
         );
         address manager = address(
             new ERC1967Proxy(
                 address(managerImplementation),
-                abi.encodeCall(EscalationManager.initialize, (address(hub), evaluator, registry))
+                abi.encodeCall(EscalationManager.initialize, (address(hub), evaluator, registry, address(admin)))
             )
         );
         address executor = address(
             new ERC1967Proxy(
                 address(executorImplementation),
-                abi.encodeCall(VaultExecutor.initialize, (address(hub), evaluator, registry, manager))
+                abi.encodeCall(VaultExecutor.initialize, (address(hub), evaluator, registry, manager, address(admin)))
             )
         );
         address factory = address(
             new ERC1967Proxy(
                 address(factoryImplementation),
-                abi.encodeCall(VaultFactory.initialize, (address(hub), address(vaultImplementation), 1, executor))
+                abi.encodeCall(
+                    VaultFactory.initialize,
+                    (address(hub), address(vaultImplementation), 1, executor, address(admin), address(admin))
+                )
             )
         );
 
-        hub.configureModules(registry, evaluator, manager, executor, factory);
+        admin.configureModules(registry, evaluator, manager, executor, factory);
     }
 
     function _plan(

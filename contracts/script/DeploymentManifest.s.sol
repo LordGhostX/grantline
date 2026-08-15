@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Grantline} from "../src/Grantline.sol";
-import {IModule} from "../src/Interfaces.sol";
+import {IModule, IVault} from "../src/Interfaces.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
 
 library DeploymentManifest {
@@ -21,6 +21,7 @@ library DeploymentManifest {
         address grantlineImplementation;
         bytes32 grantlineProxyCodeHash;
         address protocolAdmin;
+        address admin;
         ModuleSnapshot[5] modules;
         address[] vaults;
     }
@@ -31,10 +32,15 @@ library DeploymentManifest {
 
         json = string.concat('{"network":"', snapshot.network, '","chainId":', snapshot.chainId.toString());
         json = string.concat(json, ',"grantline":', _grantlineJson(snapshot));
+        json = string.concat(json, ',"admin":', _adminJson(snapshot));
         json = string.concat(json, ',"modules":', _modulesJson(snapshot.modules));
         json = string.concat(json, ',"vaultImplementation":', _vaultImplementationJson(factory));
         json = string.concat(json, ',"vaultCount":', snapshot.vaults.length.toString(), ',"vaults":');
         json = string.concat(json, _vaultsJson(hub, snapshot.vaults), "}");
+    }
+
+    function _adminJson(Snapshot memory snapshot) private pure returns (string memory json) {
+        json = string.concat('{"address":"', _address(snapshot.admin), '"}');
     }
 
     function _grantlineJson(Snapshot memory snapshot) private view returns (string memory json) {
@@ -71,6 +77,7 @@ library DeploymentManifest {
         address implementation = factory.vaultImplementation();
         json = string.concat('{"address":"', _address(implementation), '"');
         json = string.concat(json, ',"codeHash":"', _bytes32(implementation.codehash), '"');
+        json = string.concat(json, ',"upgradeAuthority":"', _address(factory.upgradeAuthority()), '"');
         json = string.concat(json, ',"version":', uint256(factory.vaultImplementationVersion()).toString(), "}");
     }
 
@@ -90,6 +97,7 @@ library DeploymentManifest {
         json = string.concat(json, ',"controller":"', _address(viewData.controller), '"');
         json = string.concat(json, ',"owner":"', _address(viewData.owner), '"');
         json = string.concat(json, ',"authority":"', _address(viewData.authority), '"');
+        json = string.concat(json, ',"upgradeAuthority":"', _address(IVault(vault).upgradeAuthority()), '"');
         json = string.concat(json, ',"paused":', viewData.paused ? "true" : "false");
         json = string.concat(json, ',"implementation":"', _address(viewData.implementation), '"');
         json = string.concat(json, ',"implementationCodeHash":"', _bytes32(viewData.implementation.codehash), '"');

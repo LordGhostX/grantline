@@ -5,6 +5,7 @@ import {ActionTypes} from "../src/ActionTypes.sol";
 import {ComponentTypes} from "../src/ComponentTypes.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
 import {Grantline} from "../src/Grantline.sol";
+import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
@@ -157,6 +158,7 @@ contract TestnetIntegration is ScriptBase {
         uint256 expectedChainId;
         address hub;
         address hubImplementation;
+        address admin;
         address registry;
         address registryImplementation;
         address evaluator;
@@ -225,6 +227,7 @@ contract TestnetIntegration is ScriptBase {
         state.network = vm.parseJsonString(manifest, ".network");
         state.expectedChainId = vm.parseJsonUint(manifest, ".chainId");
         state.expectedProtocolAdmin = vm.parseJsonAddress(manifest, ".grantline.protocolAdmin");
+        state.admin = vm.parseJsonAddress(manifest, ".admin.address");
         state.hub = vm.parseJsonAddress(manifest, ".grantline.proxy");
         state.hubImplementation = vm.parseJsonAddress(manifest, ".grantline.implementation");
         state.registry = vm.parseJsonAddress(manifest, ".modules.registry.proxy");
@@ -256,6 +259,8 @@ contract TestnetIntegration is ScriptBase {
         _require(block.chainid == state.expectedChainId, "manifest chain ID does not match RPC chain");
         _require(hub.owner() == state.owner, "protocol admin does not match deployer");
         _require(hub.owner() == state.expectedProtocolAdmin, "manifest protocol admin mismatch");
+        _require(hub.adminController() == state.admin, "admin controller mismatch");
+        _require(GrantlineAdmin(state.admin).grantline() == state.hub, "admin Grantline mismatch");
         _require(hub.configured(), "Grantline is not configured");
         _require(hub.registry() == state.registry, "registry proxy mismatch");
         _require(hub.evaluator() == state.evaluator, "evaluator proxy mismatch");
@@ -290,17 +295,17 @@ contract TestnetIntegration is ScriptBase {
             VaultFactory(state.vaultFactory).componentType() == ComponentTypes.VAULT_FACTORY,
             "factory component type mismatch"
         );
-        _require(MandateRegistry(state.registry).owner() == state.hub, "registry owner mismatch");
+        _require(MandateRegistry(state.registry).owner() == state.admin, "registry owner mismatch");
         _require(MandateRegistry(state.registry).pendingOwner() == address(0), "registry pending owner mismatch");
-        _require(MandateEvaluator(state.evaluator).owner() == state.hub, "evaluator owner mismatch");
+        _require(MandateEvaluator(state.evaluator).owner() == state.admin, "evaluator owner mismatch");
         _require(MandateEvaluator(state.evaluator).pendingOwner() == address(0), "evaluator pending owner mismatch");
-        _require(EscalationManager(state.escalationManager).owner() == state.hub, "manager owner mismatch");
+        _require(EscalationManager(state.escalationManager).owner() == state.admin, "manager owner mismatch");
         _require(
             EscalationManager(state.escalationManager).pendingOwner() == address(0), "manager pending owner mismatch"
         );
-        _require(VaultExecutor(state.executor).owner() == state.hub, "executor owner mismatch");
+        _require(VaultExecutor(state.executor).owner() == state.admin, "executor owner mismatch");
         _require(VaultExecutor(state.executor).pendingOwner() == address(0), "executor pending owner mismatch");
-        _require(VaultFactory(state.vaultFactory).owner() == state.hub, "factory owner mismatch");
+        _require(VaultFactory(state.vaultFactory).owner() == state.admin, "factory owner mismatch");
         _require(VaultFactory(state.vaultFactory).pendingOwner() == address(0), "factory pending owner mismatch");
         _require(MandateEvaluator(state.evaluator).registry() == state.registry, "evaluator registry mismatch");
         _require(EscalationManager(state.escalationManager).registry() == state.registry, "manager registry mismatch");
@@ -313,6 +318,9 @@ contract TestnetIntegration is ScriptBase {
             VaultExecutor(state.executor).escalationManager() == state.escalationManager, "executor manager mismatch"
         );
         _require(VaultFactory(state.vaultFactory).executor() == state.executor, "factory executor mismatch");
+        _require(
+            VaultFactory(state.vaultFactory).upgradeAuthority() == state.admin, "factory upgrade authority mismatch"
+        );
         _require(VaultFactory(state.vaultFactory).vaultCount() == 0, "factory is not fresh");
     }
 
@@ -334,6 +342,13 @@ contract TestnetIntegration is ScriptBase {
         _require(Vault(payable(state.secondVault)).owner() == state.hub, "second Vault owner mismatch");
         _require(Vault(payable(state.vault)).authority() == state.executor, "first Vault authority mismatch");
         _require(Vault(payable(state.secondVault)).authority() == state.executor, "second Vault authority mismatch");
+        _require(
+            Vault(payable(state.vault)).upgradeAuthority() == state.admin, "first Vault upgrade authority mismatch"
+        );
+        _require(
+            Vault(payable(state.secondVault)).upgradeAuthority() == state.admin,
+            "second Vault upgrade authority mismatch"
+        );
         _require(!Vault(payable(state.vault)).paused(), "first Vault is unexpectedly paused");
         _require(!Vault(payable(state.secondVault)).paused(), "second Vault is unexpectedly paused");
         return state;
@@ -392,7 +407,7 @@ contract TestnetIntegration is ScriptBase {
 
         integrationVm.prank(state.agent);
         integrationVm.expectRevert();
-        hub.setVaultController(state.secondVault, state.agent);
+        GrantlineAdmin(state.admin).setVaultController(state.secondVault, state.agent);
         integrationVm.prank(state.agent);
         integrationVm.expectRevert();
         MandateEvaluator(state.evaluator).evaluate(probe, bytes(""), digest);
@@ -683,9 +698,9 @@ contract TestnetIntegration is ScriptBase {
         Grantline.VaultView memory secondBefore = hub.getVault(state.secondVault);
 
         vm.startBroadcast(state.ownerKey);
-        hub.setVaultImplementation(state.vaultV2, 1);
+        GrantlineAdmin(state.admin).setVaultImplementation(state.vaultV2, 1);
         state.thirdVault = hub.createVault();
-        hub.setVaultController(state.thirdVault, state.agent);
+        GrantlineAdmin(state.admin).setVaultController(state.thirdVault, state.agent);
         vm.stopBroadcast();
 
         Grantline.VaultView memory thirdView = hub.getVault(state.thirdVault);
@@ -698,7 +713,7 @@ contract TestnetIntegration is ScriptBase {
         uint256 nativeBalanceBefore = address(state.vault).balance;
         uint256 tokenBalanceBefore = IntegrationToken(state.token).balanceOf(state.vault);
         vm.startBroadcast(state.ownerKey);
-        hub.upgradeVault(state.vault, state.vaultV2, 1, bytes(""));
+        GrantlineAdmin(state.admin).upgradeVault(state.vault, state.vaultV2, 1, bytes(""));
         vm.stopBroadcast();
         _require(VaultV2(payable(state.vault)).marker() == 2, "existing Vault upgrade did not apply");
         _require(address(state.vault).balance == nativeBalanceBefore, "Vault upgrade changed native balance");
@@ -715,19 +730,19 @@ contract TestnetIntegration is ScriptBase {
         address secondImplementation = hub.getVault(state.secondVault).implementation;
         integrationVm.prank(state.owner);
         integrationVm.expectRevert();
-        hub.upgradeVault(state.secondVault, state.vaultV2, 2, bytes(""));
+        GrantlineAdmin(state.admin).upgradeVault(state.secondVault, state.vaultV2, 2, bytes(""));
         _require(
             hub.getVault(state.secondVault).implementation == secondImplementation,
             "failed Vault upgrade changed metadata"
         );
 
-        Grantline.ModuleUpgrade[] memory upgrades = new Grantline.ModuleUpgrade[](1);
-        upgrades[0] = Grantline.ModuleUpgrade({
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
             key: hub.REGISTRY_MODULE(), implementation: state.registryV2, version: 1, data: bytes("")
         });
         uint256 mandateCountBefore = MandateRegistry(state.registry).mandateCount();
         vm.startBroadcast(state.ownerKey);
-        hub.upgradeModules(upgrades);
+        GrantlineAdmin(state.admin).upgradeModules(upgrades);
         vm.stopBroadcast();
         state.registryImplementation = state.registryV2;
         _require(MandateRegistryV2(state.registry).marker() == 2, "registry module upgrade did not apply");
@@ -824,6 +839,7 @@ contract TestnetIntegration is ScriptBase {
         snapshot.grantlineImplementation = state.hubImplementation;
         snapshot.grantlineProxyCodeHash = state.hub.codehash;
         snapshot.protocolAdmin = state.owner;
+        snapshot.admin = state.admin;
         snapshot.modules[0] = DeploymentManifest.ModuleSnapshot(state.registry, state.registryImplementation);
         snapshot.modules[1] = DeploymentManifest.ModuleSnapshot(state.evaluator, state.evaluatorImplementation);
         snapshot.modules[2] =

@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ActionTypes} from "../src/ActionTypes.sol";
 import {Grantline} from "../src/Grantline.sol";
+import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
@@ -77,6 +78,7 @@ contract GrantlineTest {
 
     struct Fixture {
         Grantline hub;
+        GrantlineAdmin admin;
         address vault;
         uint256 mandateId;
         address controller;
@@ -240,7 +242,7 @@ contract GrantlineTest {
         assert(fixture.hub.getMandate(childId).agent == childAgent);
 
         address newController = address(0xF00D);
-        fixture.hub.setVaultController(fixture.vault, newController);
+        fixture.admin.setVaultController(fixture.vault, newController);
 
         vm.prank(fixture.controller);
         vm.expectRevert();
@@ -275,12 +277,12 @@ contract GrantlineTest {
         address secondVault = fixture.hub.createVault();
         VaultV2 implementation = new VaultV2();
 
-        fixture.hub.setVaultImplementation(address(implementation), 1);
+        fixture.admin.setVaultImplementation(address(implementation), 1);
         address thirdVault = fixture.hub.createVault();
         assert(fixture.hub.getVault(secondVault).implementation != address(implementation));
         assert(fixture.hub.getVault(fixture.vault).implementation != address(implementation));
 
-        fixture.hub.upgradeVault(fixture.vault, address(implementation), 1, "");
+        fixture.admin.upgradeVault(fixture.vault, address(implementation), 1, "");
         assert(VaultV2(payable(fixture.vault)).marker() == 2);
         assert(fixture.hub.getVault(fixture.vault).implementation == address(implementation));
         assert(fixture.hub.getVault(secondVault).implementation != address(implementation));
@@ -292,8 +294,8 @@ contract GrantlineTest {
         address previousImplementation = fixture.hub.getVault(fixture.vault).implementation;
         VaultV2 implementation = new VaultV2();
 
-        (bool success,) = address(fixture.hub)
-            .call(abi.encodeCall(Grantline.upgradeVault, (fixture.vault, address(implementation), 2, bytes(""))));
+        (bool success,) = address(fixture.admin)
+            .call(abi.encodeCall(GrantlineAdmin.upgradeVault, (fixture.vault, address(implementation), 2, bytes(""))));
         assert(!success);
         assert(fixture.hub.getVault(fixture.vault).implementation == previousImplementation);
     }
@@ -301,12 +303,12 @@ contract GrantlineTest {
     function test_moduleUpgradePreservesRegistryState() public {
         Fixture memory fixture = _fixture();
         MandateRegistryV2 implementation = new MandateRegistryV2();
-        Grantline.ModuleUpgrade[] memory upgrades = new Grantline.ModuleUpgrade[](1);
-        upgrades[0] = Grantline.ModuleUpgrade({
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
             key: fixture.hub.REGISTRY_MODULE(), implementation: address(implementation), version: 1, data: ""
         });
 
-        fixture.hub.upgradeModules(upgrades);
+        fixture.admin.upgradeModules(upgrades);
 
         assert(MandateRegistryV2(fixture.hub.registry()).marker() == 2);
         assert(MandateRegistry(fixture.hub.registry()).mandateCount() == 1);
@@ -320,7 +322,7 @@ contract GrantlineTest {
     function _fixtureWithRules(GrantlineTypes.MandateRules memory rules) private returns (Fixture memory fixture) {
         fixture.controller = address(this);
         fixture.agent = vm.addr(AGENT_KEY);
-        fixture.hub = _deployHub();
+        (fixture.hub, fixture.admin) = _deployHub();
 
         vm.deal(fixture.controller, 10 ether);
         fixture.vault = _createVault(fixture.hub, fixture.controller);
@@ -331,7 +333,7 @@ contract GrantlineTest {
         fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false));
     }
 
-    function _deployHub() private returns (Grantline hub) {
+    function _deployHub() private returns (Grantline hub, GrantlineAdmin admin) {
         Grantline grantlineImplementation = new Grantline();
         MandateRegistry registryImplementation = new MandateRegistry();
         MandateEvaluator evaluatorImplementation = new MandateEvaluator();
@@ -346,36 +348,42 @@ contract GrantlineTest {
                 )
             )
         );
+        admin = new GrantlineAdmin(address(hub));
+        hub.setAdminController(address(admin));
         address registry = address(
             new ERC1967Proxy(
-                address(registryImplementation), abi.encodeCall(MandateRegistry.initialize, (address(hub)))
+                address(registryImplementation),
+                abi.encodeCall(MandateRegistry.initialize, (address(hub), address(admin)))
             )
         );
         address evaluator = address(
             new ERC1967Proxy(
                 address(evaluatorImplementation),
-                abi.encodeCall(MandateEvaluator.initialize, (address(hub), registry, address(0), true))
+                abi.encodeCall(MandateEvaluator.initialize, (address(hub), registry, address(0), true, address(admin)))
             )
         );
         address manager = address(
             new ERC1967Proxy(
                 address(managerImplementation),
-                abi.encodeCall(EscalationManager.initialize, (address(hub), evaluator, registry))
+                abi.encodeCall(EscalationManager.initialize, (address(hub), evaluator, registry, address(admin)))
             )
         );
         address executor = address(
             new ERC1967Proxy(
                 address(executorImplementation),
-                abi.encodeCall(VaultExecutor.initialize, (address(hub), evaluator, registry, manager))
+                abi.encodeCall(VaultExecutor.initialize, (address(hub), evaluator, registry, manager, address(admin)))
             )
         );
         address factory = address(
             new ERC1967Proxy(
                 address(new VaultFactory()),
-                abi.encodeCall(VaultFactory.initialize, (address(hub), address(vaultImplementation), 1, executor))
+                abi.encodeCall(
+                    VaultFactory.initialize,
+                    (address(hub), address(vaultImplementation), 1, executor, address(admin), address(admin))
+                )
             )
         );
-        hub.configureModules(registry, evaluator, manager, executor, factory);
+        admin.configureModules(registry, evaluator, manager, executor, factory);
     }
 
     function _createVault(Grantline hub, address controller) private returns (address vault) {

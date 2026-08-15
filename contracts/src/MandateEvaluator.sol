@@ -66,9 +66,11 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         address grantlineAddress,
         address registryAddress,
         address usdValueProviderAddress,
-        bool skipUnavailableUsdValuation_
+        bool skipUnavailableUsdValuation_,
+        address moduleOwnerAddress
     ) external initializer {
         if (grantlineAddress == address(0)) revert InvalidAddress();
+        if (moduleOwnerAddress == address(0) || moduleOwnerAddress.code.length == 0) revert InvalidAddress();
         if (registryAddress == address(0) || registryAddress.code.length == 0) {
             revert InvalidRegistry();
         }
@@ -81,7 +83,7 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         registry = registryAddress;
         usdValueProvider = usdValueProviderAddress;
         skipUnavailableUsdValuation = skipUnavailableUsdValuation_;
-        __Ownable_init(grantlineAddress);
+        __Ownable_init(moduleOwnerAddress);
         __Ownable2Step_init();
     }
 

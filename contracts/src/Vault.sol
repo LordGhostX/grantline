@@ -26,7 +26,7 @@ contract Vault is
     error NotAuthority(address caller);
     error InvalidTokenTarget(address token);
 
-    event VaultInitialized(address indexed grantline, address indexed authority);
+    event VaultInitialized(address indexed grantline, address indexed authority, address indexed upgradeAuthority);
     event AuthorityUpdated(address indexed previousAuthority, address indexed newAuthority);
     event ExecutionAttempted(
         address indexed authority,
@@ -43,21 +43,30 @@ contract Vault is
 
     address public grantline;
     address public authority;
+    address public upgradeAuthority;
 
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(address grantlineAddress, address authorityAddress) external initializer {
-        if (grantlineAddress == address(0) || authorityAddress == address(0) || authorityAddress.code.length == 0) {
+    function initialize(address grantlineAddress, address authorityAddress, address upgradeAuthorityAddress)
+        external
+        virtual
+        initializer
+    {
+        if (
+            grantlineAddress == address(0) || authorityAddress == address(0) || authorityAddress.code.length == 0
+                || upgradeAuthorityAddress == address(0) || upgradeAuthorityAddress.code.length == 0
+        ) {
             revert InvalidAddress();
         }
         grantline = grantlineAddress;
         authority = authorityAddress;
+        upgradeAuthority = upgradeAuthorityAddress;
         __Ownable_init(grantlineAddress);
         __Ownable2Step_init();
         __Pausable_init();
-        emit VaultInitialized(grantlineAddress, authorityAddress);
+        emit VaultInitialized(grantlineAddress, authorityAddress, upgradeAuthorityAddress);
     }
 
     function version() external pure returns (uint64) {
@@ -148,7 +157,9 @@ contract Vault is
         if (token.code.length == 0) revert InvalidTokenTarget(token);
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal view override {
+        if (msg.sender != upgradeAuthority) revert NotAuthority(msg.sender);
+    }
 
     modifier onlyAuthority() {
         if (authority == address(0) || msg.sender != authority) {

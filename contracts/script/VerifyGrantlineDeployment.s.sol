@@ -2,7 +2,9 @@
 pragma solidity ^0.8.28;
 
 import {Grantline} from "../src/Grantline.sol";
+import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {ComponentTypes} from "../src/ComponentTypes.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC1822Proxiable} from "@openzeppelin/contracts/interfaces/draft-IERC1822.sol";
 import {
     IComponent,
@@ -52,11 +54,19 @@ contract VerifyGrantlineDeployment is ScriptBase {
         );
         _requireBool("grantline.configured", true, grantline.configured());
 
-        address registry = _verifyModule(manifest, grantline, "registry", grantline.REGISTRY_MODULE());
-        address evaluator = _verifyModule(manifest, grantline, "evaluator", grantline.EVALUATOR_MODULE());
-        address manager = _verifyModule(manifest, grantline, "escalationManager", grantline.ESCALATION_MANAGER_MODULE());
-        address executor = _verifyModule(manifest, grantline, "executor", grantline.EXECUTOR_MODULE());
-        address factory = _verifyModule(manifest, grantline, "vaultFactory", grantline.VAULT_FACTORY_MODULE());
+        GrantlineAdmin admin = GrantlineAdmin(vm.parseJsonAddress(manifest, ".admin.address"));
+        _requireAddress("admin.grantline", address(grantline), admin.grantline());
+        _requireAddress("grantline.adminController", address(admin), grantline.adminController());
+
+        address registry = _verifyModule(manifest, grantline, "registry", grantline.REGISTRY_MODULE(), address(admin));
+        address evaluator =
+            _verifyModule(manifest, grantline, "evaluator", grantline.EVALUATOR_MODULE(), address(admin));
+        address manager = _verifyModule(
+            manifest, grantline, "escalationManager", grantline.ESCALATION_MANAGER_MODULE(), address(admin)
+        );
+        address executor = _verifyModule(manifest, grantline, "executor", grantline.EXECUTOR_MODULE(), address(admin));
+        address factory =
+            _verifyModule(manifest, grantline, "vaultFactory", grantline.VAULT_FACTORY_MODULE(), address(admin));
 
         _requireAddress("grantline.registry", registry, grantline.registry());
         _requireAddress("grantline.evaluator", evaluator, grantline.evaluator());
@@ -66,6 +76,7 @@ contract VerifyGrantlineDeployment is ScriptBase {
         if (IVaultFactory(factory).executor() != executor) {
             revert UnexpectedAddress("vaultFactory.executor", executor, IVaultFactory(factory).executor());
         }
+        _requireAddress("vaultFactory.upgradeAuthority", address(admin), IVaultFactory(factory).upgradeAuthority());
         _requireAddress("evaluator.registry", registry, IEvaluator(evaluator).registry());
         _requireAddress("manager.evaluator", evaluator, IEscalationManager(manager).evaluator());
         _requireAddress("manager.registry", registry, IEscalationManager(manager).registry());
@@ -94,8 +105,20 @@ contract VerifyGrantlineDeployment is ScriptBase {
             vm.parseJsonBytes32(manifest, ".vaultImplementation.codeHash"),
             "vaultImplementation"
         );
+        _requireAddress(
+            "vaultImplementation.upgradeAuthority",
+            vm.parseJsonAddress(manifest, ".vaultImplementation.upgradeAuthority"),
+            IVaultFactory(factory).upgradeAuthority()
+        );
         _requireComponentType(IVaultFactory(factory).vaultImplementation(), ComponentTypes.VAULT, "vaultImplementation");
         _requireUUPSIdentifier(IVaultFactory(factory).vaultImplementation(), "vaultImplementation");
+        _verifyVaultTemplate(
+            IVaultFactory(factory).vaultImplementation(),
+            IVaultFactory(factory).vaultImplementationVersion(),
+            address(grantline),
+            executor,
+            address(admin)
+        );
 
         uint256 vaultCount = vm.parseJsonUint(manifest, ".vaultCount");
         _requireUint("grantline.vaultCount", vaultCount, grantline.vaultCount());
@@ -156,6 +179,11 @@ contract VerifyGrantlineDeployment is ScriptBase {
         address expectedAuthority = IVaultFactory(factory).executor();
         _requireAddress(string.concat(component, ".executor"), expectedAuthority, actual.authority);
         _requireAddress(string.concat(component, ".owner"), address(grantline), actual.owner);
+        _requireAddress(
+            string.concat(component, ".upgradeAuthority"),
+            vm.parseJsonAddress(manifest, string.concat(prefix, ".upgradeAuthority")),
+            IVault(vault).upgradeAuthority()
+        );
         _requireAddress(string.concat(component, ".pendingOwner"), address(0), IOwnable2Step(vault).pendingOwner());
         _requireUint(string.concat(component, ".implementationVersion"), IVault(vault).version(), actual.version);
         _verifyProxy(
@@ -168,10 +196,34 @@ contract VerifyGrantlineDeployment is ScriptBase {
         _requireComponentType(actual.implementation, ComponentTypes.VAULT, string.concat(component, ".implementation"));
     }
 
-    function _verifyModule(string memory manifest, Grantline grantline, string memory name, bytes32 key)
-        private
-        returns (address module)
-    {
+    function _verifyVaultTemplate(
+        address implementation,
+        uint64 expectedVersion,
+        address grantline,
+        address executor,
+        address upgradeAuthority
+    ) private {
+        address probe = address(
+            new ERC1967Proxy(implementation, abi.encodeCall(IVault.initialize, (grantline, executor, upgradeAuthority)))
+        );
+        _requireComponentType(probe, ComponentTypes.VAULT, "vaultImplementation.probe");
+        _requireUint("vaultImplementation.probe.version", expectedVersion, IVault(probe).version());
+        _requireAddress("vaultImplementation.probe.owner", grantline, IVault(probe).owner());
+        _requireAddress("vaultImplementation.probe.authority", executor, IVault(probe).authority());
+        _requireAddress(
+            "vaultImplementation.probe.upgradeAuthority", upgradeAuthority, IVault(probe).upgradeAuthority()
+        );
+        _requireBool("vaultImplementation.probe.paused", false, IVault(probe).paused());
+        _requireAddress("vaultImplementation.probe.pendingOwner", address(0), IOwnable2Step(probe).pendingOwner());
+    }
+
+    function _verifyModule(
+        string memory manifest,
+        Grantline grantline,
+        string memory name,
+        bytes32 key,
+        address expectedOwner
+    ) private returns (address module) {
         string memory prefix = string.concat(".modules.", name);
         module = vm.parseJsonAddress(manifest, string.concat(prefix, ".proxy"));
         address implementation = vm.parseJsonAddress(manifest, string.concat(prefix, ".implementation"));
@@ -185,7 +237,7 @@ contract VerifyGrantlineDeployment is ScriptBase {
         _requireComponentType(module, key, name);
         _requireComponentType(implementation, key, string.concat(name, ".implementation"));
         _requireAddress(string.concat(name, ".grantline"), address(grantline), IModule(module).grantline());
-        _requireAddress(string.concat(name, ".owner"), address(grantline), IOwnable2Step(module).owner());
+        _requireAddress(string.concat(name, ".owner"), expectedOwner, IOwnable2Step(module).owner());
         _requireAddress(string.concat(name, ".pendingOwner"), address(0), IOwnable2Step(module).pendingOwner());
         _requireUint(
             string.concat(name, ".version"),

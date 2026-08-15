@@ -7,7 +7,7 @@ import {IERC1822Proxiable} from "@openzeppelin/contracts/interfaces/draft-IERC18
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
-import {IVault, IVaultFactory} from "./Interfaces.sol";
+import {IOwnable2Step, IVault, IVaultFactory} from "./Interfaces.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
 contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUpgradeable, IVaultFactory {
@@ -24,6 +24,7 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
 
     address public grantline;
     address public executor;
+    address public override upgradeAuthority;
     address public override vaultImplementation;
     uint64 public override vaultImplementationVersion;
     mapping(address => bool) public override isVault;
@@ -37,19 +38,30 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
         address grantlineAddress,
         address vaultImplementationAddress,
         uint64 implementationVersion,
-        address executorAddress
+        address executorAddress,
+        address moduleOwnerAddress,
+        address upgradeAuthorityAddress
     ) external initializer {
         if (grantlineAddress == address(0)) revert InvalidAddress();
         if (executorAddress == address(0) || executorAddress.code.length == 0) {
             revert InvalidAddress();
         }
+        if (moduleOwnerAddress == address(0) || moduleOwnerAddress.code.length == 0) revert InvalidAddress();
+        if (upgradeAuthorityAddress == address(0) || upgradeAuthorityAddress.code.length == 0) revert InvalidAddress();
         if (vaultImplementationAddress == address(0)) revert InvalidImplementation(vaultImplementationAddress);
-        _requireVaultImplementation(vaultImplementationAddress, implementationVersion);
+        _validateVaultImplementation(
+            vaultImplementationAddress,
+            implementationVersion,
+            grantlineAddress,
+            executorAddress,
+            upgradeAuthorityAddress
+        );
         grantline = grantlineAddress;
         executor = executorAddress;
+        upgradeAuthority = upgradeAuthorityAddress;
         vaultImplementation = vaultImplementationAddress;
         vaultImplementationVersion = implementationVersion;
-        __Ownable_init(grantlineAddress);
+        __Ownable_init(moduleOwnerAddress);
         __Ownable2Step_init();
     }
 
@@ -64,22 +76,22 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
     function createVault(address controller) external override returns (address vault) {
         _onlyGrantline();
         if (controller == address(0)) revert InvalidAddress();
-        bytes memory initializationData = abi.encodeCall(IVault.initialize, (grantline, executor));
+        bytes memory initializationData = abi.encodeCall(IVault.initialize, (grantline, executor, upgradeAuthority));
         vault = address(new ERC1967Proxy(vaultImplementation, initializationData));
         isVault[vault] = true;
         _vaults.push(vault);
         emit VaultCreated(vault, controller, vaultImplementation, vaultImplementationVersion);
     }
 
-    function validateVaultImplementation(address implementation, uint64 implementationVersion) external view override {
-        _onlyGrantline();
-        _requireVaultImplementation(implementation, implementationVersion);
+    function validateVaultImplementation(address implementation, uint64 implementationVersion) external override {
+        _checkOwner();
+        _validateVaultImplementation(implementation, implementationVersion, grantline, executor, upgradeAuthority);
     }
 
     function setVaultImplementation(address implementation, uint64 implementationVersion) external override {
-        _onlyGrantline();
+        _checkOwner();
         if (implementation == address(0)) revert InvalidImplementation(implementation);
-        _requireVaultImplementation(implementation, implementationVersion);
+        _validateVaultImplementation(implementation, implementationVersion, grantline, executor, upgradeAuthority);
         address previousImplementation = vaultImplementation;
         vaultImplementation = implementation;
         vaultImplementationVersion = implementationVersion;
@@ -107,7 +119,13 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
         }
     }
 
-    function _requireVaultImplementation(address implementation, uint64 expectedVersion) private view {
+    function _validateVaultImplementation(
+        address implementation,
+        uint64 expectedVersion,
+        address grantlineAddress,
+        address executorAddress,
+        address upgradeAuthorityAddress
+    ) private {
         if (implementation == address(0)) revert InvalidImplementation(implementation);
         _requireUUPSImplementation(implementation);
         try IVault(implementation).componentType() returns (bytes32 actualType) {
@@ -125,7 +143,47 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
         } catch {
             revert InvalidImplementation(implementation);
         }
+        if (
+            !_hasSelector(implementation, IVault.pause.selector)
+                || !_hasSelector(implementation, IVault.unpause.selector)
+        ) {
+            revert InvalidImplementation(implementation);
+        }
         _requireImplementationVersion(implementation, expectedVersion);
+
+        address probe = address(
+            new ERC1967Proxy(
+                implementation,
+                abi.encodeCall(IVault.initialize, (grantlineAddress, executorAddress, upgradeAuthorityAddress))
+            )
+        );
+        if (
+            IVault(probe).componentType() != ComponentTypes.VAULT || IVault(probe).version() != expectedVersion
+                || IVault(probe).owner() != grantlineAddress || IVault(probe).authority() != executorAddress
+                || IVault(probe).upgradeAuthority() != upgradeAuthorityAddress || IVault(probe).paused()
+                || IOwnable2Step(probe).pendingOwner() != address(0)
+        ) {
+            revert InvalidImplementation(implementation);
+        }
+    }
+
+    function _hasSelector(address target, bytes4 selector) private view returns (bool) {
+        uint256 size;
+        assembly {
+            size := extcodesize(target)
+        }
+        bytes memory code = new bytes(size);
+        assembly {
+            extcodecopy(target, add(code, 32), 0, size)
+        }
+        for (uint256 index; index + 4 <= size; index++) {
+            bytes4 candidate;
+            assembly {
+                candidate := mload(add(add(code, 32), index))
+            }
+            if (candidate == selector) return true;
+        }
+        return false;
     }
 
     function _requireImplementationVersion(address implementation, uint64 expectedVersion) private pure {

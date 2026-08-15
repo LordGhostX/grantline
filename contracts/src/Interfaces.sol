@@ -24,6 +24,38 @@ interface IGrantlineContext is IComponent {
     function actionDigest(ActionTypes.ActionPlan calldata plan) external view returns (bytes32);
 }
 
+interface IGrantlineAdminTarget {
+    function configureModules(
+        address registryAddress,
+        address evaluatorAddress,
+        address escalationManagerAddress,
+        address executorAddress,
+        address vaultFactoryAddress
+    ) external;
+
+    function adminSetVaultController(address vault, address newController) external;
+
+    function adminRecordVaultUpgrade(address vault, address implementation, uint64 version) external;
+
+    function isRegisteredVault(address vault) external view returns (bool);
+
+    function registry() external view returns (address);
+
+    function evaluator() external view returns (address);
+
+    function escalationManager() external view returns (address);
+
+    function executor() external view returns (address);
+
+    function vaultFactory() external view returns (address);
+
+    function configured() external view returns (bool);
+}
+
+interface IGrantlineAdmin {
+    function grantline() external view returns (address);
+}
+
 interface IModule is IComponent {
     function grantline() external view returns (address);
 
@@ -128,9 +160,11 @@ interface IExecutor is IModule {
 interface IVaultFactory is IModule {
     function executor() external view returns (address);
 
+    function upgradeAuthority() external view returns (address);
+
     function createVault(address controller) external returns (address vault);
 
-    function validateVaultImplementation(address implementation, uint64 implementationVersion) external view;
+    function validateVaultImplementation(address implementation, uint64 implementationVersion) external;
 
     function setVaultImplementation(address implementation, uint64 implementationVersion) external;
 
@@ -146,7 +180,7 @@ interface IVaultFactory is IModule {
 }
 
 interface IVault is IComponent {
-    function initialize(address grantline, address authorityAddress) external;
+    function initialize(address grantline, address authorityAddress, address upgradeAuthorityAddress) external;
 
     function pause() external;
 
@@ -159,6 +193,8 @@ interface IVault is IComponent {
     function owner() external view returns (address);
 
     function authority() external view returns (address);
+
+    function upgradeAuthority() external view returns (address);
 
     function version() external pure returns (uint64);
 

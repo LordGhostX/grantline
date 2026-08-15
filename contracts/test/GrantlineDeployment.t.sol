@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Grantline} from "../src/Grantline.sol";
+import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
@@ -36,6 +37,7 @@ contract GrantlineDeploymentTest {
     struct Stack {
         Grantline grantline;
         Grantline grantlineImplementation;
+        GrantlineAdmin admin;
         address registry;
         address registryImplementation;
         address evaluator;
@@ -71,7 +73,7 @@ contract GrantlineDeploymentTest {
         Stack memory stack = _deploy();
         address externalOwner = address(0xBEEF);
 
-        deploymentVm.prank(address(stack.grantline));
+        deploymentVm.prank(address(stack.admin));
         GrantlineDeploymentOwnership(stack.registry).transferOwnership(externalOwner);
         deploymentVm.prank(externalOwner);
         GrantlineDeploymentOwnership(stack.registry).acceptOwnership();
@@ -100,7 +102,7 @@ contract GrantlineDeploymentTest {
         GrantlineDeploymentEscalationRegistryV2 implementation = new GrantlineDeploymentEscalationRegistryV2();
         address alternateRegistry = address(new MandateRegistry());
 
-        deploymentVm.prank(address(stack.grantline));
+        deploymentVm.prank(address(stack.admin));
         IUUPS(stack.escalationManager)
             .upgradeToAndCall(
                 address(implementation),
@@ -118,7 +120,7 @@ contract GrantlineDeploymentTest {
         Stack memory stack = _deploy();
         VaultExecutor implementation = new VaultExecutor();
 
-        deploymentVm.prank(address(stack.grantline));
+        deploymentVm.prank(address(stack.admin));
         IUUPS(stack.registry).upgradeToAndCall(address(implementation), "");
         stack.registryImplementation = address(implementation);
 
@@ -151,16 +153,20 @@ contract GrantlineDeploymentTest {
                 )
             )
         );
+        stack.admin = new GrantlineAdmin(address(stack.grantline));
+        stack.grantline.setAdminController(address(stack.admin));
         stack.registry = address(
             new ERC1967Proxy(
-                stack.registryImplementation, abi.encodeCall(MandateRegistry.initialize, (address(stack.grantline)))
+                stack.registryImplementation,
+                abi.encodeCall(MandateRegistry.initialize, (address(stack.grantline), address(stack.admin)))
             )
         );
         stack.evaluator = address(
             new ERC1967Proxy(
                 stack.evaluatorImplementation,
                 abi.encodeCall(
-                    MandateEvaluator.initialize, (address(stack.grantline), stack.registry, address(0), true)
+                    MandateEvaluator.initialize,
+                    (address(stack.grantline), stack.registry, address(0), true, address(stack.admin))
                 )
             )
         );
@@ -168,7 +174,8 @@ contract GrantlineDeploymentTest {
             new ERC1967Proxy(
                 stack.escalationManagerImplementation,
                 abi.encodeCall(
-                    EscalationManager.initialize, (address(stack.grantline), stack.evaluator, stack.registry)
+                    EscalationManager.initialize,
+                    (address(stack.grantline), stack.evaluator, stack.registry, address(stack.admin))
                 )
             )
         );
@@ -177,7 +184,13 @@ contract GrantlineDeploymentTest {
                 stack.executorImplementation,
                 abi.encodeCall(
                     VaultExecutor.initialize,
-                    (address(stack.grantline), stack.evaluator, stack.registry, stack.escalationManager)
+                    (
+                        address(stack.grantline),
+                        stack.evaluator,
+                        stack.registry,
+                        stack.escalationManager,
+                        address(stack.admin)
+                    )
                 )
             )
         );
@@ -185,12 +198,20 @@ contract GrantlineDeploymentTest {
             new ERC1967Proxy(
                 stack.vaultFactoryImplementation,
                 abi.encodeCall(
-                    VaultFactory.initialize, (address(stack.grantline), stack.vaultImplementation, 1, stack.executor)
+                    VaultFactory.initialize,
+                    (
+                        address(stack.grantline),
+                        stack.vaultImplementation,
+                        1,
+                        stack.executor,
+                        address(stack.admin),
+                        address(stack.admin)
+                    )
                 )
             )
         );
 
-        stack.grantline
+        stack.admin
             .configureModules(
                 stack.registry, stack.evaluator, stack.escalationManager, stack.executor, stack.vaultFactory
             );
@@ -205,6 +226,7 @@ contract GrantlineDeploymentTest {
         snapshot.grantlineImplementation = address(stack.grantlineImplementation);
         snapshot.grantlineProxyCodeHash = grantlineProxyCodeHash;
         snapshot.protocolAdmin = address(this);
+        snapshot.admin = address(stack.admin);
         snapshot.modules[0] = DeploymentManifest.ModuleSnapshot(stack.registry, stack.registryImplementation);
         snapshot.modules[1] = DeploymentManifest.ModuleSnapshot(stack.evaluator, stack.evaluatorImplementation);
         snapshot.modules[2] =

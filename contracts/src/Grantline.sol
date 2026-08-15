@@ -11,14 +11,13 @@ import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
 import {
     IComponent,
+    IGrantlineAdmin,
     IGrantlineContext,
     IEscalationManager,
     IEvaluator,
     IExecutor,
     IModule,
-    IOwnable2Step,
     IRegistry,
-    IUUPS,
     IVault,
     IVaultFactory
 } from "./Interfaces.sol";
@@ -39,11 +38,7 @@ contract Grantline is
     bytes32 public constant VAULT_FACTORY_MODULE = ComponentTypes.VAULT_FACTORY;
 
     error InvalidAddress();
-    error InvalidModule(bytes32 key, address module);
     error InvalidComponentType(string component, bytes32 expected, bytes32 actual);
-    error InvalidModuleOwner(bytes32 key, address expected, address actual);
-    error InvalidModulePendingOwner(bytes32 key, address pendingOwner);
-    error InvalidModuleRelationship(string relationship);
     error AlreadyConfigured();
     error NotConfigured();
     error UnknownModule(bytes32 key);
@@ -53,6 +48,8 @@ contract Grantline is
     error NotMandateAdministrator(uint256 mandateId, address caller);
     error InvalidController();
     error VaultIsPaused(address vault);
+    error InvalidAdminController();
+    error NotAdminController(address caller);
 
     event ModulesConfigured(
         address indexed registry,
@@ -61,6 +58,7 @@ contract Grantline is
         address executor,
         address vaultFactory
     );
+    event AdminControllerUpdated(address indexed previousController, address indexed newController);
     event VaultCreated(
         address indexed vault,
         address indexed controller,
@@ -83,13 +81,6 @@ contract Grantline is
         bytes32 indexed actionDigest, uint256 indexed mandateId, address indexed agent, address vault, uint256 nonce
     );
 
-    struct ModuleUpgrade {
-        bytes32 key;
-        address implementation;
-        uint64 version;
-        bytes data;
-    }
-
     struct VaultRecord {
         address controller;
         address implementation;
@@ -111,6 +102,7 @@ contract Grantline is
     mapping(address => VaultRecord) private _vaultRecords;
     address[] private _vaults;
     bool public configured;
+    address public adminController;
 
     constructor() {
         _disableInitializers();
@@ -127,6 +119,18 @@ contract Grantline is
         return owner();
     }
 
+    function setAdminController(address newController) external onlyOwner {
+        if (newController == address(0) || newController.code.length == 0) revert InvalidAdminController();
+        try IGrantlineAdmin(newController).grantline() returns (address controllerGrantline) {
+            if (controllerGrantline != address(this)) revert InvalidAdminController();
+        } catch {
+            revert InvalidAdminController();
+        }
+        address previousController = adminController;
+        adminController = newController;
+        emit AdminControllerUpdated(previousController, newController);
+    }
+
     function version() external pure returns (uint64) {
         return 1;
     }
@@ -141,14 +145,18 @@ contract Grantline is
         address escalationManagerAddress,
         address executorAddress,
         address vaultFactoryAddress
-    ) external onlyOwner {
+    ) external {
+        _onlyAdminController();
         if (configured) revert AlreadyConfigured();
+        if (
+            registryAddress == address(0) || evaluatorAddress == address(0) || escalationManagerAddress == address(0)
+                || executorAddress == address(0) || vaultFactoryAddress == address(0)
+        ) revert InvalidAddress();
         _modules[REGISTRY_MODULE] = registryAddress;
         _modules[EVALUATOR_MODULE] = evaluatorAddress;
         _modules[ESCALATION_MANAGER_MODULE] = escalationManagerAddress;
         _modules[EXECUTOR_MODULE] = executorAddress;
         _modules[VAULT_FACTORY_MODULE] = vaultFactoryAddress;
-        _validateWiring();
         configured = true;
         emit ModulesConfigured(
             registryAddress, evaluatorAddress, escalationManagerAddress, executorAddress, vaultFactoryAddress
@@ -426,73 +434,24 @@ contract Grantline is
         return IModule(module).version();
     }
 
-    function upgradeModules(ModuleUpgrade[] calldata upgrades) external onlyOwner {
+    function adminSetVaultController(address vault, address newController) external {
+        _onlyAdminController();
         _onlyConfigured();
-        for (uint256 index; index < upgrades.length; index++) {
-            if (!_isKnownModule(upgrades[index].key)) {
-                revert UnknownModule(upgrades[index].key);
-            }
-            address module = _modules[upgrades[index].key];
-            IUUPS(module).upgradeToAndCall(upgrades[index].implementation, upgrades[index].data);
-            if (IModule(module).version() != upgrades[index].version) {
-                revert InvalidModuleRelationship("module.version");
-            }
-        }
-        _validateWiring();
-    }
-
-    /// @dev Changes the implementation used for future Vault proxies only.
-    function setVaultImplementation(address implementation, uint64 implementationVersion) external onlyOwner {
-        _onlyConfigured();
-        IVaultFactory(vaultFactory()).setVaultImplementation(implementation, implementationVersion);
-    }
-
-    /// @dev Upgrades one existing Vault proxy and preserves its recorded identity.
-    function upgradeVault(address vault, address implementation, uint64 implementationVersion, bytes calldata data)
-        external
-        onlyOwner
-        nonReentrant
-    {
-        _onlyConfigured();
-        if (_vaultRecords[vault].controller == address(0)) {
-            revert VaultNotRegistered(vault);
-        }
-        bool wasPaused = IVault(vault).paused();
-        IVaultFactory(vaultFactory()).validateVaultImplementation(implementation, implementationVersion);
-
-        // The record is updated before the external upgrade call. If the UUPS upgrade or
-        // its optional initializer reverts, transaction atomicity restores the old record.
-        _vaultRecords[vault].implementation = implementation;
-        _vaultRecords[vault].version = implementationVersion;
-        IUUPS(vault).upgradeToAndCall(implementation, data);
-        _requireComponentType(vault, ComponentTypes.VAULT, "vault");
-        if (IVault(vault).version() != implementationVersion) {
-            revert InvalidModuleRelationship("vault.version");
-        }
-        if (IVault(vault).owner() != address(this)) {
-            revert InvalidModuleRelationship("vault.owner");
-        }
-        if (IOwnable2Step(vault).pendingOwner() != address(0)) {
-            revert InvalidModuleRelationship("vault.pendingOwner");
-        }
-        if (IVault(vault).paused() != wasPaused) {
-            revert InvalidModuleRelationship("vault.paused");
-        }
-        if (IVault(vault).authority() != executor()) {
-            revert InvalidModuleRelationship("vault.authority");
-        }
-    }
-
-    /// @dev Changes only the controller authorised for one existing Vault.
-    function setVaultController(address vault, address newController) external onlyOwner {
-        _onlyConfigured();
-        if (_vaultRecords[vault].controller == address(0)) {
-            revert VaultNotRegistered(vault);
-        }
+        if (_vaultRecords[vault].controller == address(0)) revert VaultNotRegistered(vault);
         if (newController == address(0)) revert InvalidController();
         address previousController = _vaultRecords[vault].controller;
         _vaultRecords[vault].controller = newController;
         emit VaultControllerUpdated(vault, previousController, newController);
+    }
+
+    function adminRecordVaultUpgrade(address vault, address implementation, uint64 implementationVersion) external {
+        _onlyAdminController();
+        _onlyConfigured();
+        if (_vaultRecords[vault].controller == address(0)) {
+            revert VaultNotRegistered(vault);
+        }
+        _vaultRecords[vault].implementation = implementation;
+        _vaultRecords[vault].version = implementationVersion;
     }
 
     function _onlyController(address vault, address caller) private view {
@@ -520,88 +479,8 @@ contract Grantline is
         return _vaultRecords[vault].controller != address(0);
     }
 
-    function _isKnownModule(bytes32 key) private pure returns (bool) {
-        return key == REGISTRY_MODULE || key == EVALUATOR_MODULE || key == ESCALATION_MANAGER_MODULE
-            || key == EXECUTOR_MODULE || key == VAULT_FACTORY_MODULE;
-    }
-
     function _onlyConfigured() private view {
         if (!configured) revert NotConfigured();
-    }
-
-    function _validateWiring() private view {
-        address registryAddress = _modules[REGISTRY_MODULE];
-        address evaluatorAddress = _modules[EVALUATOR_MODULE];
-        address managerAddress = _modules[ESCALATION_MANAGER_MODULE];
-        address executorAddress = _modules[EXECUTOR_MODULE];
-        address factoryAddress = _modules[VAULT_FACTORY_MODULE];
-        if (
-            registryAddress == address(0) || evaluatorAddress == address(0) || managerAddress == address(0)
-                || executorAddress == address(0) || factoryAddress == address(0)
-        ) revert InvalidModule(bytes32(0), address(0));
-
-        _requireModuleGrantline(registryAddress, REGISTRY_MODULE);
-        _requireModuleGrantline(evaluatorAddress, EVALUATOR_MODULE);
-        _requireModuleGrantline(managerAddress, ESCALATION_MANAGER_MODULE);
-        _requireModuleGrantline(executorAddress, EXECUTOR_MODULE);
-        _requireModuleGrantline(factoryAddress, VAULT_FACTORY_MODULE);
-
-        _requireModuleOwnership(registryAddress, REGISTRY_MODULE);
-        _requireModuleOwnership(evaluatorAddress, EVALUATOR_MODULE);
-        _requireModuleOwnership(managerAddress, ESCALATION_MANAGER_MODULE);
-        _requireModuleOwnership(executorAddress, EXECUTOR_MODULE);
-        _requireModuleOwnership(factoryAddress, VAULT_FACTORY_MODULE);
-
-        if (IEvaluator(evaluatorAddress).registry() != registryAddress) {
-            revert InvalidModuleRelationship("evaluator.registry");
-        }
-        if (IEscalationManager(managerAddress).evaluator() != evaluatorAddress) {
-            revert InvalidModuleRelationship("manager.evaluator");
-        }
-        if (IEscalationManager(managerAddress).registry() != registryAddress) {
-            revert InvalidModuleRelationship("manager.registry");
-        }
-        if (IExecutor(executorAddress).evaluator() != evaluatorAddress) {
-            revert InvalidModuleRelationship("executor.evaluator");
-        }
-        if (IExecutor(executorAddress).escalationManager() != managerAddress) {
-            revert InvalidModuleRelationship("executor.manager");
-        }
-        if (IExecutor(executorAddress).registry() != registryAddress) {
-            revert InvalidModuleRelationship("executor.registry");
-        }
-        if (IVaultFactory(factoryAddress).executor() != executorAddress) {
-            revert InvalidModuleRelationship("factory.executor");
-        }
-    }
-
-    function _requireModuleGrantline(address module, bytes32 key) private view {
-        if (module.code.length == 0 || IModule(module).grantline() != address(this)) {
-            revert InvalidModule(key, module);
-        }
-        _requireComponentType(module, key, "module");
-    }
-
-    function _requireModuleOwnership(address module, bytes32 key) private view {
-        address moduleOwner = address(0);
-        try IOwnable2Step(module).owner() returns (address actualOwner) {
-            moduleOwner = actualOwner;
-        } catch {
-            revert InvalidModuleOwner(key, address(this), address(0));
-        }
-        if (moduleOwner != address(this)) {
-            revert InvalidModuleOwner(key, address(this), moduleOwner);
-        }
-
-        address pendingOwner = address(0);
-        try IOwnable2Step(module).pendingOwner() returns (address actualPendingOwner) {
-            pendingOwner = actualPendingOwner;
-        } catch {
-            revert InvalidModulePendingOwner(key, address(0));
-        }
-        if (pendingOwner != address(0)) {
-            revert InvalidModulePendingOwner(key, pendingOwner);
-        }
     }
 
     function _requireComponentType(address target, bytes32 expected, string memory component) private view {
@@ -616,14 +495,8 @@ contract Grantline is
         }
     }
 
-    function _requireImplementationVersion(address implementation, uint64 expectedVersion) private pure {
-        try IModule(implementation).version() returns (uint64 actualVersion) {
-            if (actualVersion != expectedVersion) {
-                revert InvalidModuleRelationship("implementation.version");
-            }
-        } catch {
-            revert InvalidModuleRelationship("implementation.version");
-        }
+    function _onlyAdminController() private view {
+        if (msg.sender != adminController) revert NotAdminController(msg.sender);
     }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {

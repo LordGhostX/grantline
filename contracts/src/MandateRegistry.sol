@@ -88,10 +88,11 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         _disableInitializers();
     }
 
-    function initialize(address grantlineAddress) external initializer {
+    function initialize(address grantlineAddress, address moduleOwnerAddress) external initializer {
         if (grantlineAddress == address(0)) revert InvalidAddress();
+        if (moduleOwnerAddress == address(0) || moduleOwnerAddress.code.length == 0) revert InvalidAddress();
         grantline = grantlineAddress;
-        __Ownable_init(grantlineAddress);
+        __Ownable_init(moduleOwnerAddress);
         __Ownable2Step_init();
     }
 

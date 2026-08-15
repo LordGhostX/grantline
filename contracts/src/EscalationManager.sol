@@ -65,11 +65,14 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         _disableInitializers();
     }
 
-    function initialize(address grantlineAddress, address evaluatorAddress, address registryAddress)
-        external
-        initializer
-    {
+    function initialize(
+        address grantlineAddress,
+        address evaluatorAddress,
+        address registryAddress,
+        address moduleOwnerAddress
+    ) external initializer {
         if (grantlineAddress == address(0)) revert InvalidAddress();
+        if (moduleOwnerAddress == address(0) || moduleOwnerAddress.code.length == 0) revert InvalidAddress();
         if (evaluatorAddress == address(0) || evaluatorAddress.code.length == 0) {
             revert InvalidEvaluator();
         }
@@ -79,7 +82,7 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         grantline = grantlineAddress;
         evaluator = evaluatorAddress;
         registry = registryAddress;
-        __Ownable_init(grantlineAddress);
+        __Ownable_init(moduleOwnerAddress);
         __Ownable2Step_init();
     }
 

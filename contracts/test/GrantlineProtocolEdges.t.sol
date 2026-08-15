@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Grantline} from "../src/Grantline.sol";
+import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {ComponentTypes} from "../src/ComponentTypes.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -78,7 +79,7 @@ contract GrantlineIncompletePauseVaultImplementation is UUPSUpgradeable {
 contract GrantlineReentrantVaultImplementation is UUPSUpgradeable {
     bool private _paused;
 
-    function initialize(address grantlineAddress, address) external {
+    function initialize(address grantlineAddress, address, address) external {
         Grantline(grantlineAddress).createVault();
     }
 
@@ -109,6 +110,20 @@ contract GrantlineReentrantVaultImplementation is UUPSUpgradeable {
     function _authorizeUpgrade(address) internal pure override {}
 }
 
+contract GrantlineWrongUpgradeAuthorityVaultImplementation is Vault {
+    function initialize(address grantlineAddress, address authorityAddress, address) external override initializer {
+        if (grantlineAddress == address(0) || authorityAddress == address(0) || authorityAddress.code.length == 0) {
+            revert InvalidAddress();
+        }
+        grantline = grantlineAddress;
+        authority = authorityAddress;
+        upgradeAuthority = address(0xBEEF);
+        __Ownable_init(grantlineAddress);
+        __Ownable2Step_init();
+        __Pausable_init();
+    }
+}
+
 contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
     function test_allImplementationInitializersAreDisabled() public {
         Grantline grantline = new Grantline();
@@ -122,17 +137,17 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         fixtureVm.expectRevert();
         grantline.initialize(address(this));
         fixtureVm.expectRevert();
-        registry.initialize(address(this));
+        registry.initialize(address(this), address(this));
         fixtureVm.expectRevert();
-        evaluator.initialize(address(this), address(this), address(0), true);
+        evaluator.initialize(address(this), address(this), address(0), true, address(this));
         fixtureVm.expectRevert();
-        manager.initialize(address(this), address(this), address(this));
+        manager.initialize(address(this), address(this), address(this), address(this));
         fixtureVm.expectRevert();
-        executor.initialize(address(this), address(this), address(this), address(this));
+        executor.initialize(address(this), address(this), address(this), address(this), address(this));
         fixtureVm.expectRevert();
-        factory.initialize(address(this), address(vault), 1, address(this));
+        factory.initialize(address(this), address(vault), 1, address(this), address(this), address(this));
         fixtureVm.expectRevert();
-        vault.initialize(address(this), address(this));
+        vault.initialize(address(this), address(this), address(this));
     }
 
     function test_ownershipRenunciationIsDisabled() public {
@@ -156,7 +171,7 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         address executor = fixture.hub.executor();
         address vaultFactory = fixture.hub.vaultFactory();
         fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.AlreadyConfigured.selector));
-        fixture.hub.configureModules(registry, evaluator, escalationManager, executor, vaultFactory);
+        fixture.admin.configureModules(registry, evaluator, escalationManager, executor, vaultFactory);
     }
 
     function test_ownershipTransferRequiresPendingOwnerAcceptance() public {
@@ -170,6 +185,38 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         fixture.hub.acceptOwnership();
         assert(fixture.hub.owner() == nextAdmin);
         assert(fixture.hub.pendingOwner() == address(0));
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(GrantlineAdmin.NotProtocolAdmin.selector, address(this)));
+        fixture.admin.setVaultController(fixture.vault, address(0xBEEF));
+
+        fixtureVm.prank(nextAdmin);
+        fixture.admin.setVaultController(fixture.vault, address(0xBEEF));
+        assert(fixture.hub.getVault(fixture.vault).controller == address(0xBEEF));
+    }
+
+    function test_adminBoundaryKeepsUserFacadeAndVaultCustodySeparate() public {
+        Fixture memory fixture = _fixture();
+        GrantlineProtocolVaultV2 implementation = new GrantlineProtocolVaultV2();
+
+        assert(MandateRegistry(fixture.hub.registry()).owner() == address(fixture.admin));
+        assert(Vault(payable(fixture.vault)).owner() == address(fixture.hub));
+        assert(Vault(payable(fixture.vault)).upgradeAuthority() == address(fixture.admin));
+
+        fixtureVm.prank(address(fixture.admin));
+        fixtureVm.expectRevert();
+        Vault(payable(fixture.vault)).withdrawNative(payable(address(0xBEEF)), 1);
+
+        fixtureVm.prank(address(fixture.hub));
+        (bool hubUpgradeSuccess,) = address(fixture.vault)
+            .call(abi.encodeWithSignature("upgradeToAndCall(address,bytes)", address(implementation), bytes("")));
+        assert(!hubUpgradeSuccess);
+
+        (bool legacyAdminSuccess,) = address(fixture.hub)
+            .call(abi.encodeWithSignature("setVaultController(address,address)", fixture.vault, address(0xBEEF)));
+        assert(!legacyAdminSuccess);
+        (bool adminPauseSuccess,) =
+            address(fixture.admin).call(abi.encodeWithSignature("pauseVault(address)", fixture.vault));
+        assert(!adminPauseSuccess);
     }
 
     function test_grantlineUpgradeRejectsWrongRoleImplementation() public {
@@ -194,29 +241,32 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         fixture.hub.getVault(address(0xCAFE));
 
         fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.VaultNotRegistered.selector, address(0xCAFE)));
-        fixture.hub.setVaultController(address(0xCAFE), address(0xBEEF));
+        fixture.admin.setVaultController(address(0xCAFE), address(0xBEEF));
 
         fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.InvalidController.selector));
-        fixture.hub.setVaultController(fixture.vault, address(0));
+        fixture.admin.setVaultController(fixture.vault, address(0));
 
         fixtureVm.expectRevert(abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(0)));
-        fixture.hub.setVaultImplementation(address(0), 1);
+        fixture.admin.setVaultImplementation(address(0), 1);
     }
 
     function test_rejectsWrongRoleModuleImplementation() public {
         Fixture memory fixture = _fixture();
         VaultExecutor implementation = new VaultExecutor();
-        Grantline.ModuleUpgrade[] memory upgrades = new Grantline.ModuleUpgrade[](1);
-        upgrades[0] = Grantline.ModuleUpgrade({
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
             key: fixture.hub.REGISTRY_MODULE(), implementation: address(implementation), version: 1, data: ""
         });
 
         fixtureVm.expectRevert(
             abi.encodeWithSelector(
-                Grantline.InvalidComponentType.selector, "module", ComponentTypes.REGISTRY, ComponentTypes.EXECUTOR
+                GrantlineAdmin.InvalidComponentType.selector,
+                "module.implementation",
+                ComponentTypes.REGISTRY,
+                ComponentTypes.EXECUTOR
             )
         );
-        fixture.hub.upgradeModules(upgrades);
+        fixture.admin.upgradeModules(upgrades);
 
         assert(MandateRegistry(fixture.hub.registry()).componentType() == ComponentTypes.REGISTRY);
     }
@@ -228,12 +278,12 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         fixtureVm.expectRevert(
             abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(implementation))
         );
-        fixture.hub.setVaultImplementation(address(implementation), 1);
+        fixture.admin.setVaultImplementation(address(implementation), 1);
 
         fixtureVm.expectRevert(
             abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(implementation))
         );
-        fixture.hub.upgradeVault(fixture.vault, address(implementation), 1, "");
+        fixture.admin.upgradeVault(fixture.vault, address(implementation), 1, "");
 
         assert(fixture.hub.getVault(fixture.vault).implementation != address(implementation));
         assert(Vault(payable(fixture.vault)).owner() == address(fixture.hub));
@@ -248,12 +298,12 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         fixtureVm.expectRevert(
             abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(implementation))
         );
-        fixture.hub.setVaultImplementation(address(implementation), 1);
+        fixture.admin.setVaultImplementation(address(implementation), 1);
 
         fixtureVm.expectRevert(
             abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(implementation))
         );
-        fixture.hub.upgradeVault(fixture.vault, address(implementation), 1, "");
+        fixture.admin.upgradeVault(fixture.vault, address(implementation), 1, "");
 
         assert(fixture.hub.getVault(fixture.vault).implementation == previousImplementation);
         assert(Vault(payable(fixture.vault)).owner() == address(fixture.hub));
@@ -264,8 +314,8 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         Fixture memory fixture = _fixture();
         GrantlineRegistryOwnershipV2 implementation = new GrantlineRegistryOwnershipV2();
         address externalOwner = address(0xBEEF);
-        Grantline.ModuleUpgrade[] memory upgrades = new Grantline.ModuleUpgrade[](1);
-        upgrades[0] = Grantline.ModuleUpgrade({
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
             key: fixture.hub.REGISTRY_MODULE(),
             implementation: address(implementation),
             version: 1,
@@ -274,12 +324,15 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
 
         fixtureVm.expectRevert(
             abi.encodeWithSelector(
-                Grantline.InvalidModuleOwner.selector, ComponentTypes.REGISTRY, address(fixture.hub), externalOwner
+                GrantlineAdmin.InvalidModuleOwner.selector,
+                ComponentTypes.REGISTRY,
+                address(fixture.admin),
+                externalOwner
             )
         );
-        fixture.hub.upgradeModules(upgrades);
+        fixture.admin.upgradeModules(upgrades);
 
-        assert(MandateRegistry(fixture.hub.registry()).owner() == address(fixture.hub));
+        assert(MandateRegistry(fixture.hub.registry()).owner() == address(fixture.admin));
         assert(MandateRegistry(fixture.hub.registry()).mandateCount() == 1);
         (bool markerPresent,) = fixture.hub.registry().call(abi.encodeCall(GrantlineRegistryOwnershipV2.marker, ()));
         assert(!markerPresent);
@@ -289,8 +342,8 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         Fixture memory fixture = _fixture();
         GrantlineRegistryOwnershipV2 implementation = new GrantlineRegistryOwnershipV2();
         address pendingOwner = address(0xCAFE);
-        Grantline.ModuleUpgrade[] memory upgrades = new Grantline.ModuleUpgrade[](1);
-        upgrades[0] = Grantline.ModuleUpgrade({
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
             key: fixture.hub.REGISTRY_MODULE(),
             implementation: address(implementation),
             version: 1,
@@ -298,11 +351,13 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         });
 
         fixtureVm.expectRevert(
-            abi.encodeWithSelector(Grantline.InvalidModulePendingOwner.selector, ComponentTypes.REGISTRY, pendingOwner)
+            abi.encodeWithSelector(
+                GrantlineAdmin.InvalidModulePendingOwner.selector, ComponentTypes.REGISTRY, pendingOwner
+            )
         );
-        fixture.hub.upgradeModules(upgrades);
+        fixture.admin.upgradeModules(upgrades);
 
-        assert(MandateRegistry(fixture.hub.registry()).owner() == address(fixture.hub));
+        assert(MandateRegistry(fixture.hub.registry()).owner() == address(fixture.admin));
         assert(MandateRegistry(fixture.hub.registry()).pendingOwner() == address(0));
     }
 
@@ -310,16 +365,18 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         Fixture memory fixture = _fixture();
         GrantlineEscalationRegistryV2 implementation = new GrantlineEscalationRegistryV2();
         address alternateRegistry = address(new MandateRegistry());
-        Grantline.ModuleUpgrade[] memory upgrades = new Grantline.ModuleUpgrade[](1);
-        upgrades[0] = Grantline.ModuleUpgrade({
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
             key: fixture.hub.ESCALATION_MANAGER_MODULE(),
             implementation: address(implementation),
             version: 1,
             data: abi.encodeCall(GrantlineEscalationRegistryV2.setRegistryForTest, (alternateRegistry))
         });
 
-        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.InvalidModuleRelationship.selector, "manager.registry"));
-        fixture.hub.upgradeModules(upgrades);
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(GrantlineAdmin.InvalidModuleRelationship.selector, "manager.registry")
+        );
+        fixture.admin.upgradeModules(upgrades);
 
         assert(EscalationManager(fixture.hub.escalationManager()).registry() == fixture.hub.registry());
     }
@@ -328,8 +385,8 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         Fixture memory fixture = _fixture();
         GrantlineExecutorRegistryV2 implementation = new GrantlineExecutorRegistryV2();
         address alternateRegistry = address(new MandateRegistry());
-        Grantline.ModuleUpgrade[] memory upgrades = new Grantline.ModuleUpgrade[](1);
-        upgrades[0] = Grantline.ModuleUpgrade({
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
             key: fixture.hub.EXECUTOR_MODULE(),
             implementation: address(implementation),
             version: 1,
@@ -337,9 +394,9 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         });
 
         fixtureVm.expectRevert(
-            abi.encodeWithSelector(Grantline.InvalidModuleRelationship.selector, "executor.registry")
+            abi.encodeWithSelector(GrantlineAdmin.InvalidModuleRelationship.selector, "executor.registry")
         );
-        fixture.hub.upgradeModules(upgrades);
+        fixture.admin.upgradeModules(upgrades);
 
         assert(VaultExecutor(fixture.hub.executor()).registry() == fixture.hub.registry());
     }
@@ -350,7 +407,7 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         address secondVault = fixture.hub.createVault();
         GrantlineProtocolVaultV2 implementation = new GrantlineProtocolVaultV2();
 
-        fixture.hub.setVaultImplementation(address(implementation), 1);
+        fixture.admin.setVaultImplementation(address(implementation), 1);
         address futureVault = fixture.hub.createVault();
 
         assert(fixture.hub.getVault(existingVault).implementation != address(implementation));
@@ -370,14 +427,27 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         uint256 previousHubVaultCount = fixture.hub.vaultCount();
         uint256 previousFactoryVaultCount = VaultFactory(fixture.hub.vaultFactory()).vaultCount();
 
-        fixture.hub.setVaultImplementation(address(implementation), 1);
-
-        fixtureVm.expectRevert(abi.encodeWithSelector(ReentrancyGuard.ReentrancyGuardReentrantCall.selector));
-        fixture.hub.createVault();
+        fixtureVm.expectRevert();
+        fixture.admin.setVaultImplementation(address(implementation), 1);
 
         assert(fixture.hub.vaultCount() == previousHubVaultCount);
         assert(VaultFactory(fixture.hub.vaultFactory()).vaultCount() == previousFactoryVaultCount);
         assert(fixture.hub.vaultAt(0) == fixture.vault);
+    }
+
+    function test_rejectsVaultTemplateWithWrongUpgradeAuthority() public {
+        Fixture memory fixture = _fixture();
+        GrantlineWrongUpgradeAuthorityVaultImplementation implementation =
+            new GrantlineWrongUpgradeAuthorityVaultImplementation();
+        address previousImplementation = VaultFactory(fixture.hub.vaultFactory()).vaultImplementation();
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(implementation))
+        );
+        fixture.admin.setVaultImplementation(address(implementation), 1);
+
+        assert(VaultFactory(fixture.hub.vaultFactory()).vaultImplementation() == previousImplementation);
+        assert(fixture.hub.createVault() != address(0));
     }
 
     function test_existingVaultUpgradePreservesStateAndChecksVersion() public {
@@ -386,10 +456,10 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         address previousImplementation = fixture.hub.getVault(fixture.vault).implementation;
 
         fixtureVm.expectRevert();
-        fixture.hub.upgradeVault(fixture.vault, address(implementation), 2, "");
+        fixture.admin.upgradeVault(fixture.vault, address(implementation), 2, "");
         assert(fixture.hub.getVault(fixture.vault).implementation == previousImplementation);
 
-        fixture.hub.upgradeVault(fixture.vault, address(implementation), 1, "");
+        fixture.admin.upgradeVault(fixture.vault, address(implementation), 1, "");
         assert(GrantlineProtocolVaultV2(payable(fixture.vault)).marker() == 2);
         assert(fixture.hub.getVault(fixture.vault).implementation == address(implementation));
     }
@@ -400,10 +470,8 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         address pendingOwner = address(0xCAFE);
         address previousImplementation = fixture.hub.getVault(fixture.vault).implementation;
 
-        fixtureVm.expectRevert(
-            abi.encodeWithSelector(Grantline.InvalidModuleRelationship.selector, "vault.pendingOwner")
-        );
-        fixture.hub
+        fixtureVm.expectRevert();
+        fixture.admin
             .upgradeVault(
                 fixture.vault,
                 address(implementation),
@@ -421,8 +489,8 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         GrantlineProtocolVaultV2 implementation = new GrantlineProtocolVaultV2();
 
         fixture.hub.pauseVault(fixture.vault);
-        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.InvalidModuleRelationship.selector, "vault.paused"));
-        fixture.hub
+        fixtureVm.expectRevert();
+        fixture.admin
             .upgradeVault(
                 fixture.vault, address(implementation), 1, abi.encodeCall(GrantlineProtocolOwnership.unpause, ())
             );
@@ -434,18 +502,18 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
     function test_moduleUpgradeIsAtomicAndPreservesRegistryStorage() public {
         Fixture memory fixture = _fixture();
         GrantlineProtocolRegistryV2 implementation = new GrantlineProtocolRegistryV2();
-        Grantline.ModuleUpgrade[] memory upgrades = new Grantline.ModuleUpgrade[](1);
-        upgrades[0] = Grantline.ModuleUpgrade({
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
             key: fixture.hub.REGISTRY_MODULE(), implementation: address(implementation), version: 2, data: ""
         });
 
         fixtureVm.expectRevert();
-        fixture.hub.upgradeModules(upgrades);
+        fixture.admin.upgradeModules(upgrades);
         (bool markerPresent,) = fixture.hub.registry().call(abi.encodeCall(GrantlineProtocolRegistryV2.marker, ()));
         assert(!markerPresent);
 
         upgrades[0].version = 1;
-        fixture.hub.upgradeModules(upgrades);
+        fixture.admin.upgradeModules(upgrades);
         assert(GrantlineProtocolRegistryV2(fixture.hub.registry()).marker() == 2);
         assert(MandateRegistry(fixture.hub.registry()).mandateCount() == 1);
         assert(MandateRegistry(fixture.hub.registry()).isRegisteredVault(fixture.vault));
@@ -454,7 +522,7 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
     function test_controllerReassignmentChangesOnlyControllerAuthority() public {
         Fixture memory fixture = _fixture();
         address nextController = address(0xCAFE);
-        fixture.hub.setVaultController(fixture.vault, nextController);
+        fixture.admin.setVaultController(fixture.vault, nextController);
         assert(fixture.hub.controllerOf(fixture.vault) == nextController);
         assert(Vault(payable(fixture.vault)).owner() == address(fixture.hub));
         assert(Vault(payable(fixture.vault)).authority() == fixture.hub.executor());

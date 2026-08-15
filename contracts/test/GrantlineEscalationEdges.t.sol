@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {ActionTypes} from "../src/ActionTypes.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
 import {Grantline} from "../src/Grantline.sol";
+import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
@@ -214,20 +215,20 @@ contract GrantlineEscalationEdgesTest is GrantlineTestFixture {
         GrantlineEscalationManagerV2 managerImplementation = new GrantlineEscalationManagerV2();
         GrantlineEscalationRegistryV2 registryImplementation = new GrantlineEscalationRegistryV2();
         GrantlineEscalationExecutorV2 executorImplementation = new GrantlineEscalationExecutorV2();
-        Grantline.ModuleUpgrade[] memory upgrades = new Grantline.ModuleUpgrade[](3);
-        upgrades[0] = Grantline.ModuleUpgrade({
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](3);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
             key: fixture.hub.REGISTRY_MODULE(), implementation: address(registryImplementation), version: 1, data: ""
         });
-        upgrades[1] = Grantline.ModuleUpgrade({
+        upgrades[1] = GrantlineAdmin.ModuleUpgrade({
             key: fixture.hub.ESCALATION_MANAGER_MODULE(),
             implementation: address(managerImplementation),
             version: 1,
             data: ""
         });
-        upgrades[2] = Grantline.ModuleUpgrade({
+        upgrades[2] = GrantlineAdmin.ModuleUpgrade({
             key: fixture.hub.EXECUTOR_MODULE(), implementation: address(executorImplementation), version: 1, data: ""
         });
-        fixture.hub.upgradeModules(upgrades);
+        fixture.admin.upgradeModules(upgrades);
 
         assert(GrantlineEscalationManagerV2(fixture.hub.escalationManager()).marker() == 2);
         assert(GrantlineEscalationRegistryV2(fixture.hub.registry()).marker() == 2);
