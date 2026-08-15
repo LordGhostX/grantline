@@ -433,7 +433,6 @@
 }
 
 .path-arrow,
-.access-arrow,
 .lineage-line > span {
     color: var(--brand);
     font-family: var(--font-geist-mono), monospace;
@@ -741,47 +740,6 @@
     font-family: var(--font-geist-mono), monospace;
     font-size: 12px;
     font-weight: 500;
-}
-
-.access-frame {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 35px minmax(0, 1fr) 35px minmax(
-            0,
-            1fr
-        );
-    gap: 14px;
-    align-items: stretch;
-}
-
-.access-step {
-    display: grid;
-    min-height: 175px;
-    align-content: center;
-    gap: 12px;
-    padding: 24px;
-    border: 1px solid var(--border);
-    background: #101410;
-}
-
-.access-step-accent {
-    border-color: rgba(208, 180, 108, 0.75);
-    background: rgba(208, 180, 108, 0.055);
-}
-
-.access-step strong {
-    font-size: clamp(18px, 2vw, 25px);
-    font-weight: 500;
-    letter-spacing: -0.03em;
-    line-height: 1.13;
-}
-
-.access-step small {
-    color: var(--text-secondary);
-    font-size: 13px;
-}
-
-.access-arrow {
-    align-self: center;
 }
 
 .use-case-grid {
@@ -1426,13 +1384,6 @@ code.code-deny {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .access-frame {
-        grid-template-columns: 1fr;
-    }
-
-    .access-arrow {
-        transform: rotate(90deg);
-    }
 }
 
 @media (max-width: 760px) {

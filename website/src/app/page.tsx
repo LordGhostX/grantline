@@ -443,43 +443,7 @@ export default function Home() {
                 <strong>Did it complete?</strong>
               </article>
             </div>
-          </div>
-        </section>
 
-        <section className="section-dark">
-          <div className="shell">
-            <div className="section-head reveal">
-              <h2>A signature proves intent. Grantline defines authority.</h2>
-              <p>
-                The signing key identifies the agent behind the proposal.
-                Grantline evaluates that proposal separately, and the Vault only
-                accepts calls from its configured execution authority.
-              </p>
-            </div>
-
-            <div className="access-frame reveal">
-              <div className="access-step">
-                <span className="label">Agent identity</span>
-                <strong>“This action came from Agent A.”</strong>
-                <small>Signature proves intent.</small>
-              </div>
-              <span className="access-arrow" aria-hidden="true">
-                →
-              </span>
-              <div className="access-step access-step-accent">
-                <span className="label">Grantline</span>
-                <strong>“Does Agent A have authority now?”</strong>
-                <small>Current rules are evaluated.</small>
-              </div>
-              <span className="access-arrow" aria-hidden="true">
-                →
-              </span>
-              <div className="access-step">
-                <span className="label">Vault boundary</span>
-                <strong>“Only the authorised path can move capital.”</strong>
-                <small>Owner custody remains separate.</small>
-              </div>
-            </div>
           </div>
         </section>
 
