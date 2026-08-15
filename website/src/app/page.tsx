@@ -227,7 +227,7 @@ export default function Home() {
             <a href="#how-it-works">How it works</a>
             <a href="#live">What&apos;s live</a>
             <a href="#model">Authority model</a>
-            <Link href="/docs">Docs</Link>
+            <Link href="/docs">Documentation</Link>
             <a href={repositoryUrl} target="_blank" rel="noreferrer nofollow">
               GitHub <span aria-hidden="true">↗</span>
             </a>
@@ -534,7 +534,11 @@ export default function Home() {
                       ↗
                     </span>
                   </a>
-                  <Link href="/docs/enforcement/security-model">
+                  <Link
+                    href="/docs/enforcement/security-model"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     <strong>Read how enforcement works</strong>
                     <span>
                       Follow the boundary from agent intent to Vault custody.
@@ -543,7 +547,11 @@ export default function Home() {
                       ↗
                     </span>
                   </Link>
-                  <Link href="/docs/execution/networks/x-layer-testnet">
+                  <Link
+                    href="/docs/execution/networks/x-layer-testnet"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     <strong>Inspect testnet evidence</strong>
                     <span>
                       Review the current network and exercised integration.
