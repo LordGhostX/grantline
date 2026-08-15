@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ActionTypes} from "./ActionTypes.sol";
+import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
 import {IGrantlineContext, IEscalationManager, IEvaluator, IModule, IRegistry} from "./Interfaces.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
@@ -55,7 +56,7 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
 
     address public grantline;
     address public override evaluator;
-    address public registry;
+    address public override registry;
     mapping(bytes32 => GrantlineTypes.Escalation) private _escalations;
 
     constructor() {
@@ -82,6 +83,10 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
 
     function version() external pure override returns (uint64) {
         return 1;
+    }
+
+    function componentType() external pure override returns (bytes32) {
+        return ComponentTypes.ESCALATION_MANAGER;
     }
 
     function submit(ActionTypes.ActionPlan calldata plan, bytes calldata signature, bytes32 digest, address submittedBy)

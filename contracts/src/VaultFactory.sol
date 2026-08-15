@@ -6,6 +6,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC1822Proxiable} from "@openzeppelin/contracts/interfaces/draft-IERC1822.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {ComponentTypes} from "./ComponentTypes.sol";
 import {IVault, IVaultFactory} from "./Interfaces.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
@@ -43,8 +44,7 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
             revert InvalidAddress();
         }
         if (vaultImplementationAddress == address(0)) revert InvalidImplementation(vaultImplementationAddress);
-        _requireUUPSImplementation(vaultImplementationAddress);
-        _requireImplementationVersion(vaultImplementationAddress, implementationVersion);
+        _requireVaultImplementation(vaultImplementationAddress, implementationVersion);
         grantline = grantlineAddress;
         executor = executorAddress;
         vaultImplementation = vaultImplementationAddress;
@@ -55,6 +55,10 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
 
     function version() external pure override returns (uint64) {
         return 1;
+    }
+
+    function componentType() external pure override returns (bytes32) {
+        return ComponentTypes.VAULT_FACTORY;
     }
 
     function createVault(address controller) external override returns (address vault) {
@@ -70,8 +74,7 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
     function setVaultImplementation(address implementation, uint64 implementationVersion) external override {
         _onlyGrantline();
         if (implementation == address(0)) revert InvalidImplementation(implementation);
-        _requireUUPSImplementation(implementation);
-        _requireImplementationVersion(implementation, implementationVersion);
+        _requireVaultImplementation(implementation, implementationVersion);
         address previousImplementation = vaultImplementation;
         vaultImplementation = implementation;
         vaultImplementationVersion = implementationVersion;
@@ -97,6 +100,17 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
         } catch {
             revert InvalidImplementation(implementation);
         }
+    }
+
+    function _requireVaultImplementation(address implementation, uint64 expectedVersion) private view {
+        if (implementation == address(0)) revert InvalidImplementation(implementation);
+        _requireUUPSImplementation(implementation);
+        try IVault(implementation).componentType() returns (bytes32 actualType) {
+            if (actualType != ComponentTypes.VAULT) revert InvalidImplementation(implementation);
+        } catch {
+            revert InvalidImplementation(implementation);
+        }
+        _requireImplementationVersion(implementation, expectedVersion);
     }
 
     function _requireImplementationVersion(address implementation, uint64 expectedVersion) private pure {

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {ActionTypes} from "../src/ActionTypes.sol";
+import {ComponentTypes} from "../src/ComponentTypes.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
@@ -263,12 +264,47 @@ contract TestnetIntegration is ScriptBase {
         _require(hub.vaultFactory() == state.vaultFactory, "Vault factory proxy mismatch");
         _require(hub.vaultCount() == 0, "integration requires a fresh Grantline deployment");
 
+        _require(hub.componentType() == ComponentTypes.GRANTLINE, "Grantline component type mismatch");
+
         _require(MandateRegistry(state.registry).grantline() == state.hub, "registry Grantline mismatch");
         _require(MandateEvaluator(state.evaluator).grantline() == state.hub, "evaluator Grantline mismatch");
         _require(EscalationManager(state.escalationManager).grantline() == state.hub, "manager Grantline mismatch");
         _require(VaultExecutor(state.executor).grantline() == state.hub, "executor Grantline mismatch");
         _require(VaultFactory(state.vaultFactory).grantline() == state.hub, "factory Grantline mismatch");
+        _require(
+            MandateRegistry(state.registry).componentType() == ComponentTypes.REGISTRY,
+            "registry component type mismatch"
+        );
+        _require(
+            MandateEvaluator(state.evaluator).componentType() == ComponentTypes.EVALUATOR,
+            "evaluator component type mismatch"
+        );
+        _require(
+            EscalationManager(state.escalationManager).componentType() == ComponentTypes.ESCALATION_MANAGER,
+            "manager component type mismatch"
+        );
+        _require(
+            VaultExecutor(state.executor).componentType() == ComponentTypes.EXECUTOR, "executor component type mismatch"
+        );
+        _require(
+            VaultFactory(state.vaultFactory).componentType() == ComponentTypes.VAULT_FACTORY,
+            "factory component type mismatch"
+        );
+        _require(MandateRegistry(state.registry).owner() == state.hub, "registry owner mismatch");
+        _require(MandateRegistry(state.registry).pendingOwner() == address(0), "registry pending owner mismatch");
+        _require(MandateEvaluator(state.evaluator).owner() == state.hub, "evaluator owner mismatch");
+        _require(MandateEvaluator(state.evaluator).pendingOwner() == address(0), "evaluator pending owner mismatch");
+        _require(EscalationManager(state.escalationManager).owner() == state.hub, "manager owner mismatch");
+        _require(
+            EscalationManager(state.escalationManager).pendingOwner() == address(0), "manager pending owner mismatch"
+        );
+        _require(VaultExecutor(state.executor).owner() == state.hub, "executor owner mismatch");
+        _require(VaultExecutor(state.executor).pendingOwner() == address(0), "executor pending owner mismatch");
+        _require(VaultFactory(state.vaultFactory).owner() == state.hub, "factory owner mismatch");
+        _require(VaultFactory(state.vaultFactory).pendingOwner() == address(0), "factory pending owner mismatch");
         _require(MandateEvaluator(state.evaluator).registry() == state.registry, "evaluator registry mismatch");
+        _require(EscalationManager(state.escalationManager).registry() == state.registry, "manager registry mismatch");
+        _require(VaultExecutor(state.executor).registry() == state.registry, "executor registry mismatch");
         _require(
             EscalationManager(state.escalationManager).evaluator() == state.evaluator, "manager evaluator mismatch"
         );

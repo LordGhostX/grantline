@@ -9,10 +9,30 @@ import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
+import {IUUPS} from "../src/Interfaces.sol";
 import {DeploymentManifest} from "../script/DeploymentManifest.s.sol";
 import {VerifyGrantlineDeployment} from "../script/VerifyGrantlineDeployment.s.sol";
 
+interface GrantlineDeploymentVm {
+    function prank(address sender) external;
+}
+
+interface GrantlineDeploymentOwnership {
+    function transferOwnership(address newOwner) external;
+
+    function acceptOwnership() external;
+}
+
+contract GrantlineDeploymentEscalationRegistryV2 is EscalationManager {
+    function setRegistryForTest(address registryAddress) external {
+        registry = registryAddress;
+    }
+}
+
 contract GrantlineDeploymentTest {
+    GrantlineDeploymentVm private constant deploymentVm =
+        GrantlineDeploymentVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+
     struct Stack {
         Grantline grantline;
         Grantline grantlineImplementation;
@@ -42,6 +62,67 @@ contract GrantlineDeploymentTest {
         Stack memory stack = _deploy();
         string memory manifest = _writeManifest(stack, bytes32(uint256(1)));
 
+        VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
+        (bool success,) = address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
+        assert(!success);
+    }
+
+    function test_grantlineDeploymentManifestRejectsExternalModuleOwner() public {
+        Stack memory stack = _deploy();
+        address externalOwner = address(0xBEEF);
+
+        deploymentVm.prank(address(stack.grantline));
+        GrantlineDeploymentOwnership(stack.registry).transferOwnership(externalOwner);
+        deploymentVm.prank(externalOwner);
+        GrantlineDeploymentOwnership(stack.registry).acceptOwnership();
+
+        string memory manifest = _writeManifest(stack, address(stack.grantline).codehash);
+        VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
+        (bool success,) = address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
+        assert(!success);
+    }
+
+    function test_grantlineDeploymentManifestRejectsPendingVaultOwner() public {
+        Stack memory stack = _deploy();
+        address pendingOwner = address(0xCAFE);
+
+        deploymentVm.prank(address(stack.grantline));
+        GrantlineDeploymentOwnership(stack.vault).transferOwnership(pendingOwner);
+
+        string memory manifest = _writeManifest(stack, address(stack.grantline).codehash);
+        VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
+        (bool success,) = address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
+        assert(!success);
+    }
+
+    function test_grantlineDeploymentManifestRejectsMismatchedManagerRegistry() public {
+        Stack memory stack = _deploy();
+        GrantlineDeploymentEscalationRegistryV2 implementation = new GrantlineDeploymentEscalationRegistryV2();
+        address alternateRegistry = address(new MandateRegistry());
+
+        deploymentVm.prank(address(stack.grantline));
+        IUUPS(stack.escalationManager)
+            .upgradeToAndCall(
+                address(implementation),
+                abi.encodeCall(GrantlineDeploymentEscalationRegistryV2.setRegistryForTest, (alternateRegistry))
+            );
+        stack.escalationManagerImplementation = address(implementation);
+
+        string memory manifest = _writeManifest(stack, address(stack.grantline).codehash);
+        VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
+        (bool success,) = address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
+        assert(!success);
+    }
+
+    function test_grantlineDeploymentManifestRejectsWrongModuleRole() public {
+        Stack memory stack = _deploy();
+        VaultExecutor implementation = new VaultExecutor();
+
+        deploymentVm.prank(address(stack.grantline));
+        IUUPS(stack.registry).upgradeToAndCall(address(implementation), "");
+        stack.registryImplementation = address(implementation);
+
+        string memory manifest = _writeManifest(stack, address(stack.grantline).codehash);
         VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
         (bool success,) = address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
         assert(!success);

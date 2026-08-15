@@ -7,13 +7,16 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ActionSignature} from "./ActionSignature.sol";
 import {ActionTypes} from "./ActionTypes.sol";
+import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
 import {
+    IComponent,
     IGrantlineContext,
     IEscalationManager,
     IEvaluator,
     IExecutor,
     IModule,
+    IOwnable2Step,
     IRegistry,
     IUUPS,
     IVault,
@@ -29,14 +32,17 @@ contract Grantline is
     EIP712Upgradeable,
     IGrantlineContext
 {
-    bytes32 public constant REGISTRY_MODULE = keccak256("REGISTRY");
-    bytes32 public constant EVALUATOR_MODULE = keccak256("EVALUATOR");
-    bytes32 public constant ESCALATION_MANAGER_MODULE = keccak256("ESCALATION_MANAGER");
-    bytes32 public constant EXECUTOR_MODULE = keccak256("EXECUTOR");
-    bytes32 public constant VAULT_FACTORY_MODULE = keccak256("VAULT_FACTORY");
+    bytes32 public constant REGISTRY_MODULE = ComponentTypes.REGISTRY;
+    bytes32 public constant EVALUATOR_MODULE = ComponentTypes.EVALUATOR;
+    bytes32 public constant ESCALATION_MANAGER_MODULE = ComponentTypes.ESCALATION_MANAGER;
+    bytes32 public constant EXECUTOR_MODULE = ComponentTypes.EXECUTOR;
+    bytes32 public constant VAULT_FACTORY_MODULE = ComponentTypes.VAULT_FACTORY;
 
     error InvalidAddress();
     error InvalidModule(bytes32 key, address module);
+    error InvalidComponentType(string component, bytes32 expected, bytes32 actual);
+    error InvalidModuleOwner(bytes32 key, address expected, address actual);
+    error InvalidModulePendingOwner(bytes32 key, address pendingOwner);
     error InvalidModuleRelationship(string relationship);
     error AlreadyConfigured();
     error NotConfigured();
@@ -117,6 +123,10 @@ contract Grantline is
 
     function version() external pure returns (uint64) {
         return 1;
+    }
+
+    function componentType() external pure override returns (bytes32) {
+        return ComponentTypes.GRANTLINE;
     }
 
     function configureModules(
@@ -414,21 +424,26 @@ contract Grantline is
         if (_vaultRecords[vault].controller == address(0)) {
             revert VaultNotRegistered(vault);
         }
-        try IVault(implementation).version() returns (uint64 implementationVersionValue) {
-            if (implementationVersionValue != implementationVersion) {
-                revert InvalidModuleRelationship("vault.version");
-            }
-        } catch {
-            revert InvalidModuleRelationship("vault.version");
-        }
+        _requireComponentType(implementation, ComponentTypes.VAULT, "vault.implementation");
+        _requireImplementationVersion(implementation, implementationVersion);
 
         // The record is updated before the external upgrade call. If the UUPS upgrade or
         // its optional initializer reverts, transaction atomicity restores the old record.
         _vaultRecords[vault].implementation = implementation;
         _vaultRecords[vault].version = implementationVersion;
         IUUPS(vault).upgradeToAndCall(implementation, data);
+        _requireComponentType(vault, ComponentTypes.VAULT, "vault");
         if (IVault(vault).version() != implementationVersion) {
             revert InvalidModuleRelationship("vault.version");
+        }
+        if (IVault(vault).owner() != address(this)) {
+            revert InvalidModuleRelationship("vault.owner");
+        }
+        if (IOwnable2Step(vault).pendingOwner() != address(0)) {
+            revert InvalidModuleRelationship("vault.pendingOwner");
+        }
+        if (IVault(vault).authority() != executor()) {
+            revert InvalidModuleRelationship("vault.authority");
         }
     }
 
@@ -491,17 +506,29 @@ contract Grantline is
         _requireModuleGrantline(executorAddress, EXECUTOR_MODULE);
         _requireModuleGrantline(factoryAddress, VAULT_FACTORY_MODULE);
 
+        _requireModuleOwnership(registryAddress, REGISTRY_MODULE);
+        _requireModuleOwnership(evaluatorAddress, EVALUATOR_MODULE);
+        _requireModuleOwnership(managerAddress, ESCALATION_MANAGER_MODULE);
+        _requireModuleOwnership(executorAddress, EXECUTOR_MODULE);
+        _requireModuleOwnership(factoryAddress, VAULT_FACTORY_MODULE);
+
         if (IEvaluator(evaluatorAddress).registry() != registryAddress) {
             revert InvalidModuleRelationship("evaluator.registry");
         }
         if (IEscalationManager(managerAddress).evaluator() != evaluatorAddress) {
             revert InvalidModuleRelationship("manager.evaluator");
         }
+        if (IEscalationManager(managerAddress).registry() != registryAddress) {
+            revert InvalidModuleRelationship("manager.registry");
+        }
         if (IExecutor(executorAddress).evaluator() != evaluatorAddress) {
             revert InvalidModuleRelationship("executor.evaluator");
         }
         if (IExecutor(executorAddress).escalationManager() != managerAddress) {
             revert InvalidModuleRelationship("executor.manager");
+        }
+        if (IExecutor(executorAddress).registry() != registryAddress) {
+            revert InvalidModuleRelationship("executor.registry");
         }
         if (IVaultFactory(factoryAddress).executor() != executorAddress) {
             revert InvalidModuleRelationship("factory.executor");
@@ -512,7 +539,54 @@ contract Grantline is
         if (module.code.length == 0 || IModule(module).grantline() != address(this)) {
             revert InvalidModule(key, module);
         }
+        _requireComponentType(module, key, "module");
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _requireModuleOwnership(address module, bytes32 key) private view {
+        address moduleOwner = address(0);
+        try IOwnable2Step(module).owner() returns (address actualOwner) {
+            moduleOwner = actualOwner;
+        } catch {
+            revert InvalidModuleOwner(key, address(this), address(0));
+        }
+        if (moduleOwner != address(this)) {
+            revert InvalidModuleOwner(key, address(this), moduleOwner);
+        }
+
+        address pendingOwner = address(0);
+        try IOwnable2Step(module).pendingOwner() returns (address actualPendingOwner) {
+            pendingOwner = actualPendingOwner;
+        } catch {
+            revert InvalidModulePendingOwner(key, address(0));
+        }
+        if (pendingOwner != address(0)) {
+            revert InvalidModulePendingOwner(key, pendingOwner);
+        }
+    }
+
+    function _requireComponentType(address target, bytes32 expected, string memory component) private view {
+        bytes32 actual = bytes32(0);
+        try IComponent(target).componentType() returns (bytes32 actualType) {
+            actual = actualType;
+        } catch {
+            revert InvalidComponentType(component, expected, bytes32(0));
+        }
+        if (actual != expected) {
+            revert InvalidComponentType(component, expected, actual);
+        }
+    }
+
+    function _requireImplementationVersion(address implementation, uint64 expectedVersion) private pure {
+        try IModule(implementation).version() returns (uint64 actualVersion) {
+            if (actualVersion != expectedVersion) {
+                revert InvalidModuleRelationship("implementation.version");
+            }
+        } catch {
+            revert InvalidModuleRelationship("implementation.version");
+        }
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
+        _requireComponentType(newImplementation, ComponentTypes.GRANTLINE, "grantline.implementation");
+    }
 }

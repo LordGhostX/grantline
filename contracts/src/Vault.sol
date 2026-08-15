@@ -6,6 +6,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
 contract Vault is Initializable, GrantlineOwnable2StepUpgradeable, ReentrancyGuard, UUPSUpgradeable {
@@ -53,6 +54,10 @@ contract Vault is Initializable, GrantlineOwnable2StepUpgradeable, ReentrancyGua
 
     function version() external pure returns (uint64) {
         return 1;
+    }
+
+    function componentType() external pure returns (bytes32) {
+        return ComponentTypes.VAULT;
     }
 
     receive() external payable onlyOwner {

@@ -2,8 +2,18 @@
 pragma solidity ^0.8.28;
 
 import {Grantline} from "../src/Grantline.sol";
+import {ComponentTypes} from "../src/ComponentTypes.sol";
 import {IERC1822Proxiable} from "@openzeppelin/contracts/interfaces/draft-IERC1822.sol";
-import {IModule, IVault, IVaultFactory} from "../src/Interfaces.sol";
+import {
+    IComponent,
+    IEscalationManager,
+    IEvaluator,
+    IExecutor,
+    IModule,
+    IOwnable2Step,
+    IVault,
+    IVaultFactory
+} from "../src/Interfaces.sol";
 import {ScriptBase} from "./ScriptBase.s.sol";
 
 contract VerifyGrantlineDeployment is ScriptBase {
@@ -14,6 +24,7 @@ contract VerifyGrantlineDeployment is ScriptBase {
     error UnexpectedBool(string component, bool expectedValue, bool actualValue);
     error UnexpectedImplementation(string component, address expectedImplementation, address actualImplementation);
     error UnexpectedUUPSIdentifier(string component, bytes32 actualIdentifier);
+    error UnexpectedComponentType(string component, bytes32 expectedType, bytes32 actualType);
 
     function run() external {
         _verify(_manifest());
@@ -35,6 +46,7 @@ contract VerifyGrantlineDeployment is ScriptBase {
         );
 
         Grantline grantline = Grantline(grantlineProxy);
+        _requireComponentType(address(grantline), ComponentTypes.GRANTLINE, "grantline");
         _requireAddress(
             "grantline.protocolAdmin", vm.parseJsonAddress(manifest, ".grantline.protocolAdmin"), grantline.owner()
         );
@@ -54,6 +66,12 @@ contract VerifyGrantlineDeployment is ScriptBase {
         if (IVaultFactory(factory).executor() != executor) {
             revert UnexpectedAddress("vaultFactory.executor", executor, IVaultFactory(factory).executor());
         }
+        _requireAddress("evaluator.registry", registry, IEvaluator(evaluator).registry());
+        _requireAddress("manager.evaluator", evaluator, IEscalationManager(manager).evaluator());
+        _requireAddress("manager.registry", registry, IEscalationManager(manager).registry());
+        _requireAddress("executor.evaluator", evaluator, IExecutor(executor).evaluator());
+        _requireAddress("executor.manager", manager, IExecutor(executor).escalationManager());
+        _requireAddress("executor.registry", registry, IExecutor(executor).registry());
         if (IVaultFactory(factory).vaultImplementation().code.length == 0) {
             revert UnexpectedAddress(
                 "vaultFactory.vaultImplementation",
@@ -76,6 +94,7 @@ contract VerifyGrantlineDeployment is ScriptBase {
             vm.parseJsonBytes32(manifest, ".vaultImplementation.codeHash"),
             "vaultImplementation"
         );
+        _requireComponentType(IVaultFactory(factory).vaultImplementation(), ComponentTypes.VAULT, "vaultImplementation");
         _requireUUPSIdentifier(IVaultFactory(factory).vaultImplementation(), "vaultImplementation");
 
         uint256 vaultCount = vm.parseJsonUint(manifest, ".vaultCount");
@@ -98,6 +117,7 @@ contract VerifyGrantlineDeployment is ScriptBase {
     ) private {
         string memory component = string.concat("vaults[", vm.toString(index), "]");
         _requireRuntimeCodeHash(vault, vm.parseJsonBytes32(manifest, string.concat(prefix, ".codeHash")), component);
+        _requireComponentType(vault, ComponentTypes.VAULT, component);
         if (!IVaultFactory(factory).isVault(vault)) {
             revert UnexpectedBool(string.concat(component, ".registered"), true, false);
         }
@@ -131,6 +151,7 @@ contract VerifyGrantlineDeployment is ScriptBase {
         address expectedAuthority = IVaultFactory(factory).executor();
         _requireAddress(string.concat(component, ".executor"), expectedAuthority, actual.authority);
         _requireAddress(string.concat(component, ".owner"), address(grantline), actual.owner);
+        _requireAddress(string.concat(component, ".pendingOwner"), address(0), IOwnable2Step(vault).pendingOwner());
         _requireUint(string.concat(component, ".implementationVersion"), IVault(vault).version(), actual.version);
         _verifyProxy(
             component,
@@ -139,6 +160,7 @@ contract VerifyGrantlineDeployment is ScriptBase {
             actual.implementation,
             vm.parseJsonBytes32(manifest, string.concat(prefix, ".implementationCodeHash"))
         );
+        _requireComponentType(actual.implementation, ComponentTypes.VAULT, string.concat(component, ".implementation"));
     }
 
     function _verifyModule(string memory manifest, Grantline grantline, string memory name, bytes32 key)
@@ -155,7 +177,11 @@ contract VerifyGrantlineDeployment is ScriptBase {
             implementation,
             vm.parseJsonBytes32(manifest, string.concat(prefix, ".implementationCodeHash"))
         );
+        _requireComponentType(module, key, name);
+        _requireComponentType(implementation, key, string.concat(name, ".implementation"));
         _requireAddress(string.concat(name, ".grantline"), address(grantline), IModule(module).grantline());
+        _requireAddress(string.concat(name, ".owner"), address(grantline), IOwnable2Step(module).owner());
+        _requireAddress(string.concat(name, ".pendingOwner"), address(0), IOwnable2Step(module).pendingOwner());
         _requireUint(
             string.concat(name, ".version"),
             vm.parseJsonUint(manifest, string.concat(prefix, ".version")),
@@ -189,6 +215,16 @@ contract VerifyGrantlineDeployment is ScriptBase {
             }
         } catch {
             revert UnexpectedUUPSIdentifier(component, bytes32(0));
+        }
+    }
+
+    function _requireComponentType(address target, bytes32 expected, string memory component) private view {
+        try IComponent(target).componentType() returns (bytes32 actual) {
+            if (actual != expected) {
+                revert UnexpectedComponentType(component, expected, actual);
+            }
+        } catch {
+            revert UnexpectedComponentType(component, expected, bytes32(0));
         }
     }
 

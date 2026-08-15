@@ -5,6 +5,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ActionTypes} from "./ActionTypes.sol";
+import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
 import {IGrantlineContext, IEscalationManager, IEvaluator, IExecutor, IRegistry, IVault} from "./Interfaces.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
@@ -60,7 +61,7 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
     address public grantline;
     address public override evaluator;
     address public override escalationManager;
-    address public registry;
+    address public override registry;
 
     constructor() {
         _disableInitializers();
@@ -92,6 +93,10 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
 
     function version() external pure override returns (uint64) {
         return 1;
+    }
+
+    function componentType() external pure override returns (bytes32) {
+        return ComponentTypes.EXECUTOR;
     }
 
     function execute(ActionTypes.ActionPlan calldata plan, bytes calldata signature, bytes32 digest)

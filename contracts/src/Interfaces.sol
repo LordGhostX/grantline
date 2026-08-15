@@ -4,7 +4,17 @@ pragma solidity ^0.8.28;
 import {ActionTypes} from "./ActionTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
 
-interface IGrantlineContext {
+interface IComponent {
+    function componentType() external view returns (bytes32);
+}
+
+interface IOwnable2Step {
+    function owner() external view returns (address);
+
+    function pendingOwner() external view returns (address);
+}
+
+interface IGrantlineContext is IComponent {
     function moduleAddress(bytes32 key) external view returns (address);
 
     function controllerOf(address vault) external view returns (address);
@@ -14,7 +24,7 @@ interface IGrantlineContext {
     function actionDigest(ActionTypes.ActionPlan calldata plan) external view returns (bytes32);
 }
 
-interface IModule {
+interface IModule is IComponent {
     function grantline() external view returns (address);
 
     function version() external pure returns (uint64);
@@ -83,6 +93,8 @@ interface IEvaluator is IModule {
 interface IEscalationManager is IModule {
     function evaluator() external view returns (address);
 
+    function registry() external view returns (address);
+
     function submit(ActionTypes.ActionPlan calldata plan, bytes calldata signature, bytes32 digest, address submittedBy)
         external;
 
@@ -99,6 +111,8 @@ interface IExecutor is IModule {
     function evaluator() external view returns (address);
 
     function escalationManager() external view returns (address);
+
+    function registry() external view returns (address);
 
     function execute(ActionTypes.ActionPlan calldata plan, bytes calldata signature, bytes32 digest) external;
 
@@ -123,7 +137,7 @@ interface IVaultFactory is IModule {
     function vaultAt(uint256 index) external view returns (address);
 }
 
-interface IVault {
+interface IVault is IComponent {
     function initialize(address grantline, address authorityAddress) external;
 
     function owner() external view returns (address);

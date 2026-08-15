@@ -5,6 +5,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ActionTypes} from "./ActionTypes.sol";
+import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
 import {IGrantlineContext, IEvaluator, IRegistry} from "./Interfaces.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
@@ -84,6 +85,10 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
 
     function version() external pure override returns (uint64) {
         return 1;
+    }
+
+    function componentType() external pure override returns (bytes32) {
+        return ComponentTypes.EVALUATOR;
     }
 
     function evaluate(ActionTypes.ActionPlan calldata plan, bytes calldata signature, bytes32 digest)
