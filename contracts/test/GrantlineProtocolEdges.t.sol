@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
@@ -10,6 +11,7 @@ import {GrantlineOwnable2StepUpgradeable} from "../src/ProtocolAccess.sol";
 import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
 
 contract GrantlineProtocolVaultV2 is Vault {
@@ -22,6 +24,18 @@ contract GrantlineProtocolRegistryV2 is MandateRegistry {
     function marker() external pure returns (uint256) {
         return 2;
     }
+}
+
+contract GrantlineReentrantVaultImplementation is UUPSUpgradeable {
+    function initialize(address grantlineAddress, address) external {
+        Grantline(grantlineAddress).createVault();
+    }
+
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
+    function _authorizeUpgrade(address) internal pure override {}
 }
 
 contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
@@ -121,6 +135,22 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
 
         fixtureVm.expectRevert();
         fixture.hub.vaultAt(3);
+    }
+
+    function test_createVaultRejectsReentrantVaultInitialization() public {
+        Fixture memory fixture = _fixture();
+        GrantlineReentrantVaultImplementation implementation = new GrantlineReentrantVaultImplementation();
+        uint256 previousHubVaultCount = fixture.hub.vaultCount();
+        uint256 previousFactoryVaultCount = VaultFactory(fixture.hub.vaultFactory()).vaultCount();
+
+        fixture.hub.setVaultImplementation(address(implementation), 1);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(ReentrancyGuard.ReentrancyGuardReentrantCall.selector));
+        fixture.hub.createVault();
+
+        assert(fixture.hub.vaultCount() == previousHubVaultCount);
+        assert(VaultFactory(fixture.hub.vaultFactory()).vaultCount() == previousFactoryVaultCount);
+        assert(fixture.hub.vaultAt(0) == fixture.vault);
     }
 
     function test_existingVaultUpgradePreservesStateAndChecksVersion() public {
