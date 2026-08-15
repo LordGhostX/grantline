@@ -338,17 +338,6 @@
     line-height: 1.52;
 }
 
-.principle {
-    max-width: 550px;
-    margin: 20px 0 24px;
-    padding: 14px 0 14px 16px;
-    border-left: 1px solid var(--brand);
-    color: var(--text);
-    font-family: var(--font-geist-mono), monospace;
-    font-size: 12px;
-    line-height: 1.55;
-}
-
 .hero-actions,
 .cta-actions {
     display: flex;

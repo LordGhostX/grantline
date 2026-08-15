@@ -296,10 +296,6 @@ export default function Home() {
                 checks whether its current authority permits it before
                 controlled capital can move.
               </p>
-              <div className="principle">
-                Your agent decides what to do. Grantline decides whether it is
-                authorised.
-              </div>
               <div className="hero-actions">
                 <a className="btn btn-primary" href="#how-it-works">
                   See how Grantline works
