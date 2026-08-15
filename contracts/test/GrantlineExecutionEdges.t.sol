@@ -6,6 +6,7 @@ import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {Vault} from "../src/Vault.sol";
+import {VaultExecutor} from "../src/VaultExecutor.sol";
 import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
 
 contract GrantlineExecutionToken {
@@ -127,6 +128,7 @@ contract GrantlineExecutionEdgesTest is GrantlineTestFixture {
 
         assert(nativeRecipient.balance == 1 ether);
         assert(token.balanceOf(tokenRecipient) == 40 ether);
+        assert(VaultExecutor(fixture.hub.executor()).nonceUsed(fixture.mandateId, fixture.agent, 31));
         assert(token.balanceOf(fixture.vault) == 60 ether);
         assert(MandateRegistry(fixture.hub.registry()).nonceUsed(fixture.mandateId, fixture.agent, 31));
         assert(address(fixture.vault).balance == 4 ether);

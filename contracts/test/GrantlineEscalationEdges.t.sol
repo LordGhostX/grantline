@@ -43,6 +43,11 @@ contract GrantlineEscalationEdgesTest is GrantlineTestFixture {
         assert(escalation.plan.mandateId == plan.mandateId);
         assert(escalation.plan.actions.length == 1);
         assert(escalation.signature.length == signature.length);
+        assert(EscalationManager(fixture.hub.escalationManager()).statusOf(digest) == EscalationManager.Status.PENDING);
+        assert(
+            EscalationManager(fixture.hub.escalationManager()).reservedDigest(fixture.mandateId, fixture.agent, 51)
+                == digest
+        );
         assert(MandateRegistry(fixture.hub.registry()).reservedDigest(fixture.mandateId, fixture.agent, 51) == digest);
     }
 

@@ -35,6 +35,12 @@ contract GrantlineCustodyToken {
     }
 }
 
+contract GrantlineCustodyRejectingReceiver {
+    receive() external payable {
+        revert();
+    }
+}
+
 contract GrantlineCustodyEdgesTest is GrantlineTestFixture {
     function test_controllersCannotOperateAnotherVault() public {
         Fixture memory fixture = _fixture();
@@ -125,5 +131,93 @@ contract GrantlineCustodyEdgesTest is GrantlineTestFixture {
         token.mint(address(this), 1 ether);
         fixtureVm.expectRevert();
         fixture.hub.depositToken(fixture.vault, address(token), 1 ether);
+    }
+
+    function test_vaultRejectsInvalidDepositInputs() public {
+        Fixture memory fixture = _fixture();
+        Vault vault = Vault(payable(fixture.vault));
+        GrantlineCustodyToken token = new GrantlineCustodyToken();
+
+        fixtureVm.startPrank(address(fixture.hub));
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAddress.selector));
+        vault.depositNative{value: 0}(address(0));
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAddress.selector));
+        vault.depositTokenFrom(address(0), address(token), 1 ether);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAmount.selector));
+        vault.depositTokenFrom(address(this), address(token), 0);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidTokenTarget.selector, address(0xCAFE)));
+        vault.depositTokenFrom(address(this), address(0xCAFE), 1 ether);
+
+        fixtureVm.stopPrank();
+    }
+
+    function test_vaultRejectsInvalidWithdrawalInputs() public {
+        Fixture memory fixture = _fixture();
+        Vault vault = Vault(payable(fixture.vault));
+        GrantlineCustodyToken token = new GrantlineCustodyToken();
+
+        fixtureVm.startPrank(address(fixture.hub));
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAddress.selector));
+        vault.withdrawNative(payable(address(0)), 0);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InsufficientNativeBalance.selector));
+        vault.withdrawNative(payable(address(0xBEEF)), type(uint256).max);
+
+        GrantlineCustodyRejectingReceiver receiver = new GrantlineCustodyRejectingReceiver();
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.NativeTransferFailed.selector));
+        vault.withdrawNative(payable(address(receiver)), 1 ether);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAmount.selector));
+        vault.withdrawToken(address(token), address(0xBEEF), 0);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAddress.selector));
+        vault.withdrawToken(address(token), address(0), 1 ether);
+
+        fixtureVm.stopPrank();
+    }
+
+    function test_vaultRejectsInvalidAuthorityInputs() public {
+        Fixture memory fixture = _fixture();
+        Vault vault = Vault(payable(fixture.vault));
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidTokenTarget.selector, address(0)));
+        vault.tokenBalance(address(0));
+
+        fixtureVm.startPrank(address(fixture.hub));
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAddress.selector));
+        vault.setAuthority(address(0));
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAddress.selector));
+        vault.setAuthority(address(0xCAFE));
+
+        vault.setAuthority(fixture.hub.executor());
+        fixtureVm.stopPrank();
+        assert(vault.authority() == fixture.hub.executor());
+    }
+
+    function test_vaultOwnerBoundariesRejectInvalidExecutionTargets() public {
+        Fixture memory fixture = _fixture();
+        Vault vault = Vault(payable(fixture.vault));
+
+        fixtureVm.deal(address(fixture.hub), 1 ether);
+        fixtureVm.startPrank(address(fixture.hub));
+        (bool accepted,) = address(vault).call{value: 1 ether}("");
+        fixtureVm.stopPrank();
+        assert(accepted);
+
+        fixtureVm.startPrank(fixture.hub.executor());
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAddress.selector));
+        vault.execute(address(0), 0, "");
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAddress.selector));
+        vault.execute(address(vault), 0, "");
+
+        (bool success,) = vault.execute(address(new GrantlineCustodyRejectingReceiver()), 1 ether, "");
+        fixtureVm.stopPrank();
+        assert(!success);
     }
 }

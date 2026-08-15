@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
 
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
@@ -124,6 +125,84 @@ contract GrantlineWrongUpgradeAuthorityVaultImplementation is Vault {
     }
 }
 
+contract GrantlineWrongUuidVaultImplementation {
+    function proxiableUUID() external pure returns (bytes32) {
+        return bytes32(0);
+    }
+
+    function componentType() external pure returns (bytes32) {
+        return ComponentTypes.VAULT;
+    }
+
+    function pauseInterfaceVersion() external pure returns (uint64) {
+        return 1;
+    }
+
+    function paused() external pure returns (bool) {
+        return false;
+    }
+
+    function pause() external {}
+
+    function unpause() external {}
+
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+}
+
+contract GrantlineMissingUnpauseVaultImplementation is UUPSUpgradeable {
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
+    function componentType() external pure returns (bytes32) {
+        return ComponentTypes.VAULT;
+    }
+
+    function pauseInterfaceVersion() external pure returns (uint64) {
+        return 1;
+    }
+
+    function paused() external pure returns (bool) {
+        return false;
+    }
+
+    function pause() external {}
+
+    function _authorizeUpgrade(address) internal pure override {}
+}
+
+contract GrantlinePausedVaultImplementation is UUPSUpgradeable {
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
+    function componentType() external pure returns (bytes32) {
+        return ComponentTypes.VAULT;
+    }
+
+    function pauseInterfaceVersion() external pure returns (uint64) {
+        return 1;
+    }
+
+    function paused() external pure returns (bool) {
+        return true;
+    }
+
+    function pause() external {}
+
+    function unpause() external {}
+
+    function _authorizeUpgrade(address) internal pure override {}
+}
+
+contract GrantlineProtocolVaultFactoryV2 is VaultFactory {
+    function marker() external pure returns (uint256) {
+        return 2;
+    }
+}
+
 contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
     function test_allImplementationInitializersAreDisabled() public {
         Grantline grantline = new Grantline();
@@ -148,6 +227,56 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         factory.initialize(address(this), address(vault), 1, address(this), address(this), address(this));
         fixtureVm.expectRevert();
         vault.initialize(address(this), address(this), address(this));
+    }
+
+    function test_grantlineProxyInitializationRejectsZeroOwner() public {
+        Grantline implementation = new Grantline();
+        _expectProxyInitializationRevert(address(implementation), abi.encodeCall(Grantline.initialize, (address(0))));
+    }
+
+    function test_registryProxyInitializationRejectsZeroGrantline() public {
+        MandateRegistry implementation = new MandateRegistry();
+        _expectProxyInitializationRevert(
+            address(implementation), abi.encodeCall(MandateRegistry.initialize, (address(0), address(this)))
+        );
+    }
+
+    function test_evaluatorProxyInitializationRejectsZeroRegistry() public {
+        MandateEvaluator implementation = new MandateEvaluator();
+        _expectProxyInitializationRevert(
+            address(implementation),
+            abi.encodeCall(MandateEvaluator.initialize, (address(this), address(0), address(0), true, address(this)))
+        );
+    }
+
+    function test_escalationProxyInitializationRejectsZeroEvaluator() public {
+        EscalationManager implementation = new EscalationManager();
+        _expectProxyInitializationRevert(
+            address(implementation),
+            abi.encodeCall(EscalationManager.initialize, (address(this), address(0), address(this), address(this)))
+        );
+    }
+
+    function test_executorProxyInitializationRejectsZeroEscalationManager() public {
+        VaultExecutor implementation = new VaultExecutor();
+        _expectProxyInitializationRevert(
+            address(implementation),
+            abi.encodeCall(
+                VaultExecutor.initialize, (address(this), address(this), address(this), address(0), address(this))
+            )
+        );
+    }
+
+    function test_factoryProxyInitializationRejectsZeroExecutor() public {
+        VaultFactory implementation = new VaultFactory();
+        Vault vaultImplementation = new Vault();
+        _expectProxyInitializationRevert(
+            address(implementation),
+            abi.encodeCall(
+                VaultFactory.initialize,
+                (address(this), address(vaultImplementation), 1, address(0), address(this), address(this))
+            )
+        );
     }
 
     function test_ownershipRenunciationIsDisabled() public {
@@ -192,6 +321,142 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         fixtureVm.prank(nextAdmin);
         fixture.admin.setVaultController(fixture.vault, address(0xBEEF));
         assert(fixture.hub.getVault(fixture.vault).controller == address(0xBEEF));
+    }
+
+    function test_facadeReadsAndAdminControllerValidation() public {
+        Fixture memory fixture = _fixture();
+
+        assert(fixture.hub.protocolAdmin() == address(this));
+        assert(fixture.hub.version() == 1);
+        assert(fixture.hub.moduleVersion(fixture.hub.REGISTRY_MODULE()) == 1);
+        uint256[] memory lineage = fixture.hub.getLineage(fixture.mandateId);
+        assert(lineage.length == 1);
+        assert(lineage[0] == fixture.mandateId);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.UnknownModule.selector, bytes32(uint256(1))));
+        fixture.hub.moduleVersion(bytes32(uint256(1)));
+
+        fixture.admin.validateWiring();
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.InvalidAdminController.selector));
+        fixture.hub.setAdminController(address(0));
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.InvalidAdminController.selector));
+        fixture.hub.setAdminController(address(fixture.hub));
+
+        GrantlineAdmin wrongAdmin = new GrantlineAdmin(address(new Grantline()));
+        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.InvalidAdminController.selector));
+        fixture.hub.setAdminController(address(wrongAdmin));
+    }
+
+    function test_adminRejectsUnauthorizedUnknownAndUnregisteredOperations() public {
+        Fixture memory fixture = _fixture();
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] =
+            GrantlineAdmin.ModuleUpgrade({key: bytes32(uint256(1)), implementation: address(0), version: 1, data: ""});
+
+        fixtureVm.prank(address(0xCAFE));
+        fixtureVm.expectRevert(abi.encodeWithSelector(GrantlineAdmin.NotProtocolAdmin.selector, address(0xCAFE)));
+        fixture.admin.validateWiring();
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(GrantlineAdmin.UnknownModule.selector, bytes32(uint256(1))));
+        fixture.admin.upgradeModules(upgrades);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(GrantlineAdmin.VaultNotRegistered.selector, address(0xCAFE)));
+        fixture.admin.upgradeVault(address(0xCAFE), address(0), 1, "");
+    }
+
+    function test_adminRejectsInvalidHubAndPreConfigurationMutation() public {
+        fixtureVm.expectRevert(abi.encodeWithSelector(GrantlineAdmin.InvalidAddress.selector));
+        new GrantlineAdmin(address(0));
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(GrantlineAdmin.InvalidAddress.selector));
+        new GrantlineAdmin(address(0xCAFE));
+
+        Grantline implementation = new Grantline();
+        Grantline hub = Grantline(
+            address(new ERC1967Proxy(address(implementation), abi.encodeCall(Grantline.initialize, (address(this)))))
+        );
+        GrantlineAdmin admin = new GrantlineAdmin(address(hub));
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(GrantlineAdmin.InvalidModule.selector, bytes32(0), address(0)));
+        admin.setVaultImplementation(address(0xBEEF), 1);
+    }
+
+    function test_vaultInitializationAndFactoryValidationRejectBadInputs() public {
+        Fixture memory fixture = _fixture();
+        Vault implementation = new Vault();
+        address executor = fixture.hub.executor();
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAddress.selector));
+        _deployVaultProxy(address(implementation), address(0), executor, address(fixture.admin));
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAddress.selector));
+        _deployVaultProxy(address(implementation), address(fixture.hub), address(0), address(fixture.admin));
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(Vault.InvalidAddress.selector));
+        _deployVaultProxy(address(implementation), address(fixture.hub), executor, address(0xCAFE));
+
+        VaultFactory factory = VaultFactory(fixture.hub.vaultFactory());
+        fixtureVm.prank(address(0xCAFE));
+        fixtureVm.expectRevert();
+        factory.validateVaultImplementation(address(implementation), 1);
+
+        GrantlineWrongUuidVaultImplementation wrongUuid = new GrantlineWrongUuidVaultImplementation();
+        fixtureVm.expectRevert(abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(wrongUuid)));
+        fixture.admin.setVaultImplementation(address(wrongUuid), 1);
+
+        fixtureVm.prank(address(fixture.hub));
+        fixtureVm.expectRevert(abi.encodeWithSelector(VaultFactory.InvalidAddress.selector));
+        factory.createVault(address(0));
+    }
+
+    function test_factoryRejectsIncompleteOrPausedVaultInterfaces() public {
+        Fixture memory fixture = _fixture();
+        GrantlineMissingUnpauseVaultImplementation missingUnpause = new GrantlineMissingUnpauseVaultImplementation();
+        GrantlinePausedVaultImplementation pausedImplementation = new GrantlinePausedVaultImplementation();
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(missingUnpause))
+        );
+        fixture.admin.setVaultImplementation(address(missingUnpause), 1);
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(pausedImplementation))
+        );
+        fixture.admin.setVaultImplementation(address(pausedImplementation), 1);
+    }
+
+    function test_factoryModuleUpgradePreservesTemplateValidation() public {
+        Fixture memory fixture = _fixture();
+        GrantlineProtocolVaultFactoryV2 implementation = new GrantlineProtocolVaultFactoryV2();
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
+            key: fixture.hub.VAULT_FACTORY_MODULE(), implementation: address(implementation), version: 1, data: ""
+        });
+
+        fixture.admin.upgradeModules(upgrades);
+        assert(GrantlineProtocolVaultFactoryV2(fixture.hub.vaultFactory()).marker() == 2);
+        assert(VaultFactory(fixture.hub.vaultFactory()).vaultImplementationVersion() == 1);
+    }
+
+    function _deployVaultProxy(address implementation, address grantline, address authority, address upgradeAuthority)
+        private
+        returns (address)
+    {
+        return address(
+            new ERC1967Proxy(implementation, abi.encodeCall(Vault.initialize, (grantline, authority, upgradeAuthority)))
+        );
+    }
+
+    function _expectProxyInitializationRevert(address implementation, bytes memory data) private {
+        bool reverted;
+        try new ERC1967Proxy(implementation, data) returns (ERC1967Proxy) {
+            reverted = false;
+        } catch {
+            reverted = true;
+        }
+        assert(reverted);
     }
 
     function test_adminBoundaryKeepsUserFacadeAndVaultCustodySeparate() public {

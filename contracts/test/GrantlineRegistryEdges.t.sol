@@ -133,11 +133,14 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
 
         fixture.hub.pauseMandate(fixture.mandateId);
         assert(fixture.hub.getMandate(fixture.mandateId).status == GrantlineTypes.MandateStatus.PAUSED);
+        assert(!MandateRegistry(fixture.hub.registry()).isActive(fixture.mandateId));
+        assert(!MandateRegistry(fixture.hub.registry()).isActive(0));
         assert(fixture.hub.getMandate(childId).status == GrantlineTypes.MandateStatus.ACTIVE);
         assert(MandateRegistry(fixture.hub.registry()).isLineagePaused(childId));
         assert(!MandateRegistry(fixture.hub.registry()).isLineageActive(childId));
 
         fixture.hub.unpauseMandate(fixture.mandateId);
+        assert(MandateRegistry(fixture.hub.registry()).isActive(fixture.mandateId));
         assert(MandateRegistry(fixture.hub.registry()).isLineageActive(childId));
 
         fixtureVm.prank(fixture.agent);

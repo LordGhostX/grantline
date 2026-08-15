@@ -20,6 +20,10 @@ interface GrantlineFixtureVm {
 
     function prank(address sender) external;
 
+    function startPrank(address sender) external;
+
+    function stopPrank() external;
+
     function expectRevert() external;
 
     function expectRevert(bytes calldata revertData) external;
