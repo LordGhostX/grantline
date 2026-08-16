@@ -28,6 +28,8 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
     error EscalationNotApproved(bytes32 digest, Status status);
     error MandateInactive(uint256 mandateId);
     error MandatePaused(uint256 mandateId);
+    error MandateNotYetValid(uint256 mandateId);
+    error MandateExpired(uint256 mandateId);
     error VaultPaused(address vault);
     error NotEscalatable(uint8 decision, uint8 failureCode);
     error NonceNotConsumed(uint256 mandateId, address agent, uint256 nonce);
@@ -142,15 +144,7 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         _onlyGrantline();
         GrantlineTypes.Escalation storage escalation = _pending(digest);
         GrantlineTypes.Mandate memory mandate = IRegistry(registry).getMandate(escalation.plan.mandateId);
-        if (
-            mandate.status != GrantlineTypes.MandateStatus.ACTIVE
-                || !IRegistry(registry).isLineageActive(escalation.plan.mandateId)
-        ) {
-            if (IRegistry(registry).isLineagePaused(escalation.plan.mandateId)) {
-                revert MandatePaused(escalation.plan.mandateId);
-            }
-            revert MandateInactive(escalation.plan.mandateId);
-        }
+        _requireMandateUsable(escalation.plan.mandateId, mandate);
         if (IVault(mandate.vault).paused()) revert VaultPaused(mandate.vault);
         if (!IGrantlineContext(grantline).isController(mandate.vault, controller)) {
             revert NotController(controller);
@@ -180,15 +174,7 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
             revert EscalationNotApproved(digest, Status(escalation.status));
         }
         GrantlineTypes.Mandate memory mandate = IRegistry(registry).getMandate(escalation.plan.mandateId);
-        if (
-            mandate.status != GrantlineTypes.MandateStatus.ACTIVE
-                || !IRegistry(registry).isLineageActive(escalation.plan.mandateId)
-        ) {
-            if (IRegistry(registry).isLineagePaused(escalation.plan.mandateId)) {
-                revert MandatePaused(escalation.plan.mandateId);
-            }
-            revert MandateInactive(escalation.plan.mandateId);
-        }
+        _requireMandateUsable(escalation.plan.mandateId, mandate);
         if (IVault(mandate.vault).paused()) revert VaultPaused(mandate.vault);
         if (!IRegistry(registry).nonceUsed(escalation.plan.mandateId, escalation.plan.agent, escalation.plan.nonce)) {
             revert NonceNotConsumed(escalation.plan.mandateId, escalation.plan.agent, escalation.plan.nonce);
@@ -227,6 +213,20 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         if (escalation.status != uint8(Status.PENDING)) {
             revert EscalationNotPending(digest, Status(escalation.status));
         }
+    }
+
+    function _requireMandateUsable(uint256 mandateId, GrantlineTypes.Mandate memory mandate) private view {
+        IRegistry registryContract = IRegistry(registry);
+        if (mandate.status != GrantlineTypes.MandateStatus.ACTIVE) {
+            if (mandate.status == GrantlineTypes.MandateStatus.PAUSED) revert MandatePaused(mandateId);
+            revert MandateInactive(mandateId);
+        }
+        if (registryContract.isLineagePaused(mandateId)) revert MandatePaused(mandateId);
+        if (registryContract.isLineageRevoked(mandateId)) revert MandateInactive(mandateId);
+        (uint64 validAfter, uint64 validUntil) = registryContract.getEffectiveValidityWindow(mandateId);
+        if (validAfter != 0 && block.timestamp < validAfter) revert MandateNotYetValid(mandateId);
+        if (validUntil != 0 && block.timestamp > validUntil) revert MandateExpired(mandateId);
+        if (!registryContract.isLineageActive(mandateId)) revert MandateInactive(mandateId);
     }
 
     function _onlyGrantline() private view {

@@ -114,7 +114,7 @@ contract GrantlineTest {
         assert(result.failureCode == uint8(MandateEvaluator.FailureCode.VAULT_PAUSED));
 
         vm.expectRevert(abi.encodeWithSelector(Grantline.VaultIsPaused.selector, fixture.vault));
-        fixture.hub.createMandate(fixture.vault, fixture.agent, _rules(1 ether, false), _preflight(0, false));
+        fixture.hub.createMandate(fixture.vault, fixture.agent, _rules(1 ether, false), _preflight(0, false), 0, 0);
 
         fixture.hub.withdrawNative(fixture.vault, payable(otherController), 1 ether);
         fixture.hub.depositNative{value: 1 ether}(fixture.vault);
@@ -238,7 +238,7 @@ contract GrantlineTest {
 
         vm.prank(fixture.agent);
         uint256 childId =
-            fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false));
+            fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false), 0, 0);
         assert(fixture.hub.getMandate(childId).agent == childAgent);
 
         address newController = address(0xF00D);
@@ -246,10 +246,10 @@ contract GrantlineTest {
 
         vm.prank(fixture.controller);
         vm.expectRevert();
-        fixture.hub.updateMandate(fixture.mandateId, childRules, _preflight(0, false));
+        fixture.hub.updateMandate(fixture.mandateId, childRules, _preflight(0, false), 0, 0);
 
         vm.prank(newController);
-        fixture.hub.updateMandate(fixture.mandateId, childRules, _preflight(0, false));
+        fixture.hub.updateMandate(fixture.mandateId, childRules, _preflight(0, false), 0, 0);
         assert(fixture.hub.getMandate(fixture.mandateId).controller == newController);
     }
 
@@ -330,7 +330,7 @@ contract GrantlineTest {
         fixture.hub.depositNative{value: 5 ether}(fixture.vault);
 
         vm.prank(fixture.controller);
-        fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false));
+        fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
     }
 
     function _deployHub() private returns (Grantline hub, GrantlineAdmin admin) {

@@ -172,14 +172,14 @@ contract GrantlineEvaluatorTest is GrantlineTestFixture {
         assert(result.decision == uint8(MandateEvaluator.Decision.ESCALATE));
         assert(result.failureCode == uint8(MandateEvaluator.FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM));
 
-        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(6 ether, false));
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(6 ether, false), 0, 0);
         plan.nonce = 15;
         plan.actions[0] = _transferAction(address(0xCAFE), address(0xBEEF), 1);
         result = fixture.hub.evaluate(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
         assert(result.failureCode == uint8(MandateEvaluator.FailureCode.PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM));
         assert(result.decision == uint8(MandateEvaluator.Decision.DENY));
 
-        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(6 ether, true));
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(6 ether, true), 0, 0);
         plan.nonce = 16;
         result = fixture.hub.evaluate(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
         assert(result.decision == uint8(MandateEvaluator.Decision.ESCALATE));

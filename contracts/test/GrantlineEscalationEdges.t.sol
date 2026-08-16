@@ -182,7 +182,8 @@ contract GrantlineEscalationEdgesTest is GrantlineTestFixture {
         bytes32 digest = fixture.hub.submitEscalation(plan, signature);
         fixture.hub.approveEscalation(digest);
 
-        fixture.hub.updateMandate(fixture.mandateId, _rules(1 ether, false, 0, 0, false, true), _preflight(0, false));
+        fixture.hub
+            .updateMandate(fixture.mandateId, _rules(1 ether, false, 0, 0, false, true), _preflight(0, false), 0, 0);
         fixtureVm.expectRevert();
         fixture.hub.executeEscalated(digest);
 

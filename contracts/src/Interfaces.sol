@@ -70,7 +70,9 @@ interface IRegistry is IModule {
         address actor,
         address agent,
         GrantlineTypes.MandateRules calldata rules,
-        GrantlineTypes.PreflightRules calldata preflightRules
+        GrantlineTypes.PreflightRules calldata preflightRules,
+        uint64 validAfter,
+        uint64 validUntil
     ) external returns (uint256 mandateId);
 
     function createChildMandate(
@@ -78,14 +80,18 @@ interface IRegistry is IModule {
         address actor,
         address childAgent,
         GrantlineTypes.MandateRules calldata rules,
-        GrantlineTypes.PreflightRules calldata preflightRules
+        GrantlineTypes.PreflightRules calldata preflightRules,
+        uint64 validAfter,
+        uint64 validUntil
     ) external returns (uint256 mandateId);
 
     function updateMandate(
         uint256 mandateId,
         address actor,
         GrantlineTypes.MandateRules calldata rules,
-        GrantlineTypes.PreflightRules calldata preflightRules
+        GrantlineTypes.PreflightRules calldata preflightRules,
+        uint64 validAfter,
+        uint64 validUntil
     ) external;
 
     function revokeMandate(uint256 mandateId, address actor) external;
@@ -98,9 +104,13 @@ interface IRegistry is IModule {
 
     function getEffectivePreflightRules(uint256 mandateId) external view returns (GrantlineTypes.PreflightRules memory);
 
+    function getEffectiveValidityWindow(uint256 mandateId) external view returns (uint64 validAfter, uint64 validUntil);
+
     function isLineageActive(uint256 mandateId) external view returns (bool);
 
     function isLineagePaused(uint256 mandateId) external view returns (bool);
+
+    function isLineageRevoked(uint256 mandateId) external view returns (bool);
 
     function pauseMandate(uint256 mandateId, address actor) external;
 

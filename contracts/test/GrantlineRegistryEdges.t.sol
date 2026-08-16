@@ -12,19 +12,19 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
         GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, 0, false, true);
 
         fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.InvalidAddress.selector));
-        fixture.hub.createMandate(fixture.vault, address(0), rules, _preflight(0, false));
+        fixture.hub.createMandate(fixture.vault, address(0), rules, _preflight(0, false), 0, 0);
 
         rules.minNativeAmount = 2 ether;
         rules.maxNativeAmount = 1 ether;
         fixtureVm.expectRevert(
             abi.encodeWithSelector(MandateRegistry.InvalidNativeAmountRange.selector, 2 ether, 1 ether)
         );
-        fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false));
+        fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
 
         rules = _rules(0, false, 0, 2 ether, false, true);
         rules.maxUsdAmount = 1 ether;
         fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.InvalidUsdAmountRange.selector, 2 ether, 1 ether));
-        fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false));
+        fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
     }
 
     function test_childRulesAndPreflightRulesOnlyNarrowAuthority() public {
@@ -37,7 +37,7 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
         fixtureVm.prank(fixture.agent);
         uint256 childId = fixture.hub
             .createChildMandate(
-                fixture.mandateId, fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY), childRules, _preflight(2 ether, true)
+                fixture.mandateId, fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY), childRules, _preflight(2 ether, true), 0, 0
             );
 
         GrantlineTypes.MandateRules memory effectiveRules = fixture.hub.getEffectiveRules(childId);
@@ -53,8 +53,8 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
         GrantlineTypes.MandateRules memory grandchildRules = _rules(3 ether, true, 3 ether, 4 ether, true, false);
         grandchildRules.maxUsdAmount = 5 ether;
         fixtureVm.prank(fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY));
-        uint256 grandchildId =
-            fixture.hub.createChildMandate(childId, fixtureVm.addr(0xCAFE), grandchildRules, _preflight(3 ether, true));
+        uint256 grandchildId = fixture.hub
+            .createChildMandate(childId, fixtureVm.addr(0xCAFE), grandchildRules, _preflight(3 ether, true), 0, 0);
 
         GrantlineTypes.MandateView memory grandchild = fixture.hub.getMandate(grandchildId);
         assert(grandchild.delegationDepth == 2);
@@ -62,7 +62,7 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
 
         grandchildRules.canDelegate = true;
         fixtureVm.prank(fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY));
-        fixture.hub.updateMandate(grandchildId, grandchildRules, _preflight(3 ether, true));
+        fixture.hub.updateMandate(grandchildId, grandchildRules, _preflight(3 ether, true), 0, 0);
         assert(!fixture.hub.getMandate(grandchildId).rules.canDelegate);
     }
 
@@ -78,7 +78,7 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
         fixtureVm.expectRevert(
             abi.encodeWithSelector(MandateRegistry.ChildRulesExceedParent.selector, fixture.mandateId)
         );
-        fixture.hub.createChildMandate(fixture.mandateId, childAgent, broadRules, _preflight(2 ether, false));
+        fixture.hub.createChildMandate(fixture.mandateId, childAgent, broadRules, _preflight(2 ether, false), 0, 0);
 
         GrantlineTypes.MandateRules memory validRules = _rules(4 ether, false, 2 ether, 2 ether, false, true);
         validRules.maxUsdAmount = 6 ether;
@@ -86,7 +86,7 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
         fixtureVm.expectRevert(
             abi.encodeWithSelector(MandateRegistry.ChildPreflightRulesExceedParent.selector, fixture.mandateId)
         );
-        fixture.hub.createChildMandate(fixture.mandateId, childAgent, validRules, _preflight(1 ether, false));
+        fixture.hub.createChildMandate(fixture.mandateId, childAgent, validRules, _preflight(1 ether, false), 0, 0);
     }
 
     function test_delegationRequiresTheParentAgentAndActiveLineage() public {
@@ -98,14 +98,14 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
         fixtureVm.expectRevert(
             abi.encodeWithSelector(Grantline.NotParentAgent.selector, fixture.mandateId, address(0xCAFE))
         );
-        fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false));
+        fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false), 0, 0);
 
         fixture.hub.revokeMandate(fixture.mandateId);
         fixtureVm.prank(fixture.agent);
         fixtureVm.expectRevert(
             abi.encodeWithSelector(Grantline.NotParentAgent.selector, fixture.mandateId, fixture.agent)
         );
-        fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false));
+        fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false), 0, 0);
     }
 
     function test_revokePreservesHistoryButBlocksFutureAdministration() public {
@@ -128,7 +128,7 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
         fixtureVm.prank(fixture.agent);
         childId = fixture.hub
             .createChildMandate(
-                fixture.mandateId, childAgent, _rules(1 ether, false, 0, 0, false, false), _preflight(0, false)
+                fixture.mandateId, childAgent, _rules(1 ether, false, 0, 0, false, false), _preflight(0, false), 0, 0
             );
 
         fixture.hub.pauseMandate(fixture.mandateId);
@@ -149,7 +149,7 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
         assert(fixture.hub.getMandate(childId).status == GrantlineTypes.MandateStatus.ACTIVE);
 
         fixture.hub.pauseMandate(childId);
-        fixture.hub.updateMandate(childId, _rules(0.5 ether, false, 0, 0, false, false), _preflight(0, false));
+        fixture.hub.updateMandate(childId, _rules(0.5 ether, false, 0, 0, false, false), _preflight(0, false), 0, 0);
         fixture.hub.revokeMandate(childId);
         assert(fixture.hub.getMandate(childId).status == GrantlineTypes.MandateStatus.REVOKED);
     }
@@ -170,7 +170,9 @@ contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
                 fixture.mandateId,
                 fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY),
                 _rules(1 ether, false, 0, 0, false, false),
-                _preflight(0, false)
+                _preflight(0, false),
+                0,
+                0
             );
 
         fixture.hub.unpauseMandate(fixture.mandateId);

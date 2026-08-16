@@ -42,7 +42,9 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         USD_VALUATION_UNAVAILABLE,
         PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM,
         MANDATE_PAUSED,
-        VAULT_PAUSED
+        VAULT_PAUSED,
+        MANDATE_NOT_YET_VALID,
+        MANDATE_EXPIRED
     }
 
     bytes32 public constant EXECUTOR_MODULE = keccak256("EXECUTOR");
@@ -121,6 +123,16 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         if (!registryContract.isLineageActive(plan.mandateId)) {
             if (registryContract.isLineagePaused(plan.mandateId)) {
                 return _failure(FailureCode.MANDATE_PAUSED, type(uint256).max, 0, 0, false, 0);
+            }
+            if (registryContract.isLineageRevoked(plan.mandateId)) {
+                return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, false, 0);
+            }
+            (uint64 validAfter, uint64 validUntil) = registryContract.getEffectiveValidityWindow(plan.mandateId);
+            if (validAfter != 0 && block.timestamp < validAfter) {
+                return _failure(FailureCode.MANDATE_NOT_YET_VALID, type(uint256).max, 0, 0, false, 0);
+            }
+            if (validUntil != 0 && block.timestamp > validUntil) {
+                return _failure(FailureCode.MANDATE_EXPIRED, type(uint256).max, 0, 0, false, 0);
             }
             return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, false, 0);
         }

@@ -65,7 +65,7 @@ abstract contract GrantlineTestFixture {
         fixtureVm.deal(fixture.controller, 20 ether);
         fixture.vault = fixture.hub.createVault();
         fixture.hub.depositNative{value: 5 ether}(fixture.vault);
-        fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, preflightRules);
+        fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, preflightRules, 0, 0);
     }
 
     function _deployHub(address usdProvider, bool skipUnavailableUsdValuation)

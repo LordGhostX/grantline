@@ -35,6 +35,7 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
     );
     error InvalidNativeAmountRange(uint256 minimum, uint256 maximum);
     error InvalidUsdAmountRange(uint256 minimum, uint256 maximum);
+    error InvalidValidityWindow(uint64 validAfter, uint64 validUntil);
     error NotGrantline(address caller);
     error NotExecutor(address caller);
     error NotEscalationManager(address caller);
@@ -57,6 +58,8 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         uint8 delegationDepth,
         GrantlineTypes.MandateRules rules,
         GrantlineTypes.PreflightRules preflightRules,
+        uint64 validAfter,
+        uint64 validUntil,
         address createdBy,
         uint64 createdAt
     );
@@ -64,6 +67,8 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         uint256 indexed mandateId,
         GrantlineTypes.MandateRules rules,
         GrantlineTypes.PreflightRules preflightRules,
+        uint64 validAfter,
+        uint64 validUntil,
         address indexed updatedBy,
         uint64 updatedAt
     );
@@ -131,13 +136,16 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         address actor,
         address agent,
         GrantlineTypes.MandateRules calldata rules,
-        GrantlineTypes.PreflightRules calldata preflightRules
+        GrantlineTypes.PreflightRules calldata preflightRules,
+        uint64 validAfter,
+        uint64 validUntil
     ) external returns (uint256 mandateId) {
         _onlyGrantline();
         _requireController(vault, actor);
         if (agent == address(0)) revert InvalidAddress();
         _validateRules(rules);
         _validatePreflightRules(preflightRules);
+        _validateValidityWindow(validAfter, validUntil);
 
         mandateId = ++mandateCount;
         uint64 createdAt = uint64(block.timestamp);
@@ -150,11 +158,15 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
             status: GrantlineTypes.MandateStatus.ACTIVE,
             rules: rules,
             preflightRules: preflightRules,
+            validAfter: validAfter,
+            validUntil: validUntil,
             createdAt: createdAt,
             revokedAt: 0
         });
 
-        emit MandateCreated(mandateId, vault, agent, 0, 0, rules, preflightRules, actor, createdAt);
+        emit MandateCreated(
+            mandateId, vault, agent, 0, 0, rules, preflightRules, validAfter, validUntil, actor, createdAt
+        );
     }
 
     function createChildMandate(
@@ -162,7 +174,9 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         address actor,
         address childAgent,
         GrantlineTypes.MandateRules calldata rules,
-        GrantlineTypes.PreflightRules calldata preflightRules
+        GrantlineTypes.PreflightRules calldata preflightRules,
+        uint64 validAfter,
+        uint64 validUntil
     ) external returns (uint256 mandateId) {
         _onlyGrantline();
         GrantlineTypes.Mandate storage parent = _activeMandate(parentMandateId);
@@ -191,6 +205,7 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
 
         _validateRules(rules);
         _validatePreflightRules(preflightRules);
+        _validateValidityWindow(validAfter, validUntil);
         _validateChildRules(parentMandateId, parentRules, rules);
         _validateChildPreflightRules(parentMandateId, parentPreflightRules, preflightRules);
 
@@ -205,12 +220,24 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
             status: GrantlineTypes.MandateStatus.ACTIVE,
             rules: rules,
             preflightRules: preflightRules,
+            validAfter: validAfter,
+            validUntil: validUntil,
             createdAt: createdAt,
             revokedAt: 0
         });
 
         emit MandateCreated(
-            mandateId, parent.vault, childAgent, parentMandateId, childDepth, rules, preflightRules, actor, createdAt
+            mandateId,
+            parent.vault,
+            childAgent,
+            parentMandateId,
+            childDepth,
+            rules,
+            preflightRules,
+            validAfter,
+            validUntil,
+            actor,
+            createdAt
         );
     }
 
@@ -218,7 +245,9 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         uint256 mandateId,
         address actor,
         GrantlineTypes.MandateRules calldata rules,
-        GrantlineTypes.PreflightRules calldata preflightRules
+        GrantlineTypes.PreflightRules calldata preflightRules,
+        uint64 validAfter,
+        uint64 validUntil
     ) external {
         _onlyGrantline();
         GrantlineTypes.Mandate storage mandate = _editableMandate(mandateId);
@@ -226,10 +255,10 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         if (mandate.delegationDepth == MAX_DELEGATION_DEPTH) {
             GrantlineTypes.MandateRules memory normalized = rules;
             normalized.canDelegate = false;
-            _updateMandate(mandateId, mandate, normalized, preflightRules, actor);
+            _updateMandate(mandateId, mandate, normalized, preflightRules, validAfter, validUntil, actor);
             return;
         }
-        _updateMandate(mandateId, mandate, rules, preflightRules, actor);
+        _updateMandate(mandateId, mandate, rules, preflightRules, validAfter, validUntil, actor);
     }
 
     function _updateMandate(
@@ -237,10 +266,13 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         GrantlineTypes.Mandate storage mandate,
         GrantlineTypes.MandateRules memory rules,
         GrantlineTypes.PreflightRules calldata preflightRules,
+        uint64 validAfter,
+        uint64 validUntil,
         address actor
     ) private {
         _validateRules(rules);
         _validatePreflightRules(preflightRules);
+        _validateValidityWindow(validAfter, validUntil);
         if (mandate.parentMandateId != 0) {
             _requireEditableLineage(mandate.parentMandateId);
             _validateChildRules(mandate.parentMandateId, _effectiveRules(mandate.parentMandateId), rules);
@@ -251,7 +283,9 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
 
         mandate.rules = rules;
         mandate.preflightRules = preflightRules;
-        emit MandateUpdated(mandateId, rules, preflightRules, actor, uint64(block.timestamp));
+        mandate.validAfter = validAfter;
+        mandate.validUntil = validUntil;
+        emit MandateUpdated(mandateId, rules, preflightRules, validAfter, validUntil, actor, uint64(block.timestamp));
     }
 
     function revokeMandate(uint256 mandateId, address actor) external {
@@ -359,6 +393,16 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         return _effectivePreflightRules(mandateId);
     }
 
+    function getEffectiveValidityWindow(uint256 mandateId)
+        external
+        view
+        override
+        returns (uint64 validAfter, uint64 validUntil)
+    {
+        _requireMandateExists(mandateId);
+        return _effectiveValidityWindow(mandateId);
+    }
+
     function isActive(uint256 mandateId) external view returns (bool) {
         if (mandateId == 0 || mandateId > mandateCount) return false;
         return _mandates[mandateId].status == GrantlineTypes.MandateStatus.ACTIVE;
@@ -371,7 +415,8 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
             if (_mandates[currentMandateId].status != GrantlineTypes.MandateStatus.ACTIVE) return false;
             currentMandateId = _mandates[currentMandateId].parentMandateId;
         }
-        return true;
+        (uint64 validAfter, uint64 validUntil) = _effectiveValidityWindow(mandateId);
+        return _isWithinValidityWindow(validAfter, validUntil);
     }
 
     function isLineagePaused(uint256 mandateId) external view override returns (bool) {
@@ -379,6 +424,16 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         uint256 currentMandateId = mandateId;
         while (currentMandateId != 0) {
             if (_mandates[currentMandateId].status == GrantlineTypes.MandateStatus.PAUSED) return true;
+            currentMandateId = _mandates[currentMandateId].parentMandateId;
+        }
+        return false;
+    }
+
+    function isLineageRevoked(uint256 mandateId) external view override returns (bool) {
+        if (mandateId == 0 || mandateId > mandateCount) return false;
+        uint256 currentMandateId = mandateId;
+        while (currentMandateId != 0) {
+            if (_mandates[currentMandateId].status == GrantlineTypes.MandateStatus.REVOKED) return true;
             currentMandateId = _mandates[currentMandateId].parentMandateId;
         }
         return false;
@@ -413,6 +468,10 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
                 revert MandateLineageInactive(mandateId, currentMandateId);
             }
             currentMandateId = current.parentMandateId;
+        }
+        (uint64 validAfter, uint64 validUntil) = _effectiveValidityWindow(mandateId);
+        if (!_isWithinValidityWindow(validAfter, validUntil)) {
+            revert MandateLineageInactive(mandateId, mandateId);
         }
     }
 
@@ -483,6 +542,24 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
             }
             currentMandateId = current.parentMandateId;
         }
+    }
+
+    function _effectiveValidityWindow(uint256 mandateId) private view returns (uint64 validAfter, uint64 validUntil) {
+        uint256 currentMandateId = mandateId;
+        while (currentMandateId != 0) {
+            GrantlineTypes.Mandate storage current = _mandates[currentMandateId];
+            if (current.validAfter != 0 && current.validAfter > validAfter) {
+                validAfter = current.validAfter;
+            }
+            if (current.validUntil != 0 && (validUntil == 0 || current.validUntil < validUntil)) {
+                validUntil = current.validUntil;
+            }
+            currentMandateId = current.parentMandateId;
+        }
+    }
+
+    function _isWithinValidityWindow(uint64 validAfter, uint64 validUntil) private view returns (bool) {
+        return (validAfter == 0 || block.timestamp >= validAfter) && (validUntil == 0 || block.timestamp <= validUntil);
     }
 
     function _requireController(address vault, address actor) private view {
@@ -566,6 +643,12 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
     }
 
     function _validatePreflightRules(GrantlineTypes.PreflightRules memory) private pure {}
+
+    function _validateValidityWindow(uint64 validAfter, uint64 validUntil) private pure {
+        if (validAfter != 0 && validUntil != 0 && validUntil < validAfter) {
+            revert InvalidValidityWindow(validAfter, validUntil);
+        }
+    }
 
     function _onlyGrantline() private view {
         if (msg.sender != grantline) revert NotGrantline(msg.sender);

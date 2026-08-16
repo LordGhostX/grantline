@@ -238,18 +238,23 @@ contract Grantline is
         address vault,
         address agent,
         GrantlineTypes.MandateRules calldata rules,
-        GrantlineTypes.PreflightRules calldata preflightRules
+        GrantlineTypes.PreflightRules calldata preflightRules,
+        uint64 validAfter,
+        uint64 validUntil
     ) external nonReentrant returns (uint256 mandateId) {
         _onlyController(vault, msg.sender);
         _requireVaultNotPaused(vault);
-        mandateId = IRegistry(registry()).createMandate(vault, msg.sender, agent, rules, preflightRules);
+        mandateId = IRegistry(registry())
+            .createMandate(vault, msg.sender, agent, rules, preflightRules, validAfter, validUntil);
     }
 
     function createChildMandate(
         uint256 parentMandateId,
         address childAgent,
         GrantlineTypes.MandateRules calldata rules,
-        GrantlineTypes.PreflightRules calldata preflightRules
+        GrantlineTypes.PreflightRules calldata preflightRules,
+        uint64 validAfter,
+        uint64 validUntil
     ) external nonReentrant returns (uint256 mandateId) {
         GrantlineTypes.Mandate memory parent = IRegistry(registry()).getMandate(parentMandateId);
         _requireVaultNotPaused(parent.vault);
@@ -259,17 +264,19 @@ contract Grantline is
         if (!IRegistry(registry()).isLineageActive(parentMandateId)) {
             revert NotParentAgent(parentMandateId, msg.sender);
         }
-        mandateId =
-            IRegistry(registry()).createChildMandate(parentMandateId, msg.sender, childAgent, rules, preflightRules);
+        mandateId = IRegistry(registry())
+            .createChildMandate(parentMandateId, msg.sender, childAgent, rules, preflightRules, validAfter, validUntil);
     }
 
     function updateMandate(
         uint256 mandateId,
         GrantlineTypes.MandateRules calldata rules,
-        GrantlineTypes.PreflightRules calldata preflightRules
+        GrantlineTypes.PreflightRules calldata preflightRules,
+        uint64 validAfter,
+        uint64 validUntil
     ) external nonReentrant {
         _requireMandateAdministrator(mandateId, msg.sender);
-        IRegistry(registry()).updateMandate(mandateId, msg.sender, rules, preflightRules);
+        IRegistry(registry()).updateMandate(mandateId, msg.sender, rules, preflightRules, validAfter, validUntil);
     }
 
     function revokeMandate(uint256 mandateId) external nonReentrant {
@@ -364,6 +371,8 @@ contract Grantline is
             status: mandate.status,
             rules: mandate.rules,
             preflightRules: mandate.preflightRules,
+            validAfter: mandate.validAfter,
+            validUntil: mandate.validUntil,
             createdAt: mandate.createdAt,
             revokedAt: mandate.revokedAt
         });
@@ -383,6 +392,18 @@ contract Grantline is
         returns (GrantlineTypes.PreflightRules memory)
     {
         return IRegistry(registry()).getEffectivePreflightRules(mandateId);
+    }
+
+    function getEffectiveValidityWindow(uint256 mandateId)
+        external
+        view
+        returns (uint64 validAfter, uint64 validUntil)
+    {
+        return IRegistry(registry()).getEffectiveValidityWindow(mandateId);
+    }
+
+    function isLineageActive(uint256 mandateId) external view returns (bool) {
+        return IRegistry(registry()).isLineageActive(mandateId);
     }
 
     function getEscalation(bytes32 digest) external view returns (GrantlineTypes.Escalation memory) {

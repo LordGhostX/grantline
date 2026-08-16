@@ -377,7 +377,7 @@ contract TestnetIntegration is ScriptBase {
 
         vm.startBroadcast(state.ownerKey);
         hub.depositNative{value: DEPOSIT_AMOUNT}(state.vault);
-        state.rootMandate = hub.createMandate(state.vault, state.agent, rootRules, rootPreflight);
+        state.rootMandate = hub.createMandate(state.vault, state.agent, rootRules, rootPreflight, 0, 0);
         IntegrationToken(state.token).approve(state.vault, TOKEN_DEPOSIT);
         hub.depositToken(state.vault, state.token, TOKEN_DEPOSIT);
         vm.stopBroadcast();
@@ -400,7 +400,7 @@ contract TestnetIntegration is ScriptBase {
 
         integrationVm.prank(state.agent);
         integrationVm.expectRevert();
-        hub.createMandate(state.secondVault, state.agent, rules, preflight);
+        hub.createMandate(state.secondVault, state.agent, rules, preflight, 0, 0);
 
         ActionTypes.ActionPlan memory probe = _nativePlan(state.rootMandate, state.agent, 70, 1, SUCCESS_RECIPIENT, 0);
         bytes32 digest = hub.actionDigest(probe);
@@ -586,11 +586,12 @@ contract TestnetIntegration is ScriptBase {
         GrantlineTypes.PreflightRules memory childPreflight = _preflight(ROOT_PREFLIGHT_FLOOR, true);
 
         vm.startBroadcast(state.agentKey);
-        state.childMandate = hub.createChildMandate(state.rootMandate, state.delegatedAgent, childRules, childPreflight);
+        state.childMandate =
+            hub.createChildMandate(state.rootMandate, state.delegatedAgent, childRules, childPreflight, 0, 0);
         vm.stopBroadcast();
 
         vm.startBroadcast(state.agentKey);
-        hub.updateMandate(state.childMandate, childRules, childPreflight);
+        hub.updateMandate(state.childMandate, childRules, childPreflight, 0, 0);
         vm.stopBroadcast();
 
         ActionTypes.ActionPlan memory childPlan = _nativePlan(
@@ -609,7 +610,7 @@ contract TestnetIntegration is ScriptBase {
             _rules(GRANDCHILD_TRANSACTION_LIMIT, false, false, MIN_USD_AMOUNT);
         vm.startBroadcast(state.delegatedKey);
         state.grandchildMandate =
-            hub.createChildMandate(state.childMandate, state.agent, grandchildRules, childPreflight);
+            hub.createChildMandate(state.childMandate, state.agent, grandchildRules, childPreflight, 0, 0);
         vm.stopBroadcast();
 
         ActionTypes.ActionPlan memory grandchildPlan = _nativePlan(
@@ -631,14 +632,16 @@ contract TestnetIntegration is ScriptBase {
         integrationVm.prank(state.agent);
         integrationVm.expectRevert();
         hub.createChildMandate(
-            state.grandchildMandate, state.delegatedAgent, _rules(1, false, false, MIN_USD_AMOUNT), childPreflight
+            state.grandchildMandate, state.delegatedAgent, _rules(1, false, false, MIN_USD_AMOUNT), childPreflight, 0, 0
         );
 
         vm.startBroadcast(state.ownerKey);
         hub.updateMandate(
             state.rootMandate,
             _rules(ROOT_TIGHTENED_LIMIT, true, true, MIN_USD_AMOUNT),
-            _preflight(TIGHTENED_PREFLIGHT_FLOOR, true)
+            _preflight(TIGHTENED_PREFLIGHT_FLOOR, true),
+            0,
+            0
         );
         vm.stopBroadcast();
 

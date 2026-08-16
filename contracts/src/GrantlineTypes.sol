@@ -34,6 +34,8 @@ library GrantlineTypes {
         MandateStatus status;
         MandateRules rules;
         PreflightRules preflightRules;
+        uint64 validAfter;
+        uint64 validUntil;
         uint64 createdAt;
         uint64 revokedAt;
     }
@@ -48,6 +50,8 @@ library GrantlineTypes {
         MandateStatus status;
         MandateRules rules;
         PreflightRules preflightRules;
+        uint64 validAfter;
+        uint64 validUntil;
         uint64 createdAt;
         uint64 revokedAt;
     }
