@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ActionTypes} from "../src/ActionTypes.sol";
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
@@ -10,6 +11,7 @@ import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
+import {UniswapV3Adapter} from "../src/UniswapV3Adapter.sol";
 import {DeploymentManifest} from "./DeploymentManifest.s.sol";
 import {ScriptBase} from "./ScriptBase.s.sol";
 
@@ -92,12 +94,30 @@ contract DeployGrantline is ScriptBase {
             )
         );
 
+        ActionTypes.SwapAdapterConfig[] memory swapAdapters = new ActionTypes.SwapAdapterConfig[](0);
+        address uniswapV3SwapAdapter;
+        address uniswapV3Router;
+        address uniswapV3Factory;
+        address wrappedNative;
+        if (vm.parseJsonBool(bootstrapManifest, ".swapAdapters.uniswapV3.enabled")) {
+            uniswapV3Router = vm.parseJsonAddress(bootstrapManifest, ".swapAdapters.uniswapV3.router");
+            uniswapV3Factory = vm.parseJsonAddress(bootstrapManifest, ".swapAdapters.uniswapV3.factory");
+            wrappedNative = vm.parseJsonAddress(bootstrapManifest, ".swapAdapters.uniswapV3.wrappedNative");
+            uniswapV3SwapAdapter =
+                address(new UniswapV3Adapter(address(grantline), uniswapV3Router, uniswapV3Factory, wrappedNative));
+            swapAdapters = new ActionTypes.SwapAdapterConfig[](1);
+            swapAdapters[0] = ActionTypes.SwapAdapterConfig({
+                swapAdapterId: ActionTypes.SwapAdapterId.UNISWAP_V3, swapAdapter: uniswapV3SwapAdapter
+            });
+        }
+
         admin.configureModules(
             address(registryProxy),
             address(evaluatorProxy),
             address(managerProxy),
             address(executorProxy),
-            address(factoryProxy)
+            address(factoryProxy),
+            swapAdapters
         );
         vm.stopBroadcast();
 
@@ -109,13 +129,16 @@ contract DeployGrantline is ScriptBase {
         snapshot.grantlineProxyCodeHash = address(grantline).codehash;
         snapshot.protocolAdmin = protocolAdmin;
         snapshot.admin = address(admin);
+        snapshot.uniswapV3SwapAdapter = uniswapV3SwapAdapter;
+        snapshot.uniswapV3Router = uniswapV3Router;
+        snapshot.uniswapV3Factory = uniswapV3Factory;
+        snapshot.wrappedNative = wrappedNative;
         snapshot.modules[0] = DeploymentManifest.ModuleSnapshot(address(registryProxy), address(registryImplementation));
         snapshot.modules[1] =
             DeploymentManifest.ModuleSnapshot(address(evaluatorProxy), address(evaluatorImplementation));
         snapshot.modules[2] = DeploymentManifest.ModuleSnapshot(address(managerProxy), address(managerImplementation));
         snapshot.modules[3] = DeploymentManifest.ModuleSnapshot(address(executorProxy), address(executorImplementation));
         snapshot.modules[4] = DeploymentManifest.ModuleSnapshot(address(factoryProxy), address(factoryImplementation));
-        snapshot.vaults = new address[](0);
         vm.writeJson(DeploymentManifest.build(snapshot), _manifestPath());
 
         emit GrantlineDeployed(

@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
+import {ActionTypes} from "../src/ActionTypes.sol";
 import {ComponentTypes} from "../src/ComponentTypes.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC1822Proxiable} from "@openzeppelin/contracts/interfaces/draft-IERC1822.sol";
@@ -13,10 +14,19 @@ import {
     IExecutor,
     IModule,
     IOwnable2Step,
+    ISwapAdapter,
     IVault,
     IVaultFactory
 } from "../src/Interfaces.sol";
 import {ScriptBase} from "./ScriptBase.s.sol";
+
+interface UniswapV3AdapterDeploymentView {
+    function router() external view returns (address);
+
+    function factory() external view returns (address);
+
+    function wrappedNative() external view returns (address);
+}
 
 contract VerifyGrantlineDeployment is ScriptBase {
     bytes32 private constant IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
@@ -27,6 +37,9 @@ contract VerifyGrantlineDeployment is ScriptBase {
     error UnexpectedImplementation(string component, address expectedImplementation, address actualImplementation);
     error UnexpectedUUPSIdentifier(string component, bytes32 actualIdentifier);
     error UnexpectedComponentType(string component, bytes32 expectedType, bytes32 actualType);
+    error MissingRuntimeCode(string component, address target);
+    error MissingVaultController(address vault);
+    error MissingVaultSelector(string component, bytes4 selector);
 
     function run() external {
         _verify(_manifest());
@@ -67,6 +80,8 @@ contract VerifyGrantlineDeployment is ScriptBase {
         address executor = _verifyModule(manifest, grantline, "executor", grantline.EXECUTOR_MODULE(), address(admin));
         address factory =
             _verifyModule(manifest, grantline, "vaultFactory", grantline.VAULT_FACTORY_MODULE(), address(admin));
+
+        _verifySwapAdapters(manifest, grantline);
 
         _requireAddress("grantline.registry", registry, grantline.registry());
         _requireAddress("grantline.evaluator", evaluator, grantline.evaluator());
@@ -120,80 +135,79 @@ contract VerifyGrantlineDeployment is ScriptBase {
             address(admin)
         );
 
-        uint256 vaultCount = vm.parseJsonUint(manifest, ".vaultCount");
-        _requireUint("grantline.vaultCount", vaultCount, grantline.vaultCount());
-        _requireUint("vaultFactory.vaultCount", vaultCount, IVaultFactory(factory).vaultCount());
-        for (uint256 index; index < vaultCount; index++) {
-            string memory prefix = string.concat(".vaults[", vm.toString(index), "]");
-            address vault = vm.parseJsonAddress(manifest, string.concat(prefix, ".address"));
-            _verifyVault(manifest, grantline, factory, vault, prefix, index);
+        uint256 factoryVaultCount = IVaultFactory(factory).vaultCount();
+        _requireUint("grantline.vaultCount", factoryVaultCount, grantline.vaultCount());
+        for (uint256 index; index < factoryVaultCount; index++) {
+            address vault = IVaultFactory(factory).vaultAt(index);
+            _verifyVault(grantline, address(admin), factory, vault, index);
         }
     }
 
-    function _verifyVault(
-        string memory manifest,
-        Grantline grantline,
-        address factory,
-        address vault,
-        string memory prefix,
-        uint256 index
-    ) private {
+    function _verifySwapAdapters(string memory manifest, Grantline grantline) private {
+        bool enabled = vm.parseJsonBool(manifest, ".swapAdapters.uniswapV3.enabled");
+        address expectedSwapAdapter = vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.swapAdapter");
+        address actualSwapAdapter = grantline.swapAdapterFor(ActionTypes.SwapAdapterId.UNISWAP_V3);
+        _requireAddress("grantline.swapAdapter.uniswapV3", expectedSwapAdapter, actualSwapAdapter);
+        if (!enabled) {
+            if (actualSwapAdapter != address(0)) {
+                revert UnexpectedBool("swapAdapter.uniswapV3.enabled", false, true);
+            }
+            return;
+        }
+        if (actualSwapAdapter == address(0) || actualSwapAdapter.code.length == 0) {
+            revert UnexpectedAddress("swapAdapter.uniswapV3", expectedSwapAdapter, actualSwapAdapter);
+        }
+        _requireComponentType(actualSwapAdapter, ComponentTypes.SWAP_ADAPTER, "swapAdapter.uniswapV3");
+        _requireAddress(
+            "swapAdapter.uniswapV3.grantline", address(grantline), ISwapAdapter(actualSwapAdapter).grantline()
+        );
+        _requireUint(
+            "swapAdapter.uniswapV3.id",
+            uint8(ActionTypes.SwapAdapterId.UNISWAP_V3),
+            uint8(ISwapAdapter(actualSwapAdapter).swapAdapterId())
+        );
+        _requireUint("swapAdapter.uniswapV3.version", 1, ISwapAdapter(actualSwapAdapter).version());
+        _requireAddress(
+            "swapAdapter.uniswapV3.router",
+            vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.router"),
+            UniswapV3AdapterDeploymentView(actualSwapAdapter).router()
+        );
+        _requireAddress(
+            "swapAdapter.uniswapV3.factory",
+            vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.factory"),
+            UniswapV3AdapterDeploymentView(actualSwapAdapter).factory()
+        );
+        _requireAddress(
+            "swapAdapter.uniswapV3.wrappedNative",
+            vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.wrappedNative"),
+            UniswapV3AdapterDeploymentView(actualSwapAdapter).wrappedNative()
+        );
+    }
+
+    function _verifyVault(Grantline grantline, address admin, address factory, address vault, uint256 index) private {
         string memory component = string.concat("vaults[", vm.toString(index), "]");
-        _requireRuntimeCodeHash(vault, vm.parseJsonBytes32(manifest, string.concat(prefix, ".codeHash")), component);
+        _requireRuntimeCode(vault, component);
         _requireComponentType(vault, ComponentTypes.VAULT, component);
         if (!IVaultFactory(factory).isVault(vault)) {
             revert UnexpectedBool(string.concat(component, ".registered"), true, false);
         }
         _requireAddress(string.concat(component, ".factoryAddress"), vault, IVaultFactory(factory).vaultAt(index));
         Grantline.VaultView memory actual = grantline.getVault(vault);
-        _requireAddress(
-            string.concat(component, ".controller"),
-            vm.parseJsonAddress(manifest, string.concat(prefix, ".controller")),
-            actual.controller
-        );
-        _requireAddress(
-            string.concat(component, ".owner"),
-            vm.parseJsonAddress(manifest, string.concat(prefix, ".owner")),
-            actual.owner
-        );
-        _requireBool(
-            string.concat(component, ".paused"),
-            vm.parseJsonBool(manifest, string.concat(prefix, ".paused")),
-            actual.paused
-        );
-        _requireAddress(
-            string.concat(component, ".authority"),
-            vm.parseJsonAddress(manifest, string.concat(prefix, ".authority")),
-            actual.authority
-        );
-        _requireAddress(
-            string.concat(component, ".implementation"),
-            vm.parseJsonAddress(manifest, string.concat(prefix, ".implementation")),
-            actual.implementation
-        );
-        _requireUint(
-            string.concat(component, ".version"),
-            vm.parseJsonUint(manifest, string.concat(prefix, ".version")),
-            actual.version
-        );
+        if (actual.controller == address(0)) revert MissingVaultController(vault);
         address expectedAuthority = IVaultFactory(factory).executor();
         _requireAddress(string.concat(component, ".executor"), expectedAuthority, actual.authority);
         _requireAddress(string.concat(component, ".owner"), address(grantline), actual.owner);
-        _requireAddress(
-            string.concat(component, ".upgradeAuthority"),
-            vm.parseJsonAddress(manifest, string.concat(prefix, ".upgradeAuthority")),
-            IVault(vault).upgradeAuthority()
-        );
+        _requireAddress(string.concat(component, ".upgradeAuthority"), admin, IVault(vault).upgradeAuthority());
         _requireAddress(string.concat(component, ".pendingOwner"), address(0), IOwnable2Step(vault).pendingOwner());
         _requireUint(string.concat(component, ".implementationVersion"), IVault(vault).version(), actual.version);
-        _verifyProxy(
-            component,
-            vault,
-            vm.parseJsonBytes32(manifest, string.concat(prefix, ".codeHash")),
-            actual.implementation,
-            vm.parseJsonBytes32(manifest, string.concat(prefix, ".implementationCodeHash"))
-        );
+        _requireBool(string.concat(component, ".paused"), actual.paused, IVault(vault).paused());
+        address implementation = address(uint160(uint256(vm.load(vault, IMPLEMENTATION_SLOT))));
+        _requireAddress(string.concat(component, ".implementation"), actual.implementation, implementation);
+        _requireRuntimeCode(implementation, string.concat(component, ".implementation"));
         _requireComponentType(actual.implementation, ComponentTypes.VAULT, string.concat(component, ".implementation"));
+        _requireUUPSIdentifier(implementation, string.concat(component, ".implementation"));
+        _requireVaultSelectors(implementation, component);
+        _requireUint(string.concat(component, ".pauseInterfaceVersion"), 1, IVault(vault).pauseInterfaceVersion());
     }
 
     function _verifyVaultTemplate(
@@ -215,6 +229,37 @@ contract VerifyGrantlineDeployment is ScriptBase {
         );
         _requireBool("vaultImplementation.probe.paused", false, IVault(probe).paused());
         _requireAddress("vaultImplementation.probe.pendingOwner", address(0), IOwnable2Step(probe).pendingOwner());
+        _requireVaultSelectors(implementation, "vaultImplementation");
+    }
+
+    function _requireVaultSelectors(address implementation, string memory component) private view {
+        _requireSelector(implementation, IVault.pause.selector, string.concat(component, ".pause"));
+        _requireSelector(implementation, IVault.unpause.selector, string.concat(component, ".unpause"));
+        _requireSelector(implementation, IVault.executeSwap.selector, string.concat(component, ".executeSwap"));
+        _requireSelector(
+            implementation,
+            IVault.receiveNativeFromSwapAdapter.selector,
+            string.concat(component, ".receiveNativeFromSwapAdapter")
+        );
+    }
+
+    function _requireSelector(address target, bytes4 selector, string memory component) private view {
+        uint256 size;
+        assembly {
+            size := extcodesize(target)
+        }
+        bytes memory code = new bytes(size);
+        assembly {
+            extcodecopy(target, add(code, 32), 0, size)
+        }
+        for (uint256 index; index + 4 <= size; index++) {
+            bytes4 candidate;
+            assembly {
+                candidate := mload(add(add(code, 32), index))
+            }
+            if (candidate == selector) return;
+        }
+        revert MissingVaultSelector(component, selector);
     }
 
     function _verifyModule(
@@ -263,6 +308,10 @@ contract VerifyGrantlineDeployment is ScriptBase {
         if (actualImplementation != expectedImplementation) {
             revert UnexpectedImplementation(component, expectedImplementation, actualImplementation);
         }
+    }
+
+    function _requireRuntimeCode(address target, string memory component) private view {
+        if (target == address(0) || target.code.length == 0) revert MissingRuntimeCode(component, target);
     }
 
     function _requireUUPSIdentifier(address implementation, string memory component) private view {

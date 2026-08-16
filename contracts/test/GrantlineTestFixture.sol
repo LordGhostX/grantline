@@ -12,6 +12,7 @@ import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
+import {UniswapV3Adapter} from "../src/UniswapV3Adapter.sol";
 
 interface GrantlineFixtureVm {
     function addr(uint256 privateKey) external returns (address);
@@ -68,10 +69,47 @@ abstract contract GrantlineTestFixture {
         fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, preflightRules, 0, 0);
     }
 
+    function _fixtureWithSwapAdapter(address router, address factory, address wrappedNative)
+        internal
+        returns (Fixture memory fixture)
+    {
+        return _fixtureWithSwapAdapterAndRules(
+            router, factory, wrappedNative, _rules(0, false, 0, 0, false, true), address(0), true
+        );
+    }
+
+    function _fixtureWithSwapAdapterAndRules(
+        address router,
+        address factory,
+        address wrappedNative,
+        GrantlineTypes.MandateRules memory rules,
+        address usdProvider,
+        bool skipUnavailableUsdValuation
+    ) internal returns (Fixture memory fixture) {
+        fixture.controller = address(this);
+        fixture.agent = fixtureVm.addr(FIXTURE_AGENT_KEY);
+        (fixture.hub, fixture.admin) =
+            _deployHubWithSwapAdapter(usdProvider, skipUnavailableUsdValuation, router, factory, wrappedNative);
+        fixtureVm.deal(fixture.controller, 20 ether);
+        fixture.vault = fixture.hub.createVault();
+        fixture.hub.depositNative{value: 5 ether}(fixture.vault);
+        fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
+    }
+
     function _deployHub(address usdProvider, bool skipUnavailableUsdValuation)
         internal
         returns (Grantline hub, GrantlineAdmin admin)
     {
+        return _deployHubWithSwapAdapter(usdProvider, skipUnavailableUsdValuation, address(0), address(0), address(0));
+    }
+
+    function _deployHubWithSwapAdapter(
+        address usdProvider,
+        bool skipUnavailableUsdValuation,
+        address router,
+        address factoryAddress,
+        address wrappedNative
+    ) internal returns (Grantline hub, GrantlineAdmin admin) {
         Grantline grantlineImplementation = new Grantline();
         MandateRegistry registryImplementation = new MandateRegistry();
         MandateEvaluator evaluatorImplementation = new MandateEvaluator();
@@ -126,7 +164,15 @@ abstract contract GrantlineTestFixture {
             )
         );
 
-        admin.configureModules(registry, evaluator, manager, executor, factory);
+        ActionTypes.SwapAdapterConfig[] memory swapAdapters = new ActionTypes.SwapAdapterConfig[](0);
+        if (router != address(0) || factoryAddress != address(0) || wrappedNative != address(0)) {
+            address swapAdapter = address(new UniswapV3Adapter(address(hub), router, factoryAddress, wrappedNative));
+            swapAdapters = new ActionTypes.SwapAdapterConfig[](1);
+            swapAdapters[0] = ActionTypes.SwapAdapterConfig({
+                swapAdapterId: ActionTypes.SwapAdapterId.UNISWAP_V3, swapAdapter: swapAdapter
+            });
+        }
+        admin.configureModules(registry, evaluator, manager, executor, factory, swapAdapters);
     }
 
     function _plan(

@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {IERC1822Proxiable} from "@openzeppelin/contracts/interfaces/draft-IERC1822.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ActionTypes} from "./ActionTypes.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {Grantline} from "./Grantline.sol";
 import {
@@ -14,6 +15,7 @@ import {
     IExecutor,
     IModule,
     IOwnable2Step,
+    ISwapAdapter,
     IUUPS,
     IVault,
     IVaultFactory
@@ -53,11 +55,17 @@ contract GrantlineAdmin is ReentrancyGuard {
         address evaluatorAddress,
         address escalationManagerAddress,
         address executorAddress,
-        address vaultFactoryAddress
+        address vaultFactoryAddress,
+        ActionTypes.SwapAdapterConfig[] calldata swapAdapters
     ) external onlyProtocolAdmin {
         IGrantlineAdminTarget(grantline)
             .configureModules(
-                registryAddress, evaluatorAddress, escalationManagerAddress, executorAddress, vaultFactoryAddress
+                registryAddress,
+                evaluatorAddress,
+                escalationManagerAddress,
+                executorAddress,
+                vaultFactoryAddress,
+                swapAdapters
             );
         _validateWiring();
         _validateFactoryTemplate();
@@ -179,6 +187,23 @@ contract GrantlineAdmin is ReentrancyGuard {
         }
         if (IVaultFactory(factoryAddress).upgradeAuthority() != address(this)) {
             revert InvalidModuleRelationship("factory.upgradeAuthority");
+        }
+        _validateSwapAdapters(hub);
+    }
+
+    function _validateSwapAdapters(IGrantlineAdminTarget hub) private view {
+        address swapAdapter = hub.swapAdapterFor(ActionTypes.SwapAdapterId.UNISWAP_V3);
+        if (swapAdapter == address(0)) return;
+        if (swapAdapter.code.length == 0) revert InvalidModule(ComponentTypes.SWAP_ADAPTER, swapAdapter);
+        _requireComponentType(swapAdapter, ComponentTypes.SWAP_ADAPTER, "uniswapV3.swapAdapter");
+        if (ISwapAdapter(swapAdapter).swapAdapterId() != ActionTypes.SwapAdapterId.UNISWAP_V3) {
+            revert InvalidModuleRelationship("swapAdapter.id");
+        }
+        if (ISwapAdapter(swapAdapter).grantline() != grantline) {
+            revert InvalidModuleRelationship("swapAdapter.grantline");
+        }
+        if (ISwapAdapter(swapAdapter).version() != 1) {
+            revert InvalidModuleRelationship("swapAdapter.version");
         }
     }
 

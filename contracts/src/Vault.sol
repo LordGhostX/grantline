@@ -7,7 +7,9 @@ import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Pau
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ActionTypes} from "./ActionTypes.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
+import {IGrantlineContext, ISwapAdapter} from "./Interfaces.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
 contract Vault is
@@ -25,6 +27,7 @@ contract Vault is
     error NativeTransferFailed();
     error NotAuthority(address caller);
     error InvalidTokenTarget(address token);
+    error InvalidSwapAdapter(address swapAdapter);
 
     event VaultInitialized(address indexed grantline, address indexed authority, address indexed upgradeAuthority);
     event AuthorityUpdated(address indexed previousAuthority, address indexed newAuthority);
@@ -149,6 +152,51 @@ contract Vault is
         }
         (success, result) = target.call{value: value}(data);
         emit ExecutionAttempted(msg.sender, target, value, keccak256(data), success, keccak256(result));
+    }
+
+    function executeSwap(address swapAdapter, ActionTypes.SwapParameters calldata params)
+        external
+        onlyAuthority
+        whenNotPaused
+        nonReentrant
+        returns (uint256 amountOut)
+    {
+        if (swapAdapter == address(0) || swapAdapter.code.length == 0) {
+            revert InvalidSwapAdapter(swapAdapter);
+        }
+        try ISwapAdapter(swapAdapter).swapAdapterId() returns (ActionTypes.SwapAdapterId configuredSwapAdapterId) {
+            if (
+                configuredSwapAdapterId != params.swapAdapterId
+                    || IGrantlineContext(grantline).swapAdapterFor(params.swapAdapterId) != swapAdapter
+            ) {
+                revert InvalidSwapAdapter(swapAdapter);
+            }
+        } catch {
+            revert InvalidSwapAdapter(swapAdapter);
+        }
+
+        if (params.tokenIn == address(0)) {
+            amountOut = ISwapAdapter(swapAdapter).executeSwap{value: params.amountIn}(params);
+        } else {
+            _requireTokenAndAmount(params.tokenIn, params.amountIn);
+            IERC20(params.tokenIn).forceApprove(swapAdapter, params.amountIn);
+            amountOut = ISwapAdapter(swapAdapter).executeSwap(params);
+            IERC20(params.tokenIn).forceApprove(swapAdapter, 0);
+        }
+    }
+
+    function receiveNativeFromSwapAdapter(address swapAdapter) external payable {
+        if (swapAdapter == address(0) || msg.sender != swapAdapter || swapAdapter.code.length == 0) {
+            revert InvalidSwapAdapter(swapAdapter);
+        }
+        try ISwapAdapter(swapAdapter).swapAdapterId() returns (ActionTypes.SwapAdapterId configuredSwapAdapterId) {
+            if (IGrantlineContext(grantline).swapAdapterFor(configuredSwapAdapterId) != swapAdapter) {
+                revert InvalidSwapAdapter(swapAdapter);
+            }
+        } catch {
+            revert InvalidSwapAdapter(swapAdapter);
+        }
+        emit NativeDeposited(msg.sender, msg.value);
     }
 
     function _requireTokenAndAmount(address token, uint256 amount) private view {

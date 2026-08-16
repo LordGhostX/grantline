@@ -43,6 +43,8 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
     error NonceAlreadyUsed(uint256 mandateId, address agent, uint256 nonce);
     error UnsupportedAction(uint8 actionType);
     error UnsupportedActionVersion(uint8 version);
+    error UnsupportedSwapAdapter(ActionTypes.SwapAdapterId swapAdapterId);
+    error InvalidSwapOutput(uint256 expectedMinimum, uint256 actualAmount);
     error ActionDigestMismatch(bytes32 expected, bytes32 actual);
 
     event ActionPlanExecuted(
@@ -181,6 +183,17 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
     }
 
     function _executeAction(IVault vault, ActionTypes.Action memory action, uint256 actionIndex) private {
+        if (action.actionType == ActionTypes.ActionType.SWAP) {
+            if (action.version != ActionTypes.SWAP_VERSION) {
+                revert UnsupportedActionVersion(action.version);
+            }
+            ActionTypes.SwapParameters memory swap = abi.decode(action.parameters, (ActionTypes.SwapParameters));
+            address swapAdapter = IGrantlineContext(grantline).swapAdapterFor(swap.swapAdapterId);
+            if (swapAdapter == address(0)) revert UnsupportedSwapAdapter(swap.swapAdapterId);
+            uint256 amountOut = vault.executeSwap(swapAdapter, swap);
+            if (amountOut < swap.minAmountOut) revert InvalidSwapOutput(swap.minAmountOut, amountOut);
+            return;
+        }
         if (action.actionType != ActionTypes.ActionType.TRANSFER) {
             revert UnsupportedAction(uint8(action.actionType));
         }

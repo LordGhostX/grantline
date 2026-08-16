@@ -170,6 +170,10 @@ contract TestnetIntegration is ScriptBase {
         address vaultFactory;
         address vaultFactoryImplementation;
         address initialVaultImplementation;
+        address uniswapV3SwapAdapter;
+        address uniswapV3Router;
+        address uniswapV3Factory;
+        address wrappedNative;
         uint256 ownerKey;
         uint256 agentKey;
         uint256 delegatedKey;
@@ -242,6 +246,10 @@ contract TestnetIntegration is ScriptBase {
         state.vaultFactory = vm.parseJsonAddress(manifest, ".modules.vaultFactory.proxy");
         state.vaultFactoryImplementation = vm.parseJsonAddress(manifest, ".modules.vaultFactory.implementation");
         state.initialVaultImplementation = vm.parseJsonAddress(manifest, ".vaultImplementation.address");
+        state.uniswapV3SwapAdapter = vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.swapAdapter");
+        state.uniswapV3Router = vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.router");
+        state.uniswapV3Factory = vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.factory");
+        state.wrappedNative = vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.wrappedNative");
 
         state.ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         state.agentKey = vm.envUint("AGENT_PRIVATE_KEY");
@@ -834,7 +842,7 @@ contract TestnetIntegration is ScriptBase {
         verifier.runWithManifest(manifest);
     }
 
-    function _verificationManifest(State memory state) private view returns (string memory) {
+    function _verificationManifest(State memory state) internal view returns (string memory) {
         DeploymentManifest.Snapshot memory snapshot;
         snapshot.network = state.network;
         snapshot.chainId = block.chainid;
@@ -843,16 +851,16 @@ contract TestnetIntegration is ScriptBase {
         snapshot.grantlineProxyCodeHash = state.hub.codehash;
         snapshot.protocolAdmin = state.owner;
         snapshot.admin = state.admin;
+        snapshot.uniswapV3SwapAdapter = state.uniswapV3SwapAdapter;
+        snapshot.uniswapV3Router = state.uniswapV3Router;
+        snapshot.uniswapV3Factory = state.uniswapV3Factory;
+        snapshot.wrappedNative = state.wrappedNative;
         snapshot.modules[0] = DeploymentManifest.ModuleSnapshot(state.registry, state.registryImplementation);
         snapshot.modules[1] = DeploymentManifest.ModuleSnapshot(state.evaluator, state.evaluatorImplementation);
         snapshot.modules[2] =
             DeploymentManifest.ModuleSnapshot(state.escalationManager, state.escalationManagerImplementation);
         snapshot.modules[3] = DeploymentManifest.ModuleSnapshot(state.executor, state.executorImplementation);
         snapshot.modules[4] = DeploymentManifest.ModuleSnapshot(state.vaultFactory, state.vaultFactoryImplementation);
-        snapshot.vaults = new address[](3);
-        snapshot.vaults[0] = state.vault;
-        snapshot.vaults[1] = state.secondVault;
-        snapshot.vaults[2] = state.thirdVault;
         return DeploymentManifest.build(snapshot);
     }
 

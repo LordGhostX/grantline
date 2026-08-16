@@ -2,8 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {Grantline} from "../src/Grantline.sol";
-import {IModule, IVault} from "../src/Interfaces.sol";
+import {IModule} from "../src/Interfaces.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
 
 library DeploymentManifest {
@@ -22,25 +21,36 @@ library DeploymentManifest {
         bytes32 grantlineProxyCodeHash;
         address protocolAdmin;
         address admin;
+        address uniswapV3SwapAdapter;
+        address uniswapV3Router;
+        address uniswapV3Factory;
+        address wrappedNative;
         ModuleSnapshot[5] modules;
-        address[] vaults;
     }
 
     function build(Snapshot memory snapshot) internal view returns (string memory json) {
-        Grantline hub = Grantline(snapshot.grantline);
         VaultFactory factory = VaultFactory(snapshot.modules[4].proxy);
 
         json = string.concat('{"network":"', snapshot.network, '","chainId":', snapshot.chainId.toString());
         json = string.concat(json, ',"grantline":', _grantlineJson(snapshot));
         json = string.concat(json, ',"admin":', _adminJson(snapshot));
+        json = string.concat(json, ',"swapAdapters":', _swapAdaptersJson(snapshot));
         json = string.concat(json, ',"modules":', _modulesJson(snapshot.modules));
         json = string.concat(json, ',"vaultImplementation":', _vaultImplementationJson(factory));
-        json = string.concat(json, ',"vaultCount":', snapshot.vaults.length.toString(), ',"vaults":');
-        json = string.concat(json, _vaultsJson(hub, snapshot.vaults), "}");
+        json = string.concat(json, "}");
     }
 
     function _adminJson(Snapshot memory snapshot) private pure returns (string memory json) {
         json = string.concat('{"address":"', _address(snapshot.admin), '"}');
+    }
+
+    function _swapAdaptersJson(Snapshot memory snapshot) private pure returns (string memory json) {
+        bool enabled = snapshot.uniswapV3SwapAdapter != address(0);
+        json = string.concat('{"uniswapV3":{"enabled":', enabled ? "true" : "false");
+        json = string.concat(json, ',"swapAdapter":"', _address(snapshot.uniswapV3SwapAdapter), '"');
+        json = string.concat(json, ',"router":"', _address(snapshot.uniswapV3Router), '"');
+        json = string.concat(json, ',"factory":"', _address(snapshot.uniswapV3Factory), '"');
+        json = string.concat(json, ',"wrappedNative":"', _address(snapshot.wrappedNative), '"}}');
     }
 
     function _grantlineJson(Snapshot memory snapshot) private view returns (string memory json) {
@@ -79,29 +89,6 @@ library DeploymentManifest {
         json = string.concat(json, ',"codeHash":"', _bytes32(implementation.codehash), '"');
         json = string.concat(json, ',"upgradeAuthority":"', _address(factory.upgradeAuthority()), '"');
         json = string.concat(json, ',"version":', uint256(factory.vaultImplementationVersion()).toString(), "}");
-    }
-
-    function _vaultsJson(Grantline hub, address[] memory vaults) private view returns (string memory json) {
-        json = "[";
-        for (uint256 index; index < vaults.length; index++) {
-            if (index != 0) json = string.concat(json, ",");
-            json = string.concat(json, _vaultJson(hub, vaults[index]));
-        }
-        json = string.concat(json, "]");
-    }
-
-    function _vaultJson(Grantline hub, address vault) private view returns (string memory json) {
-        Grantline.VaultView memory viewData = hub.getVault(vault);
-        json = string.concat('{"address":"', _address(vault), '"');
-        json = string.concat(json, ',"codeHash":"', _bytes32(vault.codehash), '"');
-        json = string.concat(json, ',"controller":"', _address(viewData.controller), '"');
-        json = string.concat(json, ',"owner":"', _address(viewData.owner), '"');
-        json = string.concat(json, ',"authority":"', _address(viewData.authority), '"');
-        json = string.concat(json, ',"upgradeAuthority":"', _address(IVault(vault).upgradeAuthority()), '"');
-        json = string.concat(json, ',"paused":', viewData.paused ? "true" : "false");
-        json = string.concat(json, ',"implementation":"', _address(viewData.implementation), '"');
-        json = string.concat(json, ',"implementationCodeHash":"', _bytes32(viewData.implementation.codehash), '"');
-        json = string.concat(json, ',"version":', uint256(viewData.version).toString(), "}");
     }
 
     function _address(address value) private pure returns (string memory) {

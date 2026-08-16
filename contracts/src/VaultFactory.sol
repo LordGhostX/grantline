@@ -146,6 +146,8 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
         if (
             !_hasSelector(implementation, IVault.pause.selector)
                 || !_hasSelector(implementation, IVault.unpause.selector)
+                || !_hasSelector(implementation, IVault.executeSwap.selector)
+                || !_hasSelector(implementation, IVault.receiveNativeFromSwapAdapter.selector)
         ) {
             revert InvalidImplementation(implementation);
         }

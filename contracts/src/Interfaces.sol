@@ -17,9 +17,13 @@ interface IOwnable2Step {
 interface IGrantlineContext is IComponent {
     function moduleAddress(bytes32 key) external view returns (address);
 
+    function swapAdapterFor(ActionTypes.SwapAdapterId swapAdapterId) external view returns (address);
+
     function controllerOf(address vault) external view returns (address);
 
     function isController(address vault, address account) external view returns (bool);
+
+    function isRegisteredVault(address vault) external view returns (bool);
 
     function actionDigest(ActionTypes.ActionPlan calldata plan) external view returns (bytes32);
 }
@@ -30,7 +34,8 @@ interface IGrantlineAdminTarget {
         address evaluatorAddress,
         address escalationManagerAddress,
         address executorAddress,
-        address vaultFactoryAddress
+        address vaultFactoryAddress,
+        ActionTypes.SwapAdapterConfig[] calldata swapAdapters
     ) external;
 
     function adminSetVaultController(address vault, address newController) external;
@@ -49,11 +54,25 @@ interface IGrantlineAdminTarget {
 
     function vaultFactory() external view returns (address);
 
+    function swapAdapterFor(ActionTypes.SwapAdapterId swapAdapterId) external view returns (address);
+
     function configured() external view returns (bool);
 }
 
 interface IGrantlineAdmin {
     function grantline() external view returns (address);
+}
+
+interface ISwapAdapter is IComponent {
+    function swapAdapterId() external pure returns (ActionTypes.SwapAdapterId);
+
+    function version() external pure returns (uint64);
+
+    function grantline() external view returns (address);
+
+    function validateSwap(ActionTypes.SwapParameters calldata params, address vault) external view returns (bool);
+
+    function executeSwap(ActionTypes.SwapParameters calldata params) external payable returns (uint256 amountOut);
 }
 
 interface IModule is IComponent {
@@ -221,6 +240,12 @@ interface IVault is IComponent {
     function execute(address target, uint256 value, bytes calldata data)
         external
         returns (bool success, bytes memory result);
+
+    function executeSwap(address swapAdapter, ActionTypes.SwapParameters calldata params)
+        external
+        returns (uint256 amountOut);
+
+    function receiveNativeFromSwapAdapter(address swapAdapter) external payable;
 }
 
 interface IUUPS {

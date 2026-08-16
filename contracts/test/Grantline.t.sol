@@ -383,7 +383,7 @@ contract GrantlineTest {
                 )
             )
         );
-        admin.configureModules(registry, evaluator, manager, executor, factory);
+        admin.configureModules(registry, evaluator, manager, executor, factory, new ActionTypes.SwapAdapterConfig[](0));
     }
 
     function _createVault(Grantline hub, address controller) private returns (address vault) {

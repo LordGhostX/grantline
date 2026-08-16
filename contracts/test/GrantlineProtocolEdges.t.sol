@@ -2,10 +2,14 @@
 pragma solidity ^0.8.28;
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ActionTypes} from "../src/ActionTypes.sol";
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {ComponentTypes} from "../src/ComponentTypes.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
@@ -173,6 +177,65 @@ contract GrantlineMissingUnpauseVaultImplementation is UUPSUpgradeable {
     function _authorizeUpgrade(address) internal pure override {}
 }
 
+abstract contract GrantlineIncompleteSwapVaultImplementation is
+    Initializable,
+    Ownable2StepUpgradeable,
+    PausableUpgradeable,
+    UUPSUpgradeable
+{
+    address public authority;
+    address public upgradeAuthority;
+
+    function initialize(address grantlineAddress, address authorityAddress, address upgradeAuthorityAddress)
+        external
+        initializer
+    {
+        if (
+            grantlineAddress == address(0) || authorityAddress == address(0) || authorityAddress.code.length == 0
+                || upgradeAuthorityAddress == address(0) || upgradeAuthorityAddress.code.length == 0
+        ) revert();
+        authority = authorityAddress;
+        upgradeAuthority = upgradeAuthorityAddress;
+        __Ownable_init(grantlineAddress);
+        __Ownable2Step_init();
+        __Pausable_init();
+    }
+
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
+    function componentType() external pure returns (bytes32) {
+        return ComponentTypes.VAULT;
+    }
+
+    function pauseInterfaceVersion() external pure returns (uint64) {
+        return 1;
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    function _authorizeUpgrade(address) internal view override {
+        if (msg.sender != upgradeAuthority) revert();
+    }
+}
+
+contract GrantlineMissingExecuteSwapVaultImplementation is GrantlineIncompleteSwapVaultImplementation {
+    function receiveNativeFromSwapAdapter(address) external payable {}
+}
+
+contract GrantlineMissingSwapNativeReceiverVaultImplementation is GrantlineIncompleteSwapVaultImplementation {
+    function executeSwap(address, ActionTypes.SwapParameters calldata) external pure returns (uint256) {
+        return 0;
+    }
+}
+
 contract GrantlinePausedVaultImplementation is UUPSUpgradeable {
     function version() external pure returns (uint64) {
         return 1;
@@ -300,7 +363,10 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         address executor = fixture.hub.executor();
         address vaultFactory = fixture.hub.vaultFactory();
         fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.AlreadyConfigured.selector));
-        fixture.admin.configureModules(registry, evaluator, escalationManager, executor, vaultFactory);
+        fixture.admin
+            .configureModules(
+                registry, evaluator, escalationManager, executor, vaultFactory, new ActionTypes.SwapAdapterConfig[](0)
+            );
     }
 
     function test_ownershipTransferRequiresPendingOwnerAcceptance() public {
@@ -425,6 +491,27 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
             abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(pausedImplementation))
         );
         fixture.admin.setVaultImplementation(address(pausedImplementation), 1);
+    }
+
+    function test_rejectsVaultImplementationsMissingSwapEntrypoints() public {
+        Fixture memory fixture = _fixture();
+        GrantlineMissingExecuteSwapVaultImplementation missingExecuteSwap =
+            new GrantlineMissingExecuteSwapVaultImplementation();
+        GrantlineMissingSwapNativeReceiverVaultImplementation missingNativeReceiver =
+            new GrantlineMissingSwapNativeReceiverVaultImplementation();
+        address previousImplementation = fixture.hub.getVault(fixture.vault).implementation;
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(missingExecuteSwap))
+        );
+        fixture.admin.setVaultImplementation(address(missingExecuteSwap), 1);
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(VaultFactory.InvalidImplementation.selector, address(missingNativeReceiver))
+        );
+        fixture.admin.upgradeVault(fixture.vault, address(missingNativeReceiver), 1, "");
+
+        assert(fixture.hub.getVault(fixture.vault).implementation == previousImplementation);
     }
 
     function test_factoryModuleUpgradePreservesTemplateValidation() public {

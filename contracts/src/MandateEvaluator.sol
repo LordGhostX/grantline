@@ -7,7 +7,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {ActionTypes} from "./ActionTypes.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
-import {IGrantlineContext, IEvaluator, IRegistry, IVault} from "./Interfaces.sol";
+import {IGrantlineContext, IEvaluator, IRegistry, ISwapAdapter, IVault} from "./Interfaces.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
 interface IUsdValueProvider {
@@ -44,7 +44,11 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         MANDATE_PAUSED,
         VAULT_PAUSED,
         MANDATE_NOT_YET_VALID,
-        MANDATE_EXPIRED
+        MANDATE_EXPIRED,
+        SWAP_UNSUPPORTED,
+        INVALID_SWAP_PARAMETERS,
+        INVALID_SWAP_ROUTE,
+        SWAP_DEADLINE_EXPIRED
     }
 
     bytes32 public constant EXECUTOR_MODULE = keccak256("EXECUTOR");
@@ -160,6 +164,14 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         return _evaluateValidPlan(plan, effectiveRules, mandate.vault, registryContract);
     }
 
+    function decodeSwapParameters(bytes calldata data)
+        external
+        pure
+        returns (ActionTypes.SwapParameters memory params)
+    {
+        return abi.decode(data, (ActionTypes.SwapParameters));
+    }
+
     function _evaluateValidPlan(
         ActionTypes.ActionPlan calldata plan,
         GrantlineTypes.MandateRules memory effectiveRules,
@@ -167,7 +179,7 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         IRegistry registryContract
     ) private view returns (GrantlineTypes.EvaluationResult memory) {
         (bool valid, Totals memory totals, FailureCode validationFailure, uint256 failedActionIndex) =
-            _validatePlan(plan, effectiveRules);
+            _validatePlan(plan, effectiveRules, vault);
         if (!valid) {
             return _failure(
                 validationFailure, failedActionIndex, totals.nativeAmount, totals.usdAmount, totals.usdLimitSkipped, 0
@@ -197,53 +209,87 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         bool preflightNativeBalance;
     }
 
-    function _validatePlan(ActionTypes.ActionPlan calldata plan, GrantlineTypes.MandateRules memory rules)
-        private
-        view
-        returns (bool, Totals memory totals, FailureCode, uint256)
-    {
+    function _validatePlan(
+        ActionTypes.ActionPlan calldata plan,
+        GrantlineTypes.MandateRules memory rules,
+        address vault
+    ) private view returns (bool, Totals memory totals, FailureCode, uint256) {
         bool usdLimitEnabled = rules.minUsdAmount != 0 || rules.maxUsdAmount != 0;
         uint256 failedActionIndex = type(uint256).max;
         for (uint256 index; index < plan.actions.length; index++) {
             (bool actionValid, Totals memory updatedTotals, FailureCode actionFailure) =
-                _validateAction(plan.actions[index], totals, usdLimitEnabled);
+                _validateAction(plan.actions[index], totals, usdLimitEnabled, vault);
             totals = updatedTotals;
             if (!actionValid) return (false, totals, actionFailure, index);
         }
         return (true, totals, FailureCode.NONE, failedActionIndex);
     }
 
-    function _validateAction(ActionTypes.Action calldata action, Totals memory currentTotals, bool usdLimitEnabled)
+    function _validateAction(
+        ActionTypes.Action calldata action,
+        Totals memory currentTotals,
+        bool usdLimitEnabled,
+        address vault
+    ) private view returns (bool, Totals memory totals, FailureCode) {
+        totals = currentTotals;
+        if (action.parameters.length == 0) return (false, totals, FailureCode.INVALID_ACTION);
+
+        if (action.actionType == ActionTypes.ActionType.TRANSFER) {
+            if (action.version != ActionTypes.TRANSFER_VERSION) {
+                return (false, totals, FailureCode.INVALID_ACTION);
+            }
+            if (action.parameters.length != 96) {
+                return (false, totals, FailureCode.INVALID_ACTION_PARAMETERS);
+            }
+
+            ActionTypes.TransferParameters memory transfer =
+                abi.decode(action.parameters, (ActionTypes.TransferParameters));
+            if (transfer.recipient == address(0)) {
+                return (false, totals, FailureCode.INVALID_RECIPIENT);
+            }
+            if (transfer.amount == 0) {
+                return (false, totals, FailureCode.INVALID_AMOUNT);
+            }
+            return _accumulate(totals, transfer.asset, transfer.amount, usdLimitEnabled);
+        }
+
+        if (action.actionType != ActionTypes.ActionType.SWAP || action.version != ActionTypes.SWAP_VERSION) {
+            return (false, totals, FailureCode.INVALID_ACTION);
+        }
+
+        try this.decodeSwapParameters(action.parameters) returns (ActionTypes.SwapParameters memory swap) {
+            if (swap.amountIn == 0 || swap.minAmountOut == 0 || swap.deadline == 0 || swap.hops.length == 0) {
+                return (false, totals, FailureCode.INVALID_SWAP_PARAMETERS);
+            }
+            if (block.timestamp > swap.deadline) return (false, totals, FailureCode.SWAP_DEADLINE_EXPIRED);
+
+            address swapAdapter = IGrantlineContext(grantline).swapAdapterFor(swap.swapAdapterId);
+            if (swapAdapter == address(0)) return (false, totals, FailureCode.SWAP_UNSUPPORTED);
+            try ISwapAdapter(swapAdapter).validateSwap(swap, vault) returns (bool valid) {
+                if (!valid) return (false, totals, FailureCode.INVALID_SWAP_ROUTE);
+            } catch {
+                return (false, totals, FailureCode.INVALID_SWAP_ROUTE);
+            }
+            return _accumulate(totals, swap.tokenIn, swap.amountIn, usdLimitEnabled);
+        } catch {
+            return (false, totals, FailureCode.INVALID_SWAP_PARAMETERS);
+        }
+    }
+
+    function _accumulate(Totals memory totals, address asset, uint256 amount, bool usdLimitEnabled)
         private
         view
-        returns (bool, Totals memory totals, FailureCode)
+        returns (bool, Totals memory, FailureCode)
     {
-        totals = currentTotals;
-        if (
-            action.actionType != ActionTypes.ActionType.TRANSFER || action.version != ActionTypes.TRANSFER_VERSION
-                || action.parameters.length == 0
-        ) return (false, totals, FailureCode.INVALID_ACTION);
-        if (action.parameters.length != 96) {
-            return (false, totals, FailureCode.INVALID_ACTION_PARAMETERS);
-        }
-
-        ActionTypes.TransferParameters memory transfer = abi.decode(action.parameters, (ActionTypes.TransferParameters));
-        if (transfer.recipient == address(0)) {
-            return (false, totals, FailureCode.INVALID_RECIPIENT);
-        }
-        if (transfer.amount == 0) {
-            return (false, totals, FailureCode.INVALID_AMOUNT);
-        }
-
-        if (transfer.asset == address(0)) {
-            if (totals.nativeAmount > type(uint256).max - transfer.amount) {
+        if (asset == address(0)) {
+            if (totals.nativeAmount > type(uint256).max - amount) {
                 return (false, totals, FailureCode.AMOUNT_OVERFLOW);
             }
-            totals.nativeAmount += transfer.amount;
+            totals.nativeAmount += amount;
         }
 
         if (usdLimitEnabled) {
-            (uint256 actionUsdAmount, bool available) = _quoteUsd(transfer.asset, transfer.amount);
+            (uint256 actionUsdAmount, bool available) = _quoteUsd(asset, amount);
             if (!available) {
                 if (!skipUnavailableUsdValuation) {
                     return (false, totals, FailureCode.USD_VALUATION_UNAVAILABLE);

@@ -18,6 +18,7 @@ import {
     IExecutor,
     IModule,
     IRegistry,
+    ISwapAdapter,
     IVault,
     IVaultFactory
 } from "./Interfaces.sol";
@@ -50,13 +51,17 @@ contract Grantline is
     error VaultIsPaused(address vault);
     error InvalidAdminController();
     error NotAdminController(address caller);
+    error InvalidSwapAdapter(ActionTypes.SwapAdapterId swapAdapterId, address swapAdapter);
+    error DuplicateSwapAdapter(ActionTypes.SwapAdapterId swapAdapterId);
+    error UnsupportedSwapAdapterId(ActionTypes.SwapAdapterId swapAdapterId);
 
     event ModulesConfigured(
         address indexed registry,
         address indexed evaluator,
         address escalationManager,
         address executor,
-        address vaultFactory
+        address vaultFactory,
+        uint256 swapAdapterCount
     );
     event AdminControllerUpdated(address indexed previousController, address indexed newController);
     event VaultCreated(
@@ -99,6 +104,7 @@ contract Grantline is
     }
 
     mapping(bytes32 => address) private _modules;
+    mapping(ActionTypes.SwapAdapterId => address) private _swapAdapters;
     mapping(address => VaultRecord) private _vaultRecords;
     address[] private _vaults;
     bool public configured;
@@ -144,7 +150,8 @@ contract Grantline is
         address evaluatorAddress,
         address escalationManagerAddress,
         address executorAddress,
-        address vaultFactoryAddress
+        address vaultFactoryAddress,
+        ActionTypes.SwapAdapterConfig[] calldata swapAdapters
     ) external {
         _onlyAdminController();
         if (configured) revert AlreadyConfigured();
@@ -157,14 +164,57 @@ contract Grantline is
         _modules[ESCALATION_MANAGER_MODULE] = escalationManagerAddress;
         _modules[EXECUTOR_MODULE] = executorAddress;
         _modules[VAULT_FACTORY_MODULE] = vaultFactoryAddress;
+        for (uint256 index; index < swapAdapters.length; index++) {
+            ActionTypes.SwapAdapterConfig calldata config = swapAdapters[index];
+            if (config.swapAdapter == address(0) || config.swapAdapter.code.length == 0) {
+                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+            }
+            if (config.swapAdapterId != ActionTypes.SwapAdapterId.UNISWAP_V3) {
+                revert UnsupportedSwapAdapterId(config.swapAdapterId);
+            }
+            if (_swapAdapters[config.swapAdapterId] != address(0)) {
+                revert DuplicateSwapAdapter(config.swapAdapterId);
+            }
+            try ISwapAdapter(config.swapAdapter).componentType() returns (bytes32 actualType) {
+                if (actualType != ComponentTypes.SWAP_ADAPTER) {
+                    revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+                }
+            } catch {
+                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+            }
+            try ISwapAdapter(config.swapAdapter).swapAdapterId() returns (ActionTypes.SwapAdapterId actualId) {
+                if (actualId != config.swapAdapterId) {
+                    revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+                }
+            } catch {
+                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+            }
+            try ISwapAdapter(config.swapAdapter).grantline() returns (address swapAdapterGrantline) {
+                if (swapAdapterGrantline != address(this)) {
+                    revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+                }
+            } catch {
+                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+            }
+            _swapAdapters[config.swapAdapterId] = config.swapAdapter;
+        }
         configured = true;
         emit ModulesConfigured(
-            registryAddress, evaluatorAddress, escalationManagerAddress, executorAddress, vaultFactoryAddress
+            registryAddress,
+            evaluatorAddress,
+            escalationManagerAddress,
+            executorAddress,
+            vaultFactoryAddress,
+            swapAdapters.length
         );
     }
 
     function moduleAddress(bytes32 key) public view override returns (address) {
         return _modules[key];
+    }
+
+    function swapAdapterFor(ActionTypes.SwapAdapterId swapAdapterId) public view override returns (address) {
+        return _swapAdapters[swapAdapterId];
     }
 
     function registry() public view returns (address) {
