@@ -47,6 +47,7 @@ contract Grantline is
     error NotController(address vault, address caller);
     error NotParentAgent(uint256 mandateId, address caller);
     error NotMandateAdministrator(uint256 mandateId, address caller);
+    error NotNonceCanceller(uint256 mandateId, address caller);
     error InvalidController();
     error VaultIsPaused(address vault);
     error InvalidAdminController();
@@ -79,6 +80,9 @@ contract Grantline is
     event VaultUnpaused(address indexed vault, address indexed unpausedBy);
     event MandatePaused(uint256 indexed mandateId, address indexed pausedBy);
     event MandateUnpaused(uint256 indexed mandateId, address indexed unpausedBy);
+    event NonceCancelled(
+        uint256 indexed mandateId, address indexed agent, uint256 indexed nonce, address cancelledBy, uint64 cancelledAt
+    );
     event ActionPlanSubmitted(
         bytes32 indexed actionDigest, uint256 indexed mandateId, address indexed agent, address submittedBy
     );
@@ -346,6 +350,14 @@ contract Grantline is
         emit MandateUnpaused(mandateId, msg.sender);
     }
 
+    function cancelNonce(uint256 mandateId, uint256 nonce) external nonReentrant {
+        _onlyConfigured();
+        GrantlineTypes.Mandate memory mandate = IRegistry(registry()).getMandate(mandateId);
+        _requireNonceCanceller(mandateId, mandate, msg.sender);
+        IRegistry(registry()).cancelNonce(mandateId, msg.sender, nonce);
+        emit NonceCancelled(mandateId, mandate.agent, nonce, msg.sender, uint64(block.timestamp));
+    }
+
     function submitEscalation(ActionTypes.ActionPlan calldata plan, bytes calldata signature)
         external
         nonReentrant
@@ -452,6 +464,13 @@ contract Grantline is
         return IRegistry(registry()).getEffectiveValidityWindow(mandateId);
     }
 
+    function getNonceState(uint256 mandateId, uint256 nonce) external view returns (bool used, bytes32 reservation) {
+        GrantlineTypes.Mandate memory mandate = IRegistry(registry()).getMandate(mandateId);
+        IRegistry registryContract = IRegistry(registry());
+        used = registryContract.nonceUsed(mandateId, mandate.agent, nonce);
+        reservation = registryContract.reservedDigest(mandateId, mandate.agent, nonce);
+    }
+
     function isLineageActive(uint256 mandateId) external view returns (bool) {
         return IRegistry(registry()).isLineageActive(mandateId);
     }
@@ -544,6 +563,14 @@ contract Grantline is
             }
         }
         revert NotMandateAdministrator(mandateId, caller);
+    }
+
+    function _requireNonceCanceller(uint256 mandateId, GrantlineTypes.Mandate memory mandate, address caller)
+        private
+        view
+    {
+        if (mandate.agent == caller || isController(mandate.vault, caller)) return;
+        revert NotNonceCanceller(mandateId, caller);
     }
 
     function _isRegistered(address vault) private view returns (bool) {

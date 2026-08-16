@@ -44,6 +44,7 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
     error InvalidDelegationAgent(address parentAgent, address childAgent);
     error NotParentAgent(uint256 mandateId, address caller);
     error NotMandateAdministrator(uint256 mandateId, address caller);
+    error NotNonceCanceller(uint256 mandateId, address caller);
     error MandateLineageInactive(uint256 mandateId, uint256 inactiveAncestorId);
     error ChildRulesExceedParent(uint256 parentMandateId);
     error ChildPreflightRulesExceedParent(uint256 parentMandateId);
@@ -316,6 +317,19 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         emit MandateUnpaused(mandateId, actor, uint64(block.timestamp));
     }
 
+    function cancelNonce(uint256 mandateId, address actor, uint256 nonce) external override {
+        _onlyGrantline();
+        GrantlineTypes.Mandate storage mandate = _requireMandateExists(mandateId);
+        _requireNonceCanceller(mandateId, mandate, actor);
+        address agent = mandate.agent;
+        _requireNonceUnused(mandateId, agent, nonce);
+        bytes32 reservation = reservedDigest[mandateId][agent][nonce];
+        if (reservation != bytes32(0)) {
+            revert NonceReserved(mandateId, agent, nonce, reservation);
+        }
+        nonceUsed[mandateId][agent][nonce] = true;
+    }
+
     function consumeNonce(uint256 mandateId, address agent, uint256 nonce) external override {
         _onlyExecutor();
         GrantlineTypes.Mandate storage mandate = _activeMandate(mandateId);
@@ -573,6 +587,17 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
             }
         }
         revert NotMandateAdministrator(mandateId, actor);
+    }
+
+    function _requireNonceCanceller(uint256 mandateId, GrantlineTypes.Mandate storage mandate, address actor)
+        private
+        view
+    {
+        if (mandate.agent == actor) return;
+        if (isRegisteredVault[mandate.vault] && IGrantlineContext(grantline).isController(mandate.vault, actor)) {
+            return;
+        }
+        revert NotNonceCanceller(mandateId, actor);
     }
 
     function _validateChildRules(

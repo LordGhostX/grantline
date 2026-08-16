@@ -135,6 +135,8 @@ interface IRegistry is IModule {
 
     function unpauseMandate(uint256 mandateId, address actor) external;
 
+    function cancelNonce(uint256 mandateId, address actor, uint256 nonce) external;
+
     function mandateCount() external view returns (uint256);
 
     function nonceUsed(uint256 mandateId, address agent, uint256 nonce) external view returns (bool);

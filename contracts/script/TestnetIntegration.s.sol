@@ -119,6 +119,7 @@ contract TestnetIntegration is ScriptBase {
     uint256 internal constant ROOT_ESCALATION_NONCE = 5;
     uint256 internal constant ROOT_TOKEN_NONCE = 6;
     uint256 internal constant ROOT_REVOKED_ESCALATION_NONCE = 7;
+    uint256 internal constant ROOT_CANCELLED_NONCE = 8;
     uint256 internal constant CHILD_ALLOW_NONCE = 1;
     uint256 internal constant CHILD_ESCALATION_NONCE = 2;
     uint256 internal constant GRANDCHILD_ALLOW_NONCE = 1;
@@ -132,6 +133,7 @@ contract TestnetIntegration is ScriptBase {
     address internal constant CHILD_RECIPIENT = address(0x1005);
     address internal constant GRANDCHILD_RECIPIENT = address(0x1006);
     address internal constant PENDING_RECIPIENT = address(0x1007);
+    address internal constant CANCELLED_RECIPIENT = address(0x1008);
 
     TestnetIntegrationVm private constant integrationVm =
         TestnetIntegrationVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
@@ -455,6 +457,23 @@ contract TestnetIntegration is ScriptBase {
             MandateRegistry(state.registry).nonceUsed(state.rootMandate, state.agent, ROOT_ALLOW_NONCE),
             "normal nonce not consumed"
         );
+
+        ActionTypes.ActionPlan memory cancelledPlan =
+            _nativePlan(state.rootMandate, state.agent, ROOT_CANCELLED_NONCE, 0.0001 ether, CANCELLED_RECIPIENT, 0);
+        bytes memory cancelledSignature = _sign(state, cancelledPlan, state.agentKey);
+        evaluation = hub.evaluate(cancelledPlan, cancelledSignature);
+        _require(evaluation.decision == 0, "cancellation plan was not initially ALLOW");
+        vm.startBroadcast(state.agentKey);
+        hub.cancelNonce(state.rootMandate, ROOT_CANCELLED_NONCE);
+        vm.stopBroadcast();
+        (bool cancelled, bytes32 cancelledReservation) = hub.getNonceState(state.rootMandate, ROOT_CANCELLED_NONCE);
+        _require(cancelled, "cancelled nonce remained available");
+        _require(cancelledReservation == bytes32(0), "cancelled nonce gained a reservation");
+        uint256 cancelledRecipientBalance = CANCELLED_RECIPIENT.balance;
+        integrationVm.prank(state.delegatedAgent);
+        integrationVm.expectRevert();
+        hub.execute(cancelledPlan, cancelledSignature);
+        _require(CANCELLED_RECIPIENT.balance == cancelledRecipientBalance, "cancelled plan moved funds");
 
         ActionTypes.ActionPlan memory deniedPlan =
             _nativePlan(state.rootMandate, state.agent, ROOT_DENY_NONCE, 1, SUCCESS_RECIPIENT, 0);
