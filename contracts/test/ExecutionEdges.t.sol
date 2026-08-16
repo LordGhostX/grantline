@@ -7,7 +7,7 @@ import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
-import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+import {TestFixture} from "./TestFixture.sol";
 
 contract GrantlineExecutionToken {
     mapping(address => uint256) public balanceOf;
@@ -111,7 +111,7 @@ contract GrantlineEscalatedReentrantReceiver {
     }
 }
 
-contract GrantlineExecutionEdgesTest is GrantlineTestFixture {
+contract ExecutionEdgesTest is TestFixture {
     function test_executesNativeAndTokenActionsAndConsumesNonce() public {
         Fixture memory fixture = _fixture();
         GrantlineExecutionToken token = new GrantlineExecutionToken();

@@ -5,7 +5,7 @@ import {ActionTypes} from "../src/ActionTypes.sol";
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
-import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+import {TestFixture} from "./TestFixture.sol";
 
 interface GrantlineEvaluatorVm {
     function expectRevert() external;
@@ -13,7 +13,7 @@ interface GrantlineEvaluatorVm {
     function warp(uint256 timestamp) external;
 }
 
-contract GrantlineEvaluatorTest is GrantlineTestFixture {
+contract EvaluatorTest is TestFixture {
     GrantlineEvaluatorVm private constant evaluatorVm =
         GrantlineEvaluatorVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 

@@ -4,9 +4,9 @@ pragma solidity ^0.8.28;
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
-import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+import {TestFixture} from "./TestFixture.sol";
 
-contract GrantlineRegistryEdgesTest is GrantlineTestFixture {
+contract RegistryEdgesTest is TestFixture {
     function test_rejectsInvalidMandateAddressesAndRanges() public {
         Fixture memory fixture = _fixture();
         GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, true);

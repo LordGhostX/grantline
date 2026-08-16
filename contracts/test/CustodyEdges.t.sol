@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {Vault} from "../src/Vault.sol";
-import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+import {TestFixture} from "./TestFixture.sol";
 
 contract GrantlineCustodyToken {
     mapping(address => uint256) public balanceOf;
@@ -41,7 +41,7 @@ contract GrantlineCustodyRejectingReceiver {
     }
 }
 
-contract GrantlineCustodyEdgesTest is GrantlineTestFixture {
+contract CustodyEdgesTest is TestFixture {
     function test_controllersCannotOperateAnotherVault() public {
         Fixture memory fixture = _fixture();
         address controllerA = fixtureVm.addr(0xC0FFEE);

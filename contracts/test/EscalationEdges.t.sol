@@ -8,7 +8,7 @@ import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
-import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+import {TestFixture} from "./TestFixture.sol";
 
 contract GrantlineEscalationManagerV2 is EscalationManager {
     function marker() external pure returns (uint256) {
@@ -28,7 +28,7 @@ contract GrantlineEscalationExecutorV2 is VaultExecutor {
     }
 }
 
-contract GrantlineEscalationEdgesTest is GrantlineTestFixture {
+contract EscalationEdgesTest is TestFixture {
     function test_submitRecordsFullPlanAndSubmittingCaller() public {
         Fixture memory fixture = _escalatingFixture();
         ActionTypes.ActionPlan memory plan = _singleActionPlan(

@@ -36,7 +36,7 @@ interface GrantlineFixtureVm {
     function sign(uint256 privateKey, bytes32 digest) external returns (uint8 v, bytes32 r, bytes32 s);
 }
 
-abstract contract GrantlineTestFixture {
+abstract contract TestFixture {
     GrantlineFixtureVm internal constant fixtureVm = GrantlineFixtureVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
     uint256 internal constant FIXTURE_AGENT_KEY = 0xA11CE;

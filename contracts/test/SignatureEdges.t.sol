@@ -5,9 +5,9 @@ import {ActionTypes} from "../src/ActionTypes.sol";
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
-import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+import {TestFixture} from "./TestFixture.sol";
 
-contract GrantlineSignatureEdgesTest is GrantlineTestFixture {
+contract SignatureEdgesTest is TestFixture {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant ACTION_TYPEHASH = keccak256("Action(uint8 actionType,uint8 version,bytes parameters)");

@@ -7,9 +7,9 @@ import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
-import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+import {TestFixture} from "./TestFixture.sol";
 
-contract GrantlineValidityEdgesTest is GrantlineTestFixture {
+contract ValidityEdgesTest is TestFixture {
     function test_localValidityWindowsAreValidatedAndInclusive() public {
         Fixture memory fixture = _fixture();
         uint64 validAfter = uint64(block.timestamp + 10);

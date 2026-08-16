@@ -9,7 +9,7 @@ import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
-import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+import {TestFixture} from "./TestFixture.sol";
 
 contract GrantlineNonceRegistryV2 is MandateRegistry {
     function marker() external pure returns (uint256) {
@@ -17,7 +17,7 @@ contract GrantlineNonceRegistryV2 is MandateRegistry {
     }
 }
 
-contract GrantlineNonceCancellationTest is GrantlineTestFixture {
+contract NonceCancellationTest is TestFixture {
     event NonceCancelled(
         uint256 indexed mandateId, address indexed agent, uint256 indexed nonce, address cancelledBy, uint64 cancelledAt
     );

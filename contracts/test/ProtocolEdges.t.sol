@@ -19,7 +19,7 @@ import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+import {TestFixture} from "./TestFixture.sol";
 
 interface GrantlineProtocolOwnership {
     function transferOwnership(address newOwner) external;
@@ -266,7 +266,7 @@ contract GrantlineProtocolVaultFactoryV2 is VaultFactory {
     }
 }
 
-contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
+contract ProtocolEdgesTest is TestFixture {
     function test_allImplementationInitializersAreDisabled() public {
         Grantline grantline = new Grantline();
         MandateRegistry registry = new MandateRegistry();

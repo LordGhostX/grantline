@@ -6,7 +6,7 @@ import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {UniswapV3Adapter} from "../src/UniswapV3Adapter.sol";
-import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+import {TestFixture} from "./TestFixture.sol";
 
 contract SwapTestToken {
     mapping(address => uint256) public balanceOf;
@@ -215,7 +215,7 @@ contract SwapTestAccountingRouter {
     }
 }
 
-contract GrantlineSwapEdgesTest is GrantlineTestFixture {
+contract SwapEdgesTest is TestFixture {
     event SwapExecuted(
         address indexed vault,
         address indexed tokenIn,

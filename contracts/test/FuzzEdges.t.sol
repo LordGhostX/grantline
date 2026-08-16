@@ -6,9 +6,9 @@ import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
-import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
+import {TestFixture} from "./TestFixture.sol";
 
-contract GrantlineFuzzEdgesTest is GrantlineTestFixture {
+contract FuzzEdgesTest is TestFixture {
     function testFuzz_nativeLimitDecisionMatchesAggregatedAmount(uint256 amount) public {
         amount = amount % 3 ether + 1;
         Fixture memory fixture = _fixture();
