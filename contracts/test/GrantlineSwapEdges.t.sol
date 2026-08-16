@@ -25,12 +25,12 @@ contract SwapTestToken {
         return true;
     }
 
-    function transfer(address recipient, uint256 amount) external returns (bool) {
+    function transfer(address recipient, uint256 amount) external virtual returns (bool) {
         _transfer(msg.sender, recipient, amount);
         return true;
     }
 
-    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool) {
+    function transferFrom(address sender, address recipient, uint256 amount) external virtual returns (bool) {
         uint256 permitted = allowance[sender][msg.sender];
         require(permitted >= amount);
         if (permitted != type(uint256).max) allowance[sender][msg.sender] = permitted - amount;
@@ -38,10 +38,26 @@ contract SwapTestToken {
         return true;
     }
 
-    function _transfer(address sender, address recipient, uint256 amount) internal {
+    function _transfer(address sender, address recipient, uint256 amount) internal virtual {
         require(balanceOf[sender] >= amount);
         balanceOf[sender] -= amount;
         balanceOf[recipient] += amount;
+    }
+}
+
+contract SwapTestFeeToken is SwapTestToken {
+    address public immutable feeRecipient;
+
+    constructor(address feeRecipientAddress) {
+        feeRecipient = feeRecipientAddress;
+    }
+
+    function _transfer(address sender, address recipient, uint256 amount) internal override {
+        uint256 fee = amount / 10;
+        require(balanceOf[sender] >= amount);
+        balanceOf[sender] -= amount;
+        balanceOf[recipient] += amount - fee;
+        balanceOf[feeRecipient] += fee;
     }
 }
 
@@ -128,6 +144,66 @@ contract SwapTestRouter {
         require(SwapTestToken(tokenOut).transfer(params.recipient, amountOut));
     }
 
+    function refundETH() external payable {
+        uint256 balance = address(this).balance;
+        if (balance == 0) return;
+        (bool success,) = msg.sender.call{value: balance}("");
+        require(success);
+    }
+
+    receive() external payable {}
+
+    function _pathEndpoints(bytes calldata path) private pure returns (address tokenIn, address tokenOut) {
+        require(path.length >= 43);
+        assembly {
+            tokenIn := shr(96, calldataload(path.offset))
+            tokenOut := shr(96, calldataload(add(path.offset, sub(path.length, 20))))
+        }
+    }
+}
+
+contract SwapTestAccountingRouter {
+    struct ExactInputParams {
+        bytes path;
+        address recipient;
+        uint256 deadline;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+    }
+
+    address public immutable wrappedNative;
+    address public immutable factory;
+    address public immutable WETH9;
+    uint256 public immutable inputUsed;
+
+    constructor(address wrappedNativeAddress, address factoryAddress, uint256 inputUsedAmount) {
+        wrappedNative = wrappedNativeAddress;
+        factory = factoryAddress;
+        WETH9 = wrappedNativeAddress;
+        inputUsed = inputUsedAmount;
+    }
+
+    function exactInput(ExactInputParams calldata params) external payable returns (uint256 amountOut) {
+        (address tokenIn, address tokenOut) = _pathEndpoints(params.path);
+        require(inputUsed <= params.amountIn);
+        if (msg.value != 0) {
+            require(tokenIn == wrappedNative && inputUsed <= msg.value);
+            SwapTestWrappedNative(payable(wrappedNative)).deposit{value: inputUsed}();
+        } else {
+            require(SwapTestToken(tokenIn).transferFrom(msg.sender, address(this), inputUsed));
+        }
+        amountOut = inputUsed * 2;
+        require(amountOut >= params.amountOutMinimum);
+        require(SwapTestToken(tokenOut).transfer(params.recipient, amountOut));
+    }
+
+    function refundETH() external payable {
+        uint256 balance = address(this).balance;
+        if (balance == 0) return;
+        (bool success,) = msg.sender.call{value: balance}("");
+        require(success);
+    }
+
     receive() external payable {}
 
     function _pathEndpoints(bytes calldata path) private pure returns (address tokenIn, address tokenOut) {
@@ -146,6 +222,15 @@ contract SwapTestUsdProvider is IUsdValueProvider {
 }
 
 contract GrantlineSwapEdgesTest is GrantlineTestFixture {
+    event SwapExecuted(
+        address indexed vault,
+        address indexed tokenIn,
+        address indexed tokenOut,
+        uint256 amountIn,
+        uint256 amountOut,
+        bytes32 routeHash
+    );
+
     function test_swapAdapterRejectsRouterFactoryMismatch() public {
         SwapTestWrappedNative wrappedNative = new SwapTestWrappedNative();
         SwapTestFactory configuredFactory = new SwapTestFactory();
@@ -164,6 +249,282 @@ contract GrantlineSwapEdgesTest is GrantlineTestFixture {
 
         fixtureVm.expectRevert(abi.encodeWithSelector(UniswapV3Adapter.InvalidAddress.selector));
         new UniswapV3Adapter(address(this), address(router), address(factory), address(configuredWrappedNative));
+    }
+
+    function test_swapReturnsUnusedErc20InputToVault() public {
+        SwapTestToken tokenIn = new SwapTestToken();
+        SwapTestToken tokenOut = new SwapTestToken();
+        SwapTestWrappedNative wrappedNative = new SwapTestWrappedNative();
+        SwapTestFactory factory = new SwapTestFactory();
+        SwapTestAccountingRouter router =
+            new SwapTestAccountingRouter(address(wrappedNative), address(factory), 0.6 ether);
+        SwapTestPool pool = new SwapTestPool(address(factory), address(tokenIn), address(tokenOut), 500);
+        factory.setPool(address(tokenIn), address(tokenOut), 500, address(pool));
+
+        Fixture memory fixture = _fixtureWithSwapAdapter(address(router), address(factory), address(wrappedNative));
+        tokenIn.mint(fixture.vault, 1 ether);
+        tokenOut.mint(address(router), 1.2 ether);
+
+        ActionTypes.SwapHop[] memory hops = new ActionTypes.SwapHop[](1);
+        hops[0] = ActionTypes.SwapHop({pool: address(pool), tokenIn: address(tokenIn), tokenOut: address(tokenOut)});
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId,
+            fixture.agent,
+            66,
+            0,
+            _swapAction(address(tokenIn), 1 ether, address(tokenOut), 1.1 ether, block.timestamp + 100, hops)
+        );
+
+        fixture.hub.execute(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
+
+        assert(tokenIn.balanceOf(fixture.vault) == 0.4 ether);
+        assert(tokenIn.balanceOf(address(router)) == 0.6 ether);
+        assert(tokenIn.balanceOf(address(this)) == 0);
+        assert(tokenOut.balanceOf(fixture.vault) == 1.2 ether);
+    }
+
+    function test_swapRefundsUnusedNativeInputAndSettlesNativeOutput() public {
+        SwapTestToken intermediateToken = new SwapTestToken();
+        SwapTestWrappedNative wrappedNative = new SwapTestWrappedNative();
+        SwapTestFactory factory = new SwapTestFactory();
+        SwapTestAccountingRouter router =
+            new SwapTestAccountingRouter(address(wrappedNative), address(factory), 0.6 ether);
+        SwapTestPool firstPool =
+            new SwapTestPool(address(factory), address(wrappedNative), address(intermediateToken), 500);
+        SwapTestPool secondPool =
+            new SwapTestPool(address(factory), address(intermediateToken), address(wrappedNative), 3000);
+        factory.setPool(address(wrappedNative), address(intermediateToken), 500, address(firstPool));
+        factory.setPool(address(intermediateToken), address(wrappedNative), 3000, address(secondPool));
+
+        Fixture memory fixture = _fixtureWithSwapAdapter(address(router), address(factory), address(wrappedNative));
+        wrappedNative.fund{value: 1.2 ether}(address(router));
+
+        ActionTypes.SwapHop[] memory hops = new ActionTypes.SwapHop[](2);
+        hops[0] =
+            ActionTypes.SwapHop({pool: address(firstPool), tokenIn: address(0), tokenOut: address(intermediateToken)});
+        hops[1] =
+            ActionTypes.SwapHop({pool: address(secondPool), tokenIn: address(intermediateToken), tokenOut: address(0)});
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId,
+            fixture.agent,
+            67,
+            0,
+            _swapAction(address(0), 1 ether, address(0), 1.1 ether, block.timestamp + 100, hops)
+        );
+
+        fixture.hub.execute(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
+
+        address adapter = fixture.hub.swapAdapterFor(ActionTypes.SwapAdapterId.UNISWAP_V3);
+        assert(address(fixture.vault).balance == 5.6 ether);
+        assert(address(router).balance == 0);
+        assert(address(adapter).balance == 0);
+        assert(wrappedNative.balanceOf(adapter) == 0);
+    }
+
+    function test_swapCreditsPreExistingRouterEthWithoutInflatingInput() public {
+        SwapTestToken tokenOut = new SwapTestToken();
+        SwapTestWrappedNative wrappedNative = new SwapTestWrappedNative();
+        SwapTestFactory factory = new SwapTestFactory();
+        SwapTestAccountingRouter router =
+            new SwapTestAccountingRouter(address(wrappedNative), address(factory), 0.6 ether);
+        SwapTestPool pool = new SwapTestPool(address(factory), address(wrappedNative), address(tokenOut), 500);
+        factory.setPool(address(wrappedNative), address(tokenOut), 500, address(pool));
+
+        Fixture memory fixture = _fixtureWithSwapAdapter(address(router), address(factory), address(wrappedNative));
+        tokenOut.mint(address(router), 1.2 ether);
+        fixtureVm.deal(address(router), 2 ether);
+        uint256 vaultNativeBefore = address(fixture.vault).balance;
+
+        ActionTypes.SwapHop[] memory hops = new ActionTypes.SwapHop[](1);
+        hops[0] = ActionTypes.SwapHop({pool: address(pool), tokenIn: address(0), tokenOut: address(tokenOut)});
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId,
+            fixture.agent,
+            71,
+            0,
+            _swapAction(address(0), 1 ether, address(tokenOut), 1.1 ether, block.timestamp + 100, hops)
+        );
+
+        fixtureVm.expectEmit(true, true, true, true);
+        emit SwapExecuted(
+            fixture.vault, address(0), address(tokenOut), 0.6 ether, 1.2 ether, keccak256(abi.encode(hops))
+        );
+        fixture.hub.execute(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
+
+        address adapter = fixture.hub.swapAdapterFor(ActionTypes.SwapAdapterId.UNISWAP_V3);
+        assert(address(fixture.vault).balance == vaultNativeBefore + 1.4 ether);
+        assert(tokenOut.balanceOf(fixture.vault) == 1.2 ether);
+        assert(address(router).balance == 0);
+        assert(address(adapter).balance == 0);
+    }
+
+    function test_swapSeparatesPartialWrappedNativeInputFromNativeOutput() public {
+        _assertWrappedNativeInputNativeOutput(0.6 ether, 1.1 ether);
+    }
+
+    function test_swapSeparatesFullWrappedNativeInputFromNativeOutput() public {
+        _assertWrappedNativeInputNativeOutput(1 ether, 1.9 ether);
+    }
+
+    function _assertWrappedNativeInputNativeOutput(uint256 inputUsed, uint256 minAmountOut) private {
+        SwapTestToken intermediateToken = new SwapTestToken();
+        SwapTestWrappedNative wrappedNative = new SwapTestWrappedNative();
+        SwapTestFactory factory = new SwapTestFactory();
+        SwapTestAccountingRouter router =
+            new SwapTestAccountingRouter(address(wrappedNative), address(factory), inputUsed);
+        SwapTestPool firstPool =
+            new SwapTestPool(address(factory), address(wrappedNative), address(intermediateToken), 500);
+        SwapTestPool secondPool =
+            new SwapTestPool(address(factory), address(intermediateToken), address(wrappedNative), 3000);
+        factory.setPool(address(wrappedNative), address(intermediateToken), 500, address(firstPool));
+        factory.setPool(address(intermediateToken), address(wrappedNative), 3000, address(secondPool));
+
+        Fixture memory fixture = _fixtureWithSwapAdapter(address(router), address(factory), address(wrappedNative));
+        wrappedNative.fund{value: 1 ether}(address(fixture.vault));
+        wrappedNative.fund{value: inputUsed * 2}(address(router));
+        uint256 vaultNativeBefore = address(fixture.vault).balance;
+
+        ActionTypes.SwapHop[] memory hops = new ActionTypes.SwapHop[](2);
+        hops[0] = ActionTypes.SwapHop({
+            pool: address(firstPool), tokenIn: address(wrappedNative), tokenOut: address(intermediateToken)
+        });
+        hops[1] =
+            ActionTypes.SwapHop({pool: address(secondPool), tokenIn: address(intermediateToken), tokenOut: address(0)});
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId,
+            fixture.agent,
+            72 + (inputUsed == 1 ether ? 1 : 0),
+            0,
+            _swapAction(address(wrappedNative), 1 ether, address(0), minAmountOut, block.timestamp + 100, hops)
+        );
+
+        fixtureVm.expectEmit(true, true, true, true);
+        emit SwapExecuted(
+            fixture.vault, address(wrappedNative), address(0), inputUsed, inputUsed * 2, keccak256(abi.encode(hops))
+        );
+        fixture.hub.execute(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
+
+        address adapter = fixture.hub.swapAdapterFor(ActionTypes.SwapAdapterId.UNISWAP_V3);
+        uint256 unusedInput = 1 ether - inputUsed;
+        assert(address(fixture.vault).balance == vaultNativeBefore + inputUsed * 2);
+        assert(wrappedNative.balanceOf(address(fixture.vault)) == unusedInput);
+        assert(wrappedNative.balanceOf(adapter) == 0);
+        assert(address(adapter).balance == 0);
+        assert(wrappedNative.allowance(adapter, address(router)) == 0);
+    }
+
+    function test_swapRejectsOutputBelowFloorAfterTransferFee() public {
+        SwapTestToken tokenIn = new SwapTestToken();
+        SwapTestFeeToken tokenOut = new SwapTestFeeToken(address(this));
+        SwapTestWrappedNative wrappedNative = new SwapTestWrappedNative();
+        SwapTestFactory factory = new SwapTestFactory();
+        SwapTestRouter router = new SwapTestRouter(address(wrappedNative), address(factory));
+        SwapTestPool pool = new SwapTestPool(address(factory), address(tokenIn), address(tokenOut), 500);
+        factory.setPool(address(tokenIn), address(tokenOut), 500, address(pool));
+
+        Fixture memory fixture = _fixtureWithSwapAdapter(address(router), address(factory), address(wrappedNative));
+        tokenIn.mint(fixture.vault, 1 ether);
+        tokenOut.mint(address(router), 2 ether);
+
+        ActionTypes.SwapHop[] memory hops = new ActionTypes.SwapHop[](1);
+        hops[0] = ActionTypes.SwapHop({pool: address(pool), tokenIn: address(tokenIn), tokenOut: address(tokenOut)});
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId,
+            fixture.agent,
+            68,
+            0,
+            _swapAction(address(tokenIn), 1 ether, address(tokenOut), 1.9 ether, block.timestamp + 100, hops)
+        );
+        bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(UniswapV3Adapter.InvalidSwapOutput.selector, 1.9 ether, 1.8 ether)
+        );
+        fixture.hub.execute(plan, signature);
+
+        assert(tokenIn.balanceOf(fixture.vault) == 1 ether);
+        assert(tokenOut.balanceOf(fixture.vault) == 0);
+    }
+
+    function test_swapReportsActualFeeOnTransferOutput() public {
+        SwapTestToken tokenIn = new SwapTestToken();
+        SwapTestFeeToken tokenOut = new SwapTestFeeToken(address(this));
+        SwapTestWrappedNative wrappedNative = new SwapTestWrappedNative();
+        SwapTestFactory factory = new SwapTestFactory();
+        SwapTestRouter router = new SwapTestRouter(address(wrappedNative), address(factory));
+        SwapTestPool pool = new SwapTestPool(address(factory), address(tokenIn), address(tokenOut), 500);
+        factory.setPool(address(tokenIn), address(tokenOut), 500, address(pool));
+
+        Fixture memory fixture = _fixtureWithSwapAdapter(address(router), address(factory), address(wrappedNative));
+        tokenIn.mint(fixture.vault, 1 ether);
+        tokenOut.mint(address(router), 2 ether);
+
+        ActionTypes.SwapHop[] memory hops = new ActionTypes.SwapHop[](1);
+        hops[0] = ActionTypes.SwapHop({pool: address(pool), tokenIn: address(tokenIn), tokenOut: address(tokenOut)});
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId,
+            fixture.agent,
+            69,
+            0,
+            _swapAction(address(tokenIn), 1 ether, address(tokenOut), 1.7 ether, block.timestamp + 100, hops)
+        );
+        bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
+
+        fixtureVm.expectEmit(true, true, true, true);
+        emit SwapExecuted(
+            fixture.vault, address(tokenIn), address(tokenOut), 1 ether, 1.8 ether, keccak256(abi.encode(hops))
+        );
+        fixture.hub.execute(plan, signature);
+
+        assert(tokenOut.balanceOf(fixture.vault) == 1.8 ether);
+    }
+
+    function test_swapDoesNotCountReturnedInputAsSameTokenOutput() public {
+        SwapTestToken tokenInAndOut = new SwapTestToken();
+        SwapTestToken intermediateToken = new SwapTestToken();
+        SwapTestWrappedNative wrappedNative = new SwapTestWrappedNative();
+        SwapTestFactory factory = new SwapTestFactory();
+        SwapTestAccountingRouter router =
+            new SwapTestAccountingRouter(address(wrappedNative), address(factory), 0.6 ether);
+        SwapTestPool firstPool =
+            new SwapTestPool(address(factory), address(tokenInAndOut), address(intermediateToken), 500);
+        SwapTestPool secondPool =
+            new SwapTestPool(address(factory), address(intermediateToken), address(tokenInAndOut), 3000);
+        factory.setPool(address(tokenInAndOut), address(intermediateToken), 500, address(firstPool));
+        factory.setPool(address(intermediateToken), address(tokenInAndOut), 3000, address(secondPool));
+
+        Fixture memory fixture = _fixtureWithSwapAdapter(address(router), address(factory), address(wrappedNative));
+        tokenInAndOut.mint(fixture.vault, 1 ether);
+        tokenInAndOut.mint(address(router), 1.2 ether);
+
+        ActionTypes.SwapHop[] memory hops = new ActionTypes.SwapHop[](2);
+        hops[0] = ActionTypes.SwapHop({
+            pool: address(firstPool), tokenIn: address(tokenInAndOut), tokenOut: address(intermediateToken)
+        });
+        hops[1] = ActionTypes.SwapHop({
+            pool: address(secondPool), tokenIn: address(intermediateToken), tokenOut: address(tokenInAndOut)
+        });
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId,
+            fixture.agent,
+            70,
+            0,
+            _swapAction(address(tokenInAndOut), 1 ether, address(tokenInAndOut), 1.1 ether, block.timestamp + 100, hops)
+        );
+        bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
+
+        fixtureVm.expectEmit(true, true, true, true);
+        emit SwapExecuted(
+            fixture.vault,
+            address(tokenInAndOut),
+            address(tokenInAndOut),
+            0.6 ether,
+            1.2 ether,
+            keccak256(abi.encode(hops))
+        );
+        fixture.hub.execute(plan, signature);
+
+        assert(tokenInAndOut.balanceOf(fixture.vault) == 1.6 ether);
     }
 
     function test_swapRejectsMalformedParameters() public {

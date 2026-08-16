@@ -33,6 +33,8 @@ interface IUniswapV3RouterLike {
 
     function exactInput(ExactInputParams calldata params) external payable returns (uint256 amountOut);
 
+    function refundETH() external payable;
+
     function factory() external view returns (address);
 
     function WETH9() external view returns (address);
@@ -52,6 +54,7 @@ contract UniswapV3Adapter is ISwapAdapter, ReentrancyGuard {
     error InvalidTokenAmount();
     error InvalidSwapDeadline();
     error InvalidSwapRoute();
+    error InvalidSwapOutput(uint256 expectedMinimum, uint256 actualAmount);
 
     event SwapExecuted(
         address indexed vault,
@@ -66,6 +69,15 @@ contract UniswapV3Adapter is ISwapAdapter, ReentrancyGuard {
     address public immutable router;
     address public immutable factory;
     address public immutable wrappedNative;
+
+    struct SwapAccounting {
+        uint256 nativeBalanceBefore;
+        uint256 inputBalanceBefore;
+        uint256 inputReceived;
+        uint256 outputBalanceBefore;
+        uint256 wrappedNativeBalanceBefore;
+        uint256 inputAllowanceBefore;
+    }
 
     constructor(address grantlineAddress, address routerAddress, address factoryAddress, address wrappedNativeAddress) {
         if (
@@ -136,15 +148,16 @@ contract UniswapV3Adapter is ISwapAdapter, ReentrancyGuard {
 
         if (params.tokenIn == address(0)) {
             if (msg.value != params.amountIn) revert InvalidNativeAmount();
-        } else {
-            if (msg.value != 0 || params.tokenIn.code.length == 0) revert InvalidTokenAmount();
-            IERC20(params.tokenIn).safeTransferFrom(vault, address(this), params.amountIn);
-            IERC20(params.tokenIn).forceApprove(router, params.amountIn);
+            _flushRouterNative(vault);
+        } else if (msg.value != 0 || params.tokenIn.code.length == 0) {
+            revert InvalidTokenAmount();
         }
+
+        SwapAccounting memory accounting = _prepareAccounting(vault, params);
 
         bytes memory path = _buildPath(params);
         address recipient = params.tokenOut == address(0) ? address(this) : vault;
-        amountOut = IUniswapV3RouterLike(router).exactInput{value: msg.value}(
+        IUniswapV3RouterLike(router).exactInput{value: msg.value}(
             IUniswapV3RouterLike.ExactInputParams({
                 path: path,
                 recipient: recipient,
@@ -154,20 +167,133 @@ contract UniswapV3Adapter is ISwapAdapter, ReentrancyGuard {
             })
         );
 
-        if (params.tokenIn != address(0)) {
-            IERC20(params.tokenIn).forceApprove(router, 0);
+        uint256 actualInput;
+        if (params.tokenIn == address(0)) {
+            actualInput = _refundNativeInput(vault, params.amountIn, accounting.nativeBalanceBefore);
         }
+
         if (params.tokenOut == address(0)) {
-            IWrappedNativeLike(wrappedNative).withdraw(amountOut);
-            IVault(payable(vault)).receiveNativeFromSwapAdapter{value: amountOut}(address(this));
+            amountOut = _settleNativeOutput(vault, accounting, params.tokenIn);
+        } else {
+            amountOut = _measureTokenOutput(params.tokenOut, vault, accounting.outputBalanceBefore);
+        }
+        if (amountOut < params.minAmountOut) {
+            revert InvalidSwapOutput(params.minAmountOut, amountOut);
+        }
+
+        if (params.tokenIn != address(0)) {
+            actualInput = _reconcileTokenInput(vault, params.tokenIn, accounting);
         }
 
         emit SwapExecuted(
-            vault, params.tokenIn, params.tokenOut, params.amountIn, amountOut, keccak256(abi.encode(params.hops))
+            vault, params.tokenIn, params.tokenOut, actualInput, amountOut, keccak256(abi.encode(params.hops))
         );
     }
 
     receive() external payable {}
+
+    function _prepareAccounting(address vault, ActionTypes.SwapParameters calldata params)
+        private
+        returns (SwapAccounting memory accounting)
+    {
+        accounting.nativeBalanceBefore = address(this).balance - msg.value;
+        if (params.tokenOut == address(0)) {
+            accounting.wrappedNativeBalanceBefore = IERC20(wrappedNative).balanceOf(address(this));
+        }
+        if (params.tokenIn != address(0)) {
+            IERC20 inputToken = IERC20(params.tokenIn);
+            accounting.inputBalanceBefore = inputToken.balanceOf(address(this));
+            inputToken.safeTransferFrom(vault, address(this), params.amountIn);
+            uint256 inputBalanceAfter = inputToken.balanceOf(address(this));
+            if (inputBalanceAfter > accounting.inputBalanceBefore) {
+                accounting.inputReceived = inputBalanceAfter - accounting.inputBalanceBefore;
+            }
+            inputToken.forceApprove(router, params.amountIn);
+            if (params.tokenIn == wrappedNative) {
+                accounting.inputAllowanceBefore = inputToken.allowance(address(this), router);
+            }
+        }
+        if (params.tokenOut != address(0)) {
+            accounting.outputBalanceBefore = IERC20(params.tokenOut).balanceOf(vault);
+        }
+    }
+
+    function _flushRouterNative(address vault) private {
+        uint256 adapterBalanceBefore = address(this).balance;
+        IUniswapV3RouterLike(router).refundETH();
+        uint256 adapterBalanceAfter = address(this).balance;
+        if (adapterBalanceAfter < adapterBalanceBefore) revert InvalidNativeAmount();
+        uint256 preExistingRouterBalance = adapterBalanceAfter - adapterBalanceBefore;
+        if (preExistingRouterBalance != 0) {
+            IVault(payable(vault)).receiveNativeFromSwapAdapter{value: preExistingRouterBalance}(address(this));
+        }
+    }
+
+    function _refundNativeInput(address vault, uint256 amountIn, uint256 nativeBalanceBefore)
+        private
+        returns (uint256 actualInput)
+    {
+        IUniswapV3RouterLike(router).refundETH();
+        uint256 nativeBalanceAfter = address(this).balance;
+        if (nativeBalanceAfter < nativeBalanceBefore) revert InvalidNativeAmount();
+        uint256 refundAmount = nativeBalanceAfter - nativeBalanceBefore;
+        if (refundAmount != 0) {
+            IVault(payable(vault)).receiveNativeFromSwapAdapter{value: refundAmount}(address(this));
+        }
+        if (refundAmount >= amountIn) return 0;
+        return amountIn - refundAmount;
+    }
+
+    function _reconcileTokenInput(address vault, address token, SwapAccounting memory accounting)
+        private
+        returns (uint256 actualInput)
+    {
+        IERC20 inputToken = IERC20(token);
+        inputToken.forceApprove(router, 0);
+        uint256 inputBalanceAfter = inputToken.balanceOf(address(this));
+        uint256 unusedInput;
+        if (inputBalanceAfter > accounting.inputBalanceBefore) {
+            unusedInput = inputBalanceAfter - accounting.inputBalanceBefore;
+            inputToken.safeTransfer(vault, unusedInput);
+        }
+        if (accounting.inputReceived > unusedInput) return accounting.inputReceived - unusedInput;
+    }
+
+    function _measureTokenOutput(address token, address vault, uint256 outputBalanceBefore)
+        private
+        view
+        returns (uint256 actualOutput)
+    {
+        uint256 outputBalanceAfter = IERC20(token).balanceOf(vault);
+        if (outputBalanceAfter > outputBalanceBefore) return outputBalanceAfter - outputBalanceBefore;
+    }
+
+    function _settleNativeOutput(address vault, SwapAccounting memory accounting, address tokenIn)
+        private
+        returns (uint256 actualOutput)
+    {
+        uint256 wrappedNativeBalanceAfter = IERC20(wrappedNative).balanceOf(address(this));
+        if (wrappedNativeBalanceAfter <= accounting.wrappedNativeBalanceBefore) return 0;
+        uint256 wrappedNativeOutput = wrappedNativeBalanceAfter - accounting.wrappedNativeBalanceBefore;
+        if (tokenIn == wrappedNative) {
+            uint256 allowanceAfter = IERC20(wrappedNative).allowance(address(this), router);
+            uint256 inputSpent;
+            if (accounting.inputAllowanceBefore > allowanceAfter) {
+                inputSpent = accounting.inputAllowanceBefore - allowanceAfter;
+            }
+            uint256 unusedInput;
+            if (accounting.inputReceived > inputSpent) {
+                unusedInput = accounting.inputReceived - inputSpent;
+            }
+            if (wrappedNativeOutput <= unusedInput) return 0;
+            wrappedNativeOutput -= unusedInput;
+        }
+        uint256 vaultBalanceBefore = address(vault).balance;
+        IWrappedNativeLike(wrappedNative).withdraw(wrappedNativeOutput);
+        IVault(payable(vault)).receiveNativeFromSwapAdapter{value: wrappedNativeOutput}(address(this));
+        uint256 vaultBalanceAfter = address(vault).balance;
+        if (vaultBalanceAfter > vaultBalanceBefore) return vaultBalanceAfter - vaultBalanceBefore;
+    }
 
     function _validRoute(ActionTypes.SwapParameters calldata params) private view returns (bool) {
         address expectedInput = _canonical(params.tokenIn);

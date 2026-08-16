@@ -29,6 +29,8 @@ interface GrantlineFixtureVm {
 
     function expectRevert(bytes calldata revertData) external;
 
+    function expectEmit(bool checkTopic1, bool checkTopic2, bool checkTopic3, bool checkData) external;
+
     function warp(uint256 timestamp) external;
 
     function sign(uint256 privateKey, bytes32 digest) external returns (uint8 v, bytes32 r, bytes32 s);
