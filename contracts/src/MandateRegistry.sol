@@ -34,7 +34,6 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         uint256 mandateId, address agent, uint256 nonce, bytes32 expectedDigest, bytes32 reservedDigest
     );
     error InvalidNativeAmountRange(uint256 minimum, uint256 maximum);
-    error InvalidUsdAmountRange(uint256 minimum, uint256 maximum);
     error InvalidValidityWindow(uint64 validAfter, uint64 validUntil);
     error NotGrantline(address caller);
     error NotExecutor(address caller);
@@ -504,18 +503,8 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
                 ) {
                     effective.maxNativeAmount = current.rules.maxNativeAmount;
                 }
-                if (current.rules.minUsdAmount > effective.minUsdAmount) {
-                    effective.minUsdAmount = current.rules.minUsdAmount;
-                }
-                if (
-                    current.rules.maxUsdAmount != 0
-                        && (effective.maxUsdAmount == 0 || current.rules.maxUsdAmount < effective.maxUsdAmount)
-                ) {
-                    effective.maxUsdAmount = current.rules.maxUsdAmount;
-                }
                 effective.canDelegate = effective.canDelegate && current.rules.canDelegate;
                 effective.escalateNativeAmount = effective.escalateNativeAmount && current.rules.escalateNativeAmount;
-                effective.escalateUsdAmount = effective.escalateUsdAmount && current.rules.escalateUsdAmount;
             }
             currentMandateId = current.parentMandateId;
         }
@@ -596,13 +585,8 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
                     && (childRules.minNativeAmount == 0 || childRules.minNativeAmount < parentRules.minNativeAmount))
                 || (parentRules.maxNativeAmount != 0
                     && (childRules.maxNativeAmount == 0 || childRules.maxNativeAmount > parentRules.maxNativeAmount))
-                || (parentRules.minUsdAmount != 0
-                    && (childRules.minUsdAmount == 0 || childRules.minUsdAmount < parentRules.minUsdAmount))
-                || (parentRules.maxUsdAmount != 0
-                    && (childRules.maxUsdAmount == 0 || childRules.maxUsdAmount > parentRules.maxUsdAmount))
                 || (childRules.canDelegate && !parentRules.canDelegate)
                 || (childRules.escalateNativeAmount && !parentRules.escalateNativeAmount)
-                || (childRules.escalateUsdAmount && !parentRules.escalateUsdAmount)
         ) revert ChildRulesExceedParent(parentMandateId);
     }
 
@@ -636,9 +620,6 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
     function _validateRules(GrantlineTypes.MandateRules memory rules) private pure {
         if (rules.minNativeAmount != 0 && rules.maxNativeAmount != 0 && rules.minNativeAmount > rules.maxNativeAmount) {
             revert InvalidNativeAmountRange(rules.minNativeAmount, rules.maxNativeAmount);
-        }
-        if (rules.minUsdAmount != 0 && rules.maxUsdAmount != 0 && rules.minUsdAmount > rules.maxUsdAmount) {
-            revert InvalidUsdAmountRange(rules.minUsdAmount, rules.maxUsdAmount);
         }
     }
 

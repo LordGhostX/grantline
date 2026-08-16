@@ -345,8 +345,7 @@ contract GrantlineDeploymentTest {
             new ERC1967Proxy(
                 stack.evaluatorImplementation,
                 abi.encodeCall(
-                    MandateEvaluator.initialize,
-                    (address(stack.grantline), stack.registry, address(0), true, address(stack.admin))
+                    MandateEvaluator.initialize, (address(stack.grantline), stack.registry, address(stack.admin))
                 )
             )
         );

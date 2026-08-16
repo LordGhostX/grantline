@@ -52,18 +52,16 @@ abstract contract GrantlineTestFixture {
     }
 
     function _fixture() internal returns (Fixture memory) {
-        return _fixtureWithRules(_rules(2 ether, false, 0, 0, false, true), _preflight(0, false), address(0), true);
+        return _fixtureWithRules(_rules(2 ether, false, 0, true), _preflight(0, false));
     }
 
     function _fixtureWithRules(
         GrantlineTypes.MandateRules memory rules,
-        GrantlineTypes.PreflightRules memory preflightRules,
-        address usdProvider,
-        bool skipUnavailableUsdValuation
+        GrantlineTypes.PreflightRules memory preflightRules
     ) internal returns (Fixture memory fixture) {
         fixture.controller = address(this);
         fixture.agent = fixtureVm.addr(FIXTURE_AGENT_KEY);
-        (fixture.hub, fixture.admin) = _deployHub(usdProvider, skipUnavailableUsdValuation);
+        (fixture.hub, fixture.admin) = _deployHub();
 
         fixtureVm.deal(fixture.controller, 20 ether);
         fixture.vault = fixture.hub.createVault();
@@ -75,43 +73,32 @@ abstract contract GrantlineTestFixture {
         internal
         returns (Fixture memory fixture)
     {
-        return _fixtureWithSwapAdapterAndRules(
-            router, factory, wrappedNative, _rules(0, false, 0, 0, false, true), address(0), true
-        );
+        return _fixtureWithSwapAdapterAndRules(router, factory, wrappedNative, _rules(0, false, 0, true));
     }
 
     function _fixtureWithSwapAdapterAndRules(
         address router,
         address factory,
         address wrappedNative,
-        GrantlineTypes.MandateRules memory rules,
-        address usdProvider,
-        bool skipUnavailableUsdValuation
+        GrantlineTypes.MandateRules memory rules
     ) internal returns (Fixture memory fixture) {
         fixture.controller = address(this);
         fixture.agent = fixtureVm.addr(FIXTURE_AGENT_KEY);
-        (fixture.hub, fixture.admin) =
-            _deployHubWithSwapAdapter(usdProvider, skipUnavailableUsdValuation, router, factory, wrappedNative);
+        (fixture.hub, fixture.admin) = _deployHubWithSwapAdapter(router, factory, wrappedNative);
         fixtureVm.deal(fixture.controller, 20 ether);
         fixture.vault = fixture.hub.createVault();
         fixture.hub.depositNative{value: 5 ether}(fixture.vault);
         fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
     }
 
-    function _deployHub(address usdProvider, bool skipUnavailableUsdValuation)
+    function _deployHub() internal returns (Grantline hub, GrantlineAdmin admin) {
+        return _deployHubWithSwapAdapter(address(0), address(0), address(0));
+    }
+
+    function _deployHubWithSwapAdapter(address router, address factoryAddress, address wrappedNative)
         internal
         returns (Grantline hub, GrantlineAdmin admin)
     {
-        return _deployHubWithSwapAdapter(usdProvider, skipUnavailableUsdValuation, address(0), address(0), address(0));
-    }
-
-    function _deployHubWithSwapAdapter(
-        address usdProvider,
-        bool skipUnavailableUsdValuation,
-        address router,
-        address factoryAddress,
-        address wrappedNative
-    ) internal returns (Grantline hub, GrantlineAdmin admin) {
         Grantline grantlineImplementation = new Grantline();
         MandateRegistry registryImplementation = new MandateRegistry();
         MandateEvaluator evaluatorImplementation = new MandateEvaluator();
@@ -138,10 +125,7 @@ abstract contract GrantlineTestFixture {
         address evaluator = address(
             new ERC1967Proxy(
                 address(evaluatorImplementation),
-                abi.encodeCall(
-                    MandateEvaluator.initialize,
-                    (address(hub), registry, usdProvider, skipUnavailableUsdValuation, address(admin))
-                )
+                abi.encodeCall(MandateEvaluator.initialize, (address(hub), registry, address(admin)))
             )
         );
         address manager = address(
@@ -221,22 +205,16 @@ abstract contract GrantlineTestFixture {
         return abi.encodePacked(r, s, v);
     }
 
-    function _rules(
-        uint256 maxNativeAmount,
-        bool escalateNativeAmount,
-        uint256 minNativeAmount,
-        uint256 minUsdAmount,
-        bool escalateUsdAmount,
-        bool canDelegate
-    ) internal pure returns (GrantlineTypes.MandateRules memory) {
+    function _rules(uint256 maxNativeAmount, bool escalateNativeAmount, uint256 minNativeAmount, bool canDelegate)
+        internal
+        pure
+        returns (GrantlineTypes.MandateRules memory)
+    {
         return GrantlineTypes.MandateRules({
             canDelegate: canDelegate,
             minNativeAmount: minNativeAmount,
             maxNativeAmount: maxNativeAmount,
-            escalateNativeAmount: escalateNativeAmount,
-            minUsdAmount: minUsdAmount,
-            maxUsdAmount: 0,
-            escalateUsdAmount: escalateUsdAmount
+            escalateNativeAmount: escalateNativeAmount
         });
     }
 

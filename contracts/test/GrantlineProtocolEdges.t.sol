@@ -281,7 +281,7 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         fixtureVm.expectRevert();
         registry.initialize(address(this), address(this));
         fixtureVm.expectRevert();
-        evaluator.initialize(address(this), address(this), address(0), true, address(this));
+        evaluator.initialize(address(this), address(this), address(this));
         fixtureVm.expectRevert();
         manager.initialize(address(this), address(this), address(this), address(this));
         fixtureVm.expectRevert();
@@ -308,7 +308,7 @@ contract GrantlineProtocolEdgesTest is GrantlineTestFixture {
         MandateEvaluator implementation = new MandateEvaluator();
         _expectProxyInitializationRevert(
             address(implementation),
-            abi.encodeCall(MandateEvaluator.initialize, (address(this), address(0), address(0), true, address(this)))
+            abi.encodeCall(MandateEvaluator.initialize, (address(this), address(0), address(this)))
         );
     }
 

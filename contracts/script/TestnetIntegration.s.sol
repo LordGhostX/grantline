@@ -109,7 +109,6 @@ contract TestnetIntegration is ScriptBase {
     uint256 internal constant ROOT_TIGHTENED_LIMIT = 0.0004 ether;
     uint256 internal constant ROOT_PREFLIGHT_FLOOR = 0.04 ether;
     uint256 internal constant TIGHTENED_PREFLIGHT_FLOOR = 0.049 ether;
-    uint256 internal constant MIN_USD_AMOUNT = 1e18;
     uint256 internal constant TOKEN_DEPOSIT = 1_000 ether;
     uint256 internal constant TOKEN_TRANSFER = 300 ether;
 
@@ -376,7 +375,7 @@ contract TestnetIntegration is ScriptBase {
 
     function _fundVaultsAndCreateRoot(State memory state) private returns (State memory) {
         Grantline hub = Grantline(state.hub);
-        GrantlineTypes.MandateRules memory rootRules = _rules(ROOT_TRANSACTION_LIMIT, true, true, MIN_USD_AMOUNT);
+        GrantlineTypes.MandateRules memory rootRules = _rules(ROOT_TRANSACTION_LIMIT, true, true);
         GrantlineTypes.PreflightRules memory rootPreflight = _preflight(ROOT_PREFLIGHT_FLOOR, true);
 
         vm.startBroadcast(state.delegatedKey);
@@ -399,7 +398,7 @@ contract TestnetIntegration is ScriptBase {
 
     function _assertControllerIsolationAndBypasses(State memory state) private {
         Grantline hub = Grantline(state.hub);
-        GrantlineTypes.MandateRules memory rules = _rules(ROOT_TRANSACTION_LIMIT, false, false, MIN_USD_AMOUNT);
+        GrantlineTypes.MandateRules memory rules = _rules(ROOT_TRANSACTION_LIMIT, false, false);
         GrantlineTypes.PreflightRules memory preflight = _preflight(0, false);
 
         integrationVm.prank(state.owner);
@@ -576,7 +575,6 @@ contract TestnetIntegration is ScriptBase {
         GrantlineTypes.EvaluationResult memory evaluation = hub.evaluate(tokenPlan, tokenSignature);
         _require(evaluation.decision == 0, "token plan was not ALLOW");
         _require(evaluation.nativeAmount == 0, "token plan reported native value");
-        _require(evaluation.usdLimitSkipped, "unavailable USD valuation was not marked");
         vm.startBroadcast(state.agentKey);
         hub.execute(tokenPlan, tokenSignature);
         vm.stopBroadcast();
@@ -590,7 +588,7 @@ contract TestnetIntegration is ScriptBase {
 
     function _runDelegationAndPreflight(State memory state) private returns (State memory) {
         Grantline hub = Grantline(state.hub);
-        GrantlineTypes.MandateRules memory childRules = _rules(CHILD_TRANSACTION_LIMIT, true, true, MIN_USD_AMOUNT);
+        GrantlineTypes.MandateRules memory childRules = _rules(CHILD_TRANSACTION_LIMIT, true, true);
         GrantlineTypes.PreflightRules memory childPreflight = _preflight(ROOT_PREFLIGHT_FLOOR, true);
 
         vm.startBroadcast(state.agentKey);
@@ -614,8 +612,7 @@ contract TestnetIntegration is ScriptBase {
         vm.stopBroadcast();
         _require(CHILD_RECIPIENT.balance == childBalance + CHILD_TRANSACTION_LIMIT, "child transfer mismatch");
 
-        GrantlineTypes.MandateRules memory grandchildRules =
-            _rules(GRANDCHILD_TRANSACTION_LIMIT, false, false, MIN_USD_AMOUNT);
+        GrantlineTypes.MandateRules memory grandchildRules = _rules(GRANDCHILD_TRANSACTION_LIMIT, false, false);
         vm.startBroadcast(state.delegatedKey);
         state.grandchildMandate =
             hub.createChildMandate(state.childMandate, state.agent, grandchildRules, childPreflight, 0, 0);
@@ -640,13 +637,13 @@ contract TestnetIntegration is ScriptBase {
         integrationVm.prank(state.agent);
         integrationVm.expectRevert();
         hub.createChildMandate(
-            state.grandchildMandate, state.delegatedAgent, _rules(1, false, false, MIN_USD_AMOUNT), childPreflight, 0, 0
+            state.grandchildMandate, state.delegatedAgent, _rules(1, false, false), childPreflight, 0, 0
         );
 
         vm.startBroadcast(state.ownerKey);
         hub.updateMandate(
             state.rootMandate,
-            _rules(ROOT_TIGHTENED_LIMIT, true, true, MIN_USD_AMOUNT),
+            _rules(ROOT_TIGHTENED_LIMIT, true, true),
             _preflight(TIGHTENED_PREFLIGHT_FLOOR, true),
             0,
             0
@@ -926,7 +923,7 @@ contract TestnetIntegration is ScriptBase {
         signature = abi.encodePacked(r, s, v);
     }
 
-    function _rules(uint256 maxNativeAmount, bool escalateNativeAmount, bool canDelegate, uint256 minUsdAmount)
+    function _rules(uint256 maxNativeAmount, bool escalateNativeAmount, bool canDelegate)
         private
         pure
         returns (GrantlineTypes.MandateRules memory)
@@ -935,10 +932,7 @@ contract TestnetIntegration is ScriptBase {
             canDelegate: canDelegate,
             minNativeAmount: 0,
             maxNativeAmount: maxNativeAmount,
-            escalateNativeAmount: escalateNativeAmount,
-            minUsdAmount: minUsdAmount,
-            maxUsdAmount: 0,
-            escalateUsdAmount: false
+            escalateNativeAmount: escalateNativeAmount
         });
     }
 

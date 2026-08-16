@@ -182,8 +182,7 @@ contract GrantlineEscalationEdgesTest is GrantlineTestFixture {
         bytes32 digest = fixture.hub.submitEscalation(plan, signature);
         fixture.hub.approveEscalation(digest);
 
-        fixture.hub
-            .updateMandate(fixture.mandateId, _rules(1 ether, false, 0, 0, false, true), _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, _rules(1 ether, false, 0, true), _preflight(0, false), 0, 0);
         fixtureVm.expectRevert();
         fixture.hub.executeEscalated(digest);
 
@@ -292,6 +291,6 @@ contract GrantlineEscalationEdgesTest is GrantlineTestFixture {
     }
 
     function _escalatingFixture() private returns (Fixture memory) {
-        return _fixtureWithRules(_rules(1 ether, true, 0, 0, false, true), _preflight(0, false), address(0), true);
+        return _fixtureWithRules(_rules(1 ether, true, 0, true), _preflight(0, false));
     }
 }

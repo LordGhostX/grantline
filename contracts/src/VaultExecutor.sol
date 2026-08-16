@@ -54,8 +54,6 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
         address vault,
         uint256 nonce,
         uint256 nativeAmount,
-        uint256 usdAmount,
-        bool usdLimitSkipped,
         uint256 actionCount,
         uint256 nativeBalanceAfter
     );
@@ -170,8 +168,6 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
             address(vault),
             plan.nonce,
             evaluation.nativeAmount,
-            evaluation.usdAmount,
-            evaluation.usdLimitSkipped,
             plan.actions.length,
             evaluation.nativeBalanceAfter
         );

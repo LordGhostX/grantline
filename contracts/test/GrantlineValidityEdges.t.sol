@@ -19,7 +19,7 @@ contract GrantlineValidityEdgesTest is GrantlineTestFixture {
             .createMandate(
                 fixture.vault,
                 fixture.agent,
-                _rules(2 ether, false, 0, 0, false, true),
+                _rules(2 ether, false, 0, true),
                 _preflight(0, false),
                 validAfter,
                 validUntil
@@ -46,7 +46,7 @@ contract GrantlineValidityEdgesTest is GrantlineTestFixture {
             .createMandate(
                 fixture.vault,
                 fixture.agent,
-                _rules(2 ether, false, 0, 0, false, true),
+                _rules(2 ether, false, 0, true),
                 _preflight(0, false),
                 validUntil,
                 validAfter
@@ -54,25 +54,19 @@ contract GrantlineValidityEdgesTest is GrantlineTestFixture {
     }
 
     function test_effectiveValidityUsesLineageIntersectionAndSupportsNonOverlap() public {
-        Fixture memory fixture =
-            _fixtureWithRules(_rules(2 ether, false, 0, 0, false, true), _preflight(0, false), address(0), true);
+        Fixture memory fixture = _fixtureWithRules(_rules(2 ether, false, 0, true), _preflight(0, false));
         address childAgent = fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY);
         uint256 childId;
         fixtureVm.prank(fixture.agent);
         childId = fixture.hub
             .createChildMandate(
-                fixture.mandateId, childAgent, _rules(1 ether, false, 0, 0, false, true), _preflight(0, false), 0, 0
+                fixture.mandateId, childAgent, _rules(1 ether, false, 0, true), _preflight(0, false), 0, 0
             );
 
         fixtureVm.prank(childAgent);
         uint256 grandchildId = fixture.hub
             .createChildMandate(
-                childId,
-                fixtureVm.addr(0xCAFE),
-                _rules(0.5 ether, false, 0, 0, false, false),
-                _preflight(0, false),
-                0,
-                0
+                childId, fixtureVm.addr(0xCAFE), _rules(0.5 ether, false, 0, false), _preflight(0, false), 0, 0
             );
 
         uint64 nowTimestamp = uint64(block.timestamp);
@@ -85,19 +79,17 @@ contract GrantlineValidityEdgesTest is GrantlineTestFixture {
         fixture.hub
             .updateMandate(
                 grandchildId,
-                _rules(0.5 ether, false, 0, 0, false, false),
+                _rules(0.5 ether, false, 0, false),
                 _preflight(0, false),
                 nowTimestamp + 5,
                 nowTimestamp + 90
             );
         fixtureVm.prank(fixture.agent);
         fixture.hub
-            .updateMandate(
-                childId, _rules(1 ether, false, 0, 0, false, true), _preflight(0, false), childAfter, childUntil
-            );
+            .updateMandate(childId, _rules(1 ether, false, 0, true), _preflight(0, false), childAfter, childUntil);
         fixture.hub
             .updateMandate(
-                fixture.mandateId, _rules(2 ether, false, 0, 0, false, true), _preflight(0, false), rootAfter, rootUntil
+                fixture.mandateId, _rules(2 ether, false, 0, true), _preflight(0, false), rootAfter, rootUntil
             );
 
         (uint64 effectiveAfter, uint64 effectiveUntil) = fixture.hub.getEffectiveValidityWindow(grandchildId);
@@ -112,7 +104,7 @@ contract GrantlineValidityEdgesTest is GrantlineTestFixture {
         fixture.hub
             .updateMandate(
                 grandchildId,
-                _rules(0.5 ether, false, 0, 0, false, false),
+                _rules(0.5 ether, false, 0, false),
                 _preflight(0, false),
                 nowTimestamp + 200,
                 nowTimestamp + 300
@@ -128,12 +120,7 @@ contract GrantlineValidityEdgesTest is GrantlineTestFixture {
         uint64 validAfter = uint64(block.timestamp + 10);
         uint256 mandateId = fixture.hub
             .createMandate(
-                fixture.vault,
-                fixture.agent,
-                _rules(2 ether, false, 0, 0, false, true),
-                _preflight(0, false),
-                validAfter,
-                0
+                fixture.vault, fixture.agent, _rules(2 ether, false, 0, true), _preflight(0, false), validAfter, 0
             );
         ActionTypes.ActionPlan memory plan =
             _singleActionPlan(mandateId, fixture.agent, 101, 0, _transferAction(address(0), address(0xBEEF), 1 ether));
@@ -148,16 +135,12 @@ contract GrantlineValidityEdgesTest is GrantlineTestFixture {
 
         fixture.hub
             .updateMandate(
-                mandateId,
-                _rules(2 ether, false, 0, 0, false, true),
-                _preflight(0, false),
-                0,
-                uint64(block.timestamp - 1)
+                mandateId, _rules(2 ether, false, 0, true), _preflight(0, false), 0, uint64(block.timestamp - 1)
             );
         result = fixture.hub.evaluate(plan, signature);
         assert(result.failureCode == uint8(MandateEvaluator.FailureCode.MANDATE_EXPIRED));
 
-        fixture.hub.updateMandate(mandateId, _rules(2 ether, false, 0, 0, false, true), _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(mandateId, _rules(2 ether, false, 0, true), _preflight(0, false), 0, 0);
         plan.deadline = block.timestamp - 1;
         signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
         result = fixture.hub.evaluate(plan, signature);
@@ -170,29 +153,26 @@ contract GrantlineValidityEdgesTest is GrantlineTestFixture {
         fixtureVm.prank(fixture.agent);
         uint256 childId = fixture.hub
             .createChildMandate(
-                fixture.mandateId, childAgent, _rules(1 ether, false, 0, 0, false, false), _preflight(0, false), 0, 0
+                fixture.mandateId, childAgent, _rules(1 ether, false, 0, false), _preflight(0, false), 0, 0
             );
 
         fixtureVm.warp(100);
-        fixture.hub
-            .updateMandate(fixture.mandateId, _rules(2 ether, false, 0, 0, false, true), _preflight(0, false), 0, 99);
+        fixture.hub.updateMandate(fixture.mandateId, _rules(2 ether, false, 0, true), _preflight(0, false), 0, 99);
         assert(!fixture.hub.isLineageActive(childId));
 
         fixtureVm.prank(fixture.agent);
         fixtureVm.expectRevert(
             abi.encodeWithSelector(Grantline.NotMandateAdministrator.selector, childId, fixture.agent)
         );
-        fixture.hub.updateMandate(childId, _rules(1 ether, false, 0, 0, false, false), _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(childId, _rules(1 ether, false, 0, false), _preflight(0, false), 0, 0);
 
-        fixture.hub.updateMandate(childId, _rules(1 ether, false, 0, 0, false, false), _preflight(0, false), 0, 0);
-        fixture.hub
-            .updateMandate(fixture.mandateId, _rules(2 ether, false, 0, 0, false, true), _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(childId, _rules(1 ether, false, 0, false), _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, _rules(2 ether, false, 0, true), _preflight(0, false), 0, 0);
         assert(fixture.hub.isLineageActive(childId));
     }
 
     function test_escalationsRecheckMandateWindowsAtApprovalAndExecution() public {
-        Fixture memory fixture =
-            _fixtureWithRules(_rules(1 ether, true, 0, 0, false, true), _preflight(0, false), address(0), true);
+        Fixture memory fixture = _fixtureWithRules(_rules(1 ether, true, 0, true), _preflight(0, false));
         ActionTypes.ActionPlan memory plan = _singleActionPlan(
             fixture.mandateId, fixture.agent, 201, 0, _transferAction(address(0), address(0xBEEF), 2 ether)
         );
@@ -200,11 +180,7 @@ contract GrantlineValidityEdgesTest is GrantlineTestFixture {
         bytes32 digest = fixture.hub.submitEscalation(plan, signature);
         fixture.hub
             .updateMandate(
-                fixture.mandateId,
-                _rules(1 ether, true, 0, 0, false, true),
-                _preflight(0, false),
-                0,
-                uint64(block.timestamp)
+                fixture.mandateId, _rules(1 ether, true, 0, true), _preflight(0, false), 0, uint64(block.timestamp)
             );
         fixtureVm.warp(block.timestamp + 1);
 
@@ -212,8 +188,7 @@ contract GrantlineValidityEdgesTest is GrantlineTestFixture {
         fixture.hub.approveEscalation(digest);
         fixture.hub.denyEscalation(digest);
 
-        Fixture memory approvedFixture =
-            _fixtureWithRules(_rules(1 ether, true, 0, 0, false, true), _preflight(0, false), address(0), true);
+        Fixture memory approvedFixture = _fixtureWithRules(_rules(1 ether, true, 0, true), _preflight(0, false));
         ActionTypes.ActionPlan memory approvedPlan = _singleActionPlan(
             approvedFixture.mandateId,
             approvedFixture.agent,
@@ -227,7 +202,7 @@ contract GrantlineValidityEdgesTest is GrantlineTestFixture {
         approvedFixture.hub
             .updateMandate(
                 approvedFixture.mandateId,
-                _rules(1 ether, true, 0, 0, false, true),
+                _rules(1 ether, true, 0, true),
                 _preflight(0, false),
                 0,
                 uint64(block.timestamp)

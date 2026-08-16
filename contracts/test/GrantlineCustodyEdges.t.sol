@@ -61,7 +61,7 @@ contract GrantlineCustodyEdgesTest is GrantlineTestFixture {
         fixtureVm.prank(controllerB);
         fixture.hub.depositNative{value: 2 ether}(vaultB);
 
-        GrantlineTypes.MandateRules memory rules = _rules(2 ether, false, 0, 0, false, true);
+        GrantlineTypes.MandateRules memory rules = _rules(2 ether, false, 0, true);
         fixtureVm.prank(controllerA);
         uint256 mandateA = fixture.hub.createMandate(vaultA, agentA, rules, _preflight(0, false), 0, 0);
         fixtureVm.prank(controllerB);

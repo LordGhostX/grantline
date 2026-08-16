@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {ActionTypes} from "../src/ActionTypes.sol";
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
-import {IUsdValueProvider, MandateEvaluator} from "../src/MandateEvaluator.sol";
+import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {UniswapV3Adapter} from "../src/UniswapV3Adapter.sol";
 import {GrantlineTestFixture} from "./GrantlineTestFixture.sol";
 
@@ -212,12 +212,6 @@ contract SwapTestAccountingRouter {
             tokenIn := shr(96, calldataload(path.offset))
             tokenOut := shr(96, calldataload(add(path.offset, sub(path.length, 20))))
         }
-    }
-}
-
-contract SwapTestUsdProvider is IUsdValueProvider {
-    function quoteUsd(address, uint256 amount) external pure returns (uint256 usdAmount, bool available) {
-        return (amount, true);
     }
 }
 
@@ -597,12 +591,9 @@ contract GrantlineSwapEdgesTest is GrantlineTestFixture {
         factory.setPool(address(tokenA), address(tokenB), 500, address(firstPool));
         factory.setPool(address(tokenB), address(tokenC), 3000, address(secondPool));
 
-        SwapTestUsdProvider provider = new SwapTestUsdProvider();
-        GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, 0, false, true);
-        rules.maxUsdAmount = 1.5 ether;
-        Fixture memory fixture = _fixtureWithSwapAdapterAndRules(
-            address(router), address(factory), address(wrappedNative), rules, address(provider), false
-        );
+        GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, true);
+        Fixture memory fixture =
+            _fixtureWithSwapAdapterAndRules(address(router), address(factory), address(wrappedNative), rules);
         tokenA.mint(fixture.vault, 1 ether);
         tokenC.mint(address(router), 2 ether);
 
@@ -621,7 +612,6 @@ contract GrantlineSwapEdgesTest is GrantlineTestFixture {
             fixture.hub.evaluate(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
         assert(result.decision == uint8(MandateEvaluator.Decision.ALLOW));
         assert(result.nativeAmount == 0);
-        assert(result.usdAmount == 1 ether);
 
         fixture.hub.execute(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
         assert(tokenA.balanceOf(fixture.vault) == 0);

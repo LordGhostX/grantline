@@ -10,10 +10,6 @@ import {GrantlineTypes} from "./GrantlineTypes.sol";
 import {IGrantlineContext, IEvaluator, IRegistry, ISwapAdapter, IVault} from "./Interfaces.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
-interface IUsdValueProvider {
-    function quoteUsd(address asset, uint256 amount) external view returns (uint256 usdAmount, bool available);
-}
-
 contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUpgradeable, IEvaluator {
     enum Decision {
         ALLOW,
@@ -36,10 +32,6 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         AMOUNT_OVERFLOW,
         NATIVE_AMOUNT_BELOW_MINIMUM,
         NATIVE_AMOUNT_ABOVE_MAXIMUM,
-        USD_AMOUNT_OVERFLOW,
-        USD_AMOUNT_BELOW_MINIMUM,
-        USD_AMOUNT_ABOVE_MAXIMUM,
-        USD_VALUATION_UNAVAILABLE,
         PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM,
         MANDATE_PAUSED,
         VAULT_PAUSED,
@@ -56,39 +48,26 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
 
     error InvalidAddress();
     error InvalidRegistry();
-    error InvalidUsdValueProvider();
     error NotTrustedCaller(address caller);
 
     address public grantline;
     address public override registry;
-    address public usdValueProvider;
-    bool public skipUnavailableUsdValuation;
 
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(
-        address grantlineAddress,
-        address registryAddress,
-        address usdValueProviderAddress,
-        bool skipUnavailableUsdValuation_,
-        address moduleOwnerAddress
-    ) external initializer {
+    function initialize(address grantlineAddress, address registryAddress, address moduleOwnerAddress)
+        external
+        initializer
+    {
         if (grantlineAddress == address(0)) revert InvalidAddress();
         if (moduleOwnerAddress == address(0) || moduleOwnerAddress.code.length == 0) revert InvalidAddress();
         if (registryAddress == address(0) || registryAddress.code.length == 0) {
             revert InvalidRegistry();
         }
-        if (usdValueProviderAddress == address(0) && !skipUnavailableUsdValuation_) revert InvalidUsdValueProvider();
-        if (usdValueProviderAddress != address(0) && usdValueProviderAddress.code.length == 0) {
-            revert InvalidUsdValueProvider();
-        }
-
         grantline = grantlineAddress;
         registry = registryAddress;
-        usdValueProvider = usdValueProviderAddress;
-        skipUnavailableUsdValuation = skipUnavailableUsdValuation_;
         __Ownable_init(moduleOwnerAddress);
         __Ownable2Step_init();
     }
@@ -109,56 +88,56 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
     {
         _onlyTrustedCaller();
         if (digest != IGrantlineContext(grantline).actionDigest(plan)) {
-            return _failure(FailureCode.INVALID_SIGNATURE, type(uint256).max, 0, 0, false, 0);
+            return _failure(FailureCode.INVALID_SIGNATURE, type(uint256).max, 0, 0);
         }
 
         IRegistry registryContract = IRegistry(registry);
         if (plan.mandateId == 0 || plan.mandateId > registryContract.mandateCount()) {
-            return _failure(FailureCode.MANDATE_NOT_FOUND, type(uint256).max, 0, 0, false, 0);
+            return _failure(FailureCode.MANDATE_NOT_FOUND, type(uint256).max, 0, 0);
         }
 
         GrantlineTypes.Mandate memory mandate = registryContract.getMandate(plan.mandateId);
         if (mandate.status == GrantlineTypes.MandateStatus.PAUSED) {
-            return _failure(FailureCode.MANDATE_PAUSED, type(uint256).max, 0, 0, false, 0);
+            return _failure(FailureCode.MANDATE_PAUSED, type(uint256).max, 0, 0);
         }
         if (mandate.status != GrantlineTypes.MandateStatus.ACTIVE) {
-            return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, false, 0);
+            return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0);
         }
         if (!registryContract.isLineageActive(plan.mandateId)) {
             if (registryContract.isLineagePaused(plan.mandateId)) {
-                return _failure(FailureCode.MANDATE_PAUSED, type(uint256).max, 0, 0, false, 0);
+                return _failure(FailureCode.MANDATE_PAUSED, type(uint256).max, 0, 0);
             }
             if (registryContract.isLineageRevoked(plan.mandateId)) {
-                return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, false, 0);
+                return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0);
             }
             (uint64 validAfter, uint64 validUntil) = registryContract.getEffectiveValidityWindow(plan.mandateId);
             if (validAfter != 0 && block.timestamp < validAfter) {
-                return _failure(FailureCode.MANDATE_NOT_YET_VALID, type(uint256).max, 0, 0, false, 0);
+                return _failure(FailureCode.MANDATE_NOT_YET_VALID, type(uint256).max, 0, 0);
             }
             if (validUntil != 0 && block.timestamp > validUntil) {
-                return _failure(FailureCode.MANDATE_EXPIRED, type(uint256).max, 0, 0, false, 0);
+                return _failure(FailureCode.MANDATE_EXPIRED, type(uint256).max, 0, 0);
             }
-            return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, false, 0);
+            return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0);
         }
         if (IVault(mandate.vault).paused()) {
-            return _failure(FailureCode.VAULT_PAUSED, type(uint256).max, 0, 0, false, 0);
+            return _failure(FailureCode.VAULT_PAUSED, type(uint256).max, 0, 0);
         }
         GrantlineTypes.MandateRules memory effectiveRules = registryContract.getEffectiveRules(plan.mandateId);
 
         if (plan.agent != mandate.agent) {
-            return _failure(FailureCode.AGENT_MISMATCH, type(uint256).max, 0, 0, false, 0);
+            return _failure(FailureCode.AGENT_MISMATCH, type(uint256).max, 0, 0);
         }
 
         (address signer, ECDSA.RecoverError recoverError, bytes32 recoverErrorArgument) =
             ECDSA.tryRecoverCalldata(digest, signature);
         if (recoverError != ECDSA.RecoverError.NoError || signer != plan.agent || recoverErrorArgument != bytes32(0)) {
-            return _failure(FailureCode.INVALID_SIGNATURE, type(uint256).max, 0, 0, false, 0);
+            return _failure(FailureCode.INVALID_SIGNATURE, type(uint256).max, 0, 0);
         }
         if (plan.deadline != 0 && block.timestamp > plan.deadline) {
-            return _failure(FailureCode.EXPIRED, type(uint256).max, 0, 0, false, 0);
+            return _failure(FailureCode.EXPIRED, type(uint256).max, 0, 0);
         }
         if (plan.actions.length == 0) {
-            return _failure(FailureCode.EMPTY_PLAN, type(uint256).max, 0, 0, false, 0);
+            return _failure(FailureCode.EMPTY_PLAN, type(uint256).max, 0, 0);
         }
 
         return _evaluateValidPlan(plan, effectiveRules, mandate.vault, registryContract);
@@ -179,11 +158,9 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         IRegistry registryContract
     ) private view returns (GrantlineTypes.EvaluationResult memory) {
         (bool valid, Totals memory totals, FailureCode validationFailure, uint256 failedActionIndex) =
-            _validatePlan(plan, effectiveRules, vault);
+            _validatePlan(plan, vault);
         if (!valid) {
-            return _failure(
-                validationFailure, failedActionIndex, totals.nativeAmount, totals.usdAmount, totals.usdLimitSkipped, 0
-            );
+            return _failure(validationFailure, failedActionIndex, totals.nativeAmount, 0);
         }
 
         GrantlineTypes.PreflightRules memory preflightRules =
@@ -196,41 +173,34 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
 
     struct Totals {
         uint256 nativeAmount;
-        uint256 usdAmount;
-        bool usdLimitSkipped;
-        bool usdValuationPresent;
     }
 
     struct RuleViolations {
         bool nativeMinimum;
         bool nativeMaximum;
-        bool usdMinimum;
-        bool usdMaximum;
         bool preflightNativeBalance;
     }
 
-    function _validatePlan(
-        ActionTypes.ActionPlan calldata plan,
-        GrantlineTypes.MandateRules memory rules,
-        address vault
-    ) private view returns (bool, Totals memory totals, FailureCode, uint256) {
-        bool usdLimitEnabled = rules.minUsdAmount != 0 || rules.maxUsdAmount != 0;
+    function _validatePlan(ActionTypes.ActionPlan calldata plan, address vault)
+        private
+        view
+        returns (bool, Totals memory totals, FailureCode, uint256)
+    {
         uint256 failedActionIndex = type(uint256).max;
         for (uint256 index; index < plan.actions.length; index++) {
             (bool actionValid, Totals memory updatedTotals, FailureCode actionFailure) =
-                _validateAction(plan.actions[index], totals, usdLimitEnabled, vault);
+                _validateAction(plan.actions[index], totals, vault);
             totals = updatedTotals;
             if (!actionValid) return (false, totals, actionFailure, index);
         }
         return (true, totals, FailureCode.NONE, failedActionIndex);
     }
 
-    function _validateAction(
-        ActionTypes.Action calldata action,
-        Totals memory currentTotals,
-        bool usdLimitEnabled,
-        address vault
-    ) private view returns (bool, Totals memory totals, FailureCode) {
+    function _validateAction(ActionTypes.Action calldata action, Totals memory currentTotals, address vault)
+        private
+        view
+        returns (bool, Totals memory totals, FailureCode)
+    {
         totals = currentTotals;
         if (action.parameters.length == 0) return (false, totals, FailureCode.INVALID_ACTION);
 
@@ -250,7 +220,7 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
             if (transfer.amount == 0) {
                 return (false, totals, FailureCode.INVALID_AMOUNT);
             }
-            return _accumulate(totals, transfer.asset, transfer.amount, usdLimitEnabled);
+            return _accumulate(totals, transfer.asset, transfer.amount);
         }
 
         if (action.actionType != ActionTypes.ActionType.SWAP || action.version != ActionTypes.SWAP_VERSION) {
@@ -270,15 +240,15 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
             } catch {
                 return (false, totals, FailureCode.INVALID_SWAP_ROUTE);
             }
-            return _accumulate(totals, swap.tokenIn, swap.amountIn, usdLimitEnabled);
+            return _accumulate(totals, swap.tokenIn, swap.amountIn);
         } catch {
             return (false, totals, FailureCode.INVALID_SWAP_PARAMETERS);
         }
     }
 
-    function _accumulate(Totals memory totals, address asset, uint256 amount, bool usdLimitEnabled)
+    function _accumulate(Totals memory totals, address asset, uint256 amount)
         private
-        view
+        pure
         returns (bool, Totals memory, FailureCode)
     {
         if (asset == address(0)) {
@@ -286,22 +256,6 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
                 return (false, totals, FailureCode.AMOUNT_OVERFLOW);
             }
             totals.nativeAmount += amount;
-        }
-
-        if (usdLimitEnabled) {
-            (uint256 actionUsdAmount, bool available) = _quoteUsd(asset, amount);
-            if (!available) {
-                if (!skipUnavailableUsdValuation) {
-                    return (false, totals, FailureCode.USD_VALUATION_UNAVAILABLE);
-                }
-                totals.usdLimitSkipped = true;
-            } else {
-                if (totals.usdAmount > type(uint256).max - actionUsdAmount) {
-                    return (false, totals, FailureCode.USD_AMOUNT_OVERFLOW);
-                }
-                totals.usdAmount += actionUsdAmount;
-                totals.usdValuationPresent = true;
-            }
         }
         return (true, totals, FailureCode.NONE);
     }
@@ -314,29 +268,21 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
     ) private pure returns (GrantlineTypes.EvaluationResult memory) {
         RuleViolations memory violations = _findRuleViolations(rules, preflightRules, totals, nativeBalanceAfter);
         bool nativeViolation = violations.nativeMinimum || violations.nativeMaximum;
-        bool usdViolation = violations.usdMinimum || violations.usdMaximum;
         FailureCode nativeFailureCode = violations.nativeMinimum
             ? FailureCode.NATIVE_AMOUNT_BELOW_MINIMUM
             : FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM;
-        FailureCode usdFailureCode =
-            violations.usdMinimum ? FailureCode.USD_AMOUNT_BELOW_MINIMUM : FailureCode.USD_AMOUNT_ABOVE_MAXIMUM;
 
         if (nativeViolation && !rules.escalateNativeAmount) {
             return _decision(Decision.DENY, nativeFailureCode, totals, nativeBalanceAfter);
-        }
-        if (usdViolation && !rules.escalateUsdAmount) {
-            return _decision(Decision.DENY, usdFailureCode, totals, nativeBalanceAfter);
         }
         if (violations.preflightNativeBalance && !preflightRules.escalateNativeBalance) {
             return
                 _decision(Decision.DENY, FailureCode.PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM, totals, nativeBalanceAfter);
         }
-        if (nativeViolation || usdViolation || violations.preflightNativeBalance) {
+        if (nativeViolation || violations.preflightNativeBalance) {
             return _decision(
                 Decision.ESCALATE,
-                nativeViolation
-                    ? nativeFailureCode
-                    : usdViolation ? usdFailureCode : FailureCode.PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM,
+                nativeViolation ? nativeFailureCode : FailureCode.PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM,
                 totals,
                 nativeBalanceAfter
             );
@@ -353,39 +299,20 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         violations.nativeMinimum = totals.nativeAmount != 0 && rules.minNativeAmount != 0
             && totals.nativeAmount < rules.minNativeAmount;
         violations.nativeMaximum = rules.maxNativeAmount != 0 && totals.nativeAmount > rules.maxNativeAmount;
-        violations.usdMinimum = totals.usdValuationPresent && !totals.usdLimitSkipped && rules.minUsdAmount != 0
-            && totals.usdAmount < rules.minUsdAmount;
-        violations.usdMaximum = rules.maxUsdAmount != 0 && totals.usdAmount > rules.maxUsdAmount;
         violations.preflightNativeBalance =
             preflightRules.minNativeBalance != 0 && nativeBalanceAfter < preflightRules.minNativeBalance;
     }
 
-    function _quoteUsd(address asset, uint256 amount) private view returns (uint256 usdAmount, bool available) {
-        if (usdValueProvider == address(0)) return (0, false);
-        try IUsdValueProvider(usdValueProvider).quoteUsd(asset, amount) returns (
-            uint256 quotedUsdAmount, bool quoteAvailable
-        ) {
-            return (quotedUsdAmount, quoteAvailable);
-        } catch {
-            return (0, false);
-        }
-    }
-
-    function _failure(
-        FailureCode failureCode,
-        uint256 actionIndex,
-        uint256 nativeAmount,
-        uint256 usdAmount,
-        bool usdLimitSkipped,
-        uint256 nativeBalanceAfter
-    ) private pure returns (GrantlineTypes.EvaluationResult memory) {
+    function _failure(FailureCode failureCode, uint256 actionIndex, uint256 nativeAmount, uint256 nativeBalanceAfter)
+        private
+        pure
+        returns (GrantlineTypes.EvaluationResult memory)
+    {
         return GrantlineTypes.EvaluationResult({
             decision: uint8(Decision.DENY),
             failureCode: uint8(failureCode),
             failedActionIndex: actionIndex,
             nativeAmount: nativeAmount,
-            usdAmount: usdAmount,
-            usdLimitSkipped: usdLimitSkipped,
             nativeBalanceAfter: nativeBalanceAfter
         });
     }
@@ -400,8 +327,6 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
             failureCode: uint8(failureCode),
             failedActionIndex: type(uint256).max,
             nativeAmount: totals.nativeAmount,
-            usdAmount: totals.usdAmount,
-            usdLimitSkipped: totals.usdLimitSkipped,
             nativeBalanceAfter: nativeBalanceAfter
         });
     }

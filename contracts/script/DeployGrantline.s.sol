@@ -53,10 +53,7 @@ contract DeployGrantline is ScriptBase {
         );
         ERC1967Proxy evaluatorProxy = new ERC1967Proxy(
             address(evaluatorImplementation),
-            abi.encodeCall(
-                MandateEvaluator.initialize,
-                (address(grantline), address(registryProxy), address(0), true, address(admin))
-            )
+            abi.encodeCall(MandateEvaluator.initialize, (address(grantline), address(registryProxy), address(admin)))
         );
         ERC1967Proxy managerProxy = new ERC1967Proxy(
             address(managerImplementation),
