@@ -98,9 +98,7 @@ contract RegistryEdgesTest is TestFixture {
 
         fixture.hub.revokeMandate(fixture.mandateId);
         fixtureVm.prank(fixture.agent);
-        fixtureVm.expectRevert(
-            abi.encodeWithSelector(Grantline.NotParentAgent.selector, fixture.mandateId, fixture.agent)
-        );
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.MandateNotActive.selector, fixture.mandateId));
         fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false, 0, false), 0, 0);
     }
 
@@ -158,9 +156,7 @@ contract RegistryEdgesTest is TestFixture {
         fixture.hub.pauseMandate(fixture.mandateId);
 
         fixtureVm.prank(fixture.agent);
-        fixtureVm.expectRevert(
-            abi.encodeWithSelector(Grantline.NotParentAgent.selector, fixture.mandateId, fixture.agent)
-        );
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.MandateNotActive.selector, fixture.mandateId));
         fixture.hub
             .createChildMandate(
                 fixture.mandateId,

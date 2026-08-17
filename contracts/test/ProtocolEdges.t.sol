@@ -27,6 +27,22 @@ interface GrantlineProtocolOwnership {
     function unpause() external;
 }
 
+contract GrantlineSwapConfigMock {
+    address public immutable grantline;
+
+    constructor(address grantlineAddress) {
+        grantline = grantlineAddress;
+    }
+
+    function componentType() external pure returns (bytes32) {
+        return ComponentTypes.SWAP_ADAPTER;
+    }
+
+    function swapAdapterId() external pure returns (ActionTypes.SwapAdapterId) {
+        return ActionTypes.SwapAdapterId.UNISWAP_V3;
+    }
+}
+
 contract GrantlineProtocolVaultV2 is Vault {
     function marker() external pure returns (uint256) {
         return 2;
@@ -369,6 +385,35 @@ contract ProtocolEdgesTest is TestFixture {
             .configureModules(
                 registry, evaluator, escalationManager, executor, vaultFactory, new ActionTypes.SwapAdapterConfig[](0)
             );
+    }
+
+    function test_adminRejectsInvalidAndDuplicateSwapAdapterInputs() public {
+        (Grantline hub, GrantlineAdmin admin) = _unconfiguredHub();
+        ActionTypes.SwapAdapterConfig[] memory adapters = new ActionTypes.SwapAdapterConfig[](1);
+        adapters[0] = ActionTypes.SwapAdapterConfig({
+            swapAdapterId: ActionTypes.SwapAdapterId.UNISWAP_V3, swapAdapter: address(0)
+        });
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(
+                GrantlineAdmin.InvalidSwapAdapter.selector, ActionTypes.SwapAdapterId.UNISWAP_V3, address(0)
+            )
+        );
+        admin.configureModules(address(1), address(2), address(3), address(4), address(5), adapters);
+        assert(!hub.configured());
+
+        GrantlineSwapConfigMock adapter = new GrantlineSwapConfigMock(address(hub));
+        adapters = new ActionTypes.SwapAdapterConfig[](2);
+        adapters[0] = ActionTypes.SwapAdapterConfig({
+            swapAdapterId: ActionTypes.SwapAdapterId.UNISWAP_V3, swapAdapter: address(adapter)
+        });
+        adapters[1] = adapters[0];
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(GrantlineAdmin.DuplicateSwapAdapter.selector, ActionTypes.SwapAdapterId.UNISWAP_V3)
+        );
+        admin.configureModules(address(1), address(2), address(3), address(4), address(5), adapters);
+        assert(!hub.configured());
     }
 
     function test_ownershipTransferRequiresPendingOwnerAcceptance() public {
@@ -883,5 +928,14 @@ contract ProtocolEdgesTest is TestFixture {
 
         fixtureVm.expectRevert();
         fixture.hub.depositNative{value: 0}(fixture.vault);
+    }
+
+    function _unconfiguredHub() private returns (Grantline hub, GrantlineAdmin admin) {
+        Grantline implementation = new Grantline();
+        hub = Grantline(
+            address(new ERC1967Proxy(address(implementation), abi.encodeCall(Grantline.initialize, (address(this)))))
+        );
+        admin = new GrantlineAdmin(address(hub));
+        hub.setAdminController(address(admin));
     }
 }

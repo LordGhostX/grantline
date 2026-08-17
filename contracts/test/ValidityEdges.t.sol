@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 import {ActionTypes} from "../src/ActionTypes.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
-import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
@@ -179,7 +178,9 @@ contract ValidityEdgesTest is TestFixture {
 
         fixtureVm.prank(fixture.agent);
         fixtureVm.expectRevert(
-            abi.encodeWithSelector(Grantline.NotMandateAdministrator.selector, childId, fixture.agent)
+            abi.encodeWithSelector(
+                MandateRegistry.MandateLineageInactive.selector, fixture.mandateId, fixture.mandateId
+            )
         );
         fixture.hub.updateMandate(childId, _rules(1 ether, false, 0, false), _preflight(0, false, 0, false), 0, 0);
 

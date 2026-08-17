@@ -18,7 +18,6 @@ import {
     IExecutor,
     IModule,
     IRegistry,
-    ISwapAdapter,
     IVault,
     IVaultFactory
 } from "./Interfaces.sol";
@@ -170,36 +169,6 @@ contract Grantline is
         _modules[VAULT_FACTORY_MODULE] = vaultFactoryAddress;
         for (uint256 index; index < swapAdapters.length; index++) {
             ActionTypes.SwapAdapterConfig calldata config = swapAdapters[index];
-            if (config.swapAdapter == address(0) || config.swapAdapter.code.length == 0) {
-                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
-            }
-            if (config.swapAdapterId != ActionTypes.SwapAdapterId.UNISWAP_V3) {
-                revert UnsupportedSwapAdapterId(config.swapAdapterId);
-            }
-            if (_swapAdapters[config.swapAdapterId] != address(0)) {
-                revert DuplicateSwapAdapter(config.swapAdapterId);
-            }
-            try ISwapAdapter(config.swapAdapter).componentType() returns (bytes32 actualType) {
-                if (actualType != ComponentTypes.SWAP_ADAPTER) {
-                    revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
-                }
-            } catch {
-                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
-            }
-            try ISwapAdapter(config.swapAdapter).swapAdapterId() returns (ActionTypes.SwapAdapterId actualId) {
-                if (actualId != config.swapAdapterId) {
-                    revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
-                }
-            } catch {
-                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
-            }
-            try ISwapAdapter(config.swapAdapter).grantline() returns (address swapAdapterGrantline) {
-                if (swapAdapterGrantline != address(this)) {
-                    revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
-                }
-            } catch {
-                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
-            }
             _swapAdapters[config.swapAdapterId] = config.swapAdapter;
         }
         configured = true;
@@ -324,12 +293,6 @@ contract Grantline is
     ) external nonReentrant returns (uint256 mandateId) {
         GrantlineTypes.Mandate memory parent = IRegistry(registry()).getMandate(parentMandateId);
         _requireVaultNotPaused(parent.vault);
-        if (parent.agent != msg.sender) {
-            revert NotParentAgent(parentMandateId, msg.sender);
-        }
-        if (!IRegistry(registry()).isLineageActive(parentMandateId)) {
-            revert NotParentAgent(parentMandateId, msg.sender);
-        }
         mandateId = IRegistry(registry())
             .createChildMandate(parentMandateId, msg.sender, childAgent, rules, preflightRules, validAfter, validUntil);
     }
@@ -341,23 +304,19 @@ contract Grantline is
         uint64 validAfter,
         uint64 validUntil
     ) external nonReentrant {
-        _requireMandateAdministrator(mandateId, msg.sender);
         IRegistry(registry()).updateMandate(mandateId, msg.sender, rules, preflightRules, validAfter, validUntil);
     }
 
     function revokeMandate(uint256 mandateId) external nonReentrant {
-        _requireMandateAdministrator(mandateId, msg.sender);
         IRegistry(registry()).revokeMandate(mandateId, msg.sender);
     }
 
     function pauseMandate(uint256 mandateId) external nonReentrant {
-        _requireMandateAdministrator(mandateId, msg.sender);
         IRegistry(registry()).pauseMandate(mandateId, msg.sender);
         emit MandatePaused(mandateId, msg.sender);
     }
 
     function unpauseMandate(uint256 mandateId) external nonReentrant {
-        _requireMandateAdministrator(mandateId, msg.sender);
         IRegistry(registry()).unpauseMandate(mandateId, msg.sender);
         emit MandateUnpaused(mandateId, msg.sender);
     }
@@ -365,7 +324,6 @@ contract Grantline is
     function cancelNonce(uint256 mandateId, uint256 nonce) external nonReentrant {
         _onlyConfigured();
         GrantlineTypes.Mandate memory mandate = IRegistry(registry()).getMandate(mandateId);
-        _requireNonceCanceller(mandateId, mandate, msg.sender);
         IRegistry(registry()).cancelNonce(mandateId, msg.sender, nonce);
         emit NonceCancelled(mandateId, mandate.agent, nonce, msg.sender, uint64(block.timestamp));
     }
@@ -563,26 +521,6 @@ contract Grantline is
 
     function _requireVaultNotPaused(address vault) private view {
         if (IVault(vault).paused()) revert VaultIsPaused(vault);
-    }
-
-    function _requireMandateAdministrator(uint256 mandateId, address caller) private view {
-        GrantlineTypes.Mandate memory mandate = IRegistry(registry()).getMandate(mandateId);
-        if (isController(mandate.vault, caller)) return;
-        if (mandate.parentMandateId != 0) {
-            GrantlineTypes.Mandate memory parent = IRegistry(registry()).getMandate(mandate.parentMandateId);
-            if (parent.agent == caller && IRegistry(registry()).isLineageActive(mandate.parentMandateId)) {
-                return;
-            }
-        }
-        revert NotMandateAdministrator(mandateId, caller);
-    }
-
-    function _requireNonceCanceller(uint256 mandateId, GrantlineTypes.Mandate memory mandate, address caller)
-        private
-        view
-    {
-        if (mandate.agent == caller || isController(mandate.vault, caller)) return;
-        revert NotNonceCanceller(mandateId, caller);
     }
 
     function _isRegistered(address vault) private view returns (bool) {

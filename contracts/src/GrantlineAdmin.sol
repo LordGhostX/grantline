@@ -41,6 +41,9 @@ contract GrantlineAdmin is ReentrancyGuard {
     error UnknownModule(bytes32 key);
     error VaultNotRegistered(address vault);
     error NotProtocolAdmin(address caller);
+    error InvalidSwapAdapter(ActionTypes.SwapAdapterId swapAdapterId, address swapAdapter);
+    error DuplicateSwapAdapter(ActionTypes.SwapAdapterId swapAdapterId);
+    error UnsupportedSwapAdapterId(ActionTypes.SwapAdapterId swapAdapterId);
 
     struct ModuleUpgrade {
         bytes32 key;
@@ -73,6 +76,7 @@ contract GrantlineAdmin is ReentrancyGuard {
                 vaultFactoryAddress,
                 swapAdapters
             );
+        _validateSwapAdapterConfigs(swapAdapters);
         _validateWiring();
         _validateFactoryTemplate();
     }
@@ -80,6 +84,44 @@ contract GrantlineAdmin is ReentrancyGuard {
     function validateWiring() external onlyProtocolAdmin {
         _validateWiring();
         _validateFactoryTemplate();
+    }
+
+    function _validateSwapAdapterConfigs(ActionTypes.SwapAdapterConfig[] calldata swapAdapters) private view {
+        bool uniswapV3Configured;
+        for (uint256 index; index < swapAdapters.length; index++) {
+            ActionTypes.SwapAdapterConfig calldata config = swapAdapters[index];
+            if (config.swapAdapter == address(0) || config.swapAdapter.code.length == 0) {
+                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+            }
+            if (config.swapAdapterId != ActionTypes.SwapAdapterId.UNISWAP_V3) {
+                revert UnsupportedSwapAdapterId(config.swapAdapterId);
+            }
+            if (uniswapV3Configured) {
+                revert DuplicateSwapAdapter(config.swapAdapterId);
+            }
+            uniswapV3Configured = true;
+            try ISwapAdapter(config.swapAdapter).componentType() returns (bytes32 actualType) {
+                if (actualType != ComponentTypes.SWAP_ADAPTER) {
+                    revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+                }
+            } catch {
+                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+            }
+            try ISwapAdapter(config.swapAdapter).swapAdapterId() returns (ActionTypes.SwapAdapterId actualId) {
+                if (actualId != config.swapAdapterId) {
+                    revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+                }
+            } catch {
+                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+            }
+            try ISwapAdapter(config.swapAdapter).grantline() returns (address swapAdapterGrantline) {
+                if (swapAdapterGrantline != grantline) {
+                    revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+                }
+            } catch {
+                revert InvalidSwapAdapter(config.swapAdapterId, config.swapAdapter);
+            }
+        }
     }
 
     function upgradeModules(ModuleUpgrade[] calldata upgrades) external onlyProtocolAdmin {
