@@ -109,7 +109,8 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
         nonReentrant
     {
         _onlyGrantline();
-        GrantlineTypes.EvaluationResult memory evaluation = IEvaluator(evaluator).evaluate(plan, signature, digest);
+        GrantlineTypes.EvaluationResult memory evaluation =
+            IEvaluator(evaluator).evaluate(plan, signature, digest, false);
         if (evaluation.decision != uint8(Decision.ALLOW)) {
             revert EvaluationDenied(evaluation.decision, evaluation.failureCode, evaluation.failedActionIndex);
         }
@@ -130,7 +131,7 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
         }
 
         GrantlineTypes.EvaluationResult memory evaluation =
-            IEvaluator(evaluator).evaluate(escalation.plan, escalation.signature, digest);
+            IEvaluator(evaluator).evaluate(escalation.plan, escalation.signature, digest, true);
         if (evaluation.decision == uint8(Decision.DENY)) {
             revert EvaluationDenied(evaluation.decision, evaluation.failureCode, evaluation.failedActionIndex);
         }

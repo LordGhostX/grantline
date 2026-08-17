@@ -151,7 +151,7 @@ contract GrantlineTest {
         bytes32 digest = fixture.hub.actionDigest(plan);
 
         (bool evaluatorSuccess,) = address(MandateEvaluator(fixture.hub.evaluator()))
-            .call(abi.encodeCall(MandateEvaluator.evaluate, (plan, bytes(""), digest)));
+            .call(abi.encodeCall(MandateEvaluator.evaluate, (plan, bytes(""), digest, false)));
         assert(!evaluatorSuccess);
 
         (bool managerSuccess,) = address(EscalationManager(fixture.hub.escalationManager()))

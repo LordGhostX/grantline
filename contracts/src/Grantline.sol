@@ -430,7 +430,7 @@ contract Grantline is
         returns (GrantlineTypes.EvaluationResult memory)
     {
         _onlyConfigured();
-        return IEvaluator(evaluator()).evaluate(plan, signature, actionDigest(plan));
+        return IEvaluator(evaluator()).evaluate(plan, signature, actionDigest(plan), false);
     }
 
     function getMandate(uint256 mandateId) external view returns (GrantlineTypes.MandateView memory viewData) {

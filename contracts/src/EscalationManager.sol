@@ -101,7 +101,8 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         override
     {
         _onlyGrantline();
-        GrantlineTypes.EvaluationResult memory evaluation = IEvaluator(evaluator).evaluate(plan, signature, digest);
+        GrantlineTypes.EvaluationResult memory evaluation =
+            IEvaluator(evaluator).evaluate(plan, signature, digest, false);
         if (evaluation.decision != 1) {
             revert NotEscalatable(evaluation.decision, evaluation.failureCode);
         }

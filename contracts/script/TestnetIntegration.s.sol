@@ -446,7 +446,7 @@ contract TestnetIntegration is ScriptBase {
         GrantlineAdmin(state.admin).setVaultController(state.secondVault, state.agent);
         integrationVm.prank(state.agent);
         integrationVm.expectRevert();
-        MandateEvaluator(state.evaluator).evaluate(probe, bytes(""), digest);
+        MandateEvaluator(state.evaluator).evaluate(probe, bytes(""), digest, false);
         integrationVm.prank(state.agent);
         integrationVm.expectRevert();
         EscalationManager(state.escalationManager).submit(probe, bytes(""), digest, state.agent);

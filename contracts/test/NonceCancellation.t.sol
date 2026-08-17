@@ -42,15 +42,29 @@ contract NonceCancellationTest is TestFixture {
         assert(used);
         assert(reservation == bytes32(0));
 
+        evaluation = fixture.hub.evaluate(plan, signature);
+        assert(evaluation.decision == uint8(MandateEvaluator.Decision.DENY));
+        assert(evaluation.failureCode == uint8(MandateEvaluator.FailureCode.NONCE_USED));
+
         fixtureVm.expectRevert(
-            abi.encodeWithSelector(VaultExecutor.NonceAlreadyUsed.selector, fixture.mandateId, fixture.agent, 100)
+            abi.encodeWithSelector(
+                VaultExecutor.EvaluationDenied.selector,
+                uint8(MandateEvaluator.Decision.DENY),
+                uint8(MandateEvaluator.FailureCode.NONCE_USED),
+                type(uint256).max
+            )
         );
         fixture.hub.execute(plan, signature);
 
         plan.actions[0] = _transferAction(address(0), address(0xCAFE), 1 ether);
         bytes memory changedSignature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
         fixtureVm.expectRevert(
-            abi.encodeWithSelector(VaultExecutor.NonceAlreadyUsed.selector, fixture.mandateId, fixture.agent, 100)
+            abi.encodeWithSelector(
+                VaultExecutor.EvaluationDenied.selector,
+                uint8(MandateEvaluator.Decision.DENY),
+                uint8(MandateEvaluator.FailureCode.NONCE_USED),
+                type(uint256).max
+            )
         );
         fixture.hub.execute(plan, changedSignature);
         assert(address(0xBEEF).balance == 0);
@@ -162,10 +176,15 @@ contract NonceCancellationTest is TestFixture {
         fixtureVm.prank(fixture.agent);
         fixture.hub.cancelNonce(fixture.mandateId, 107);
         GrantlineTypes.EvaluationResult memory evaluation = fixture.hub.evaluate(plan, signature);
-        assert(evaluation.decision == uint8(MandateEvaluator.Decision.ESCALATE));
+        assert(evaluation.decision == uint8(MandateEvaluator.Decision.DENY));
+        assert(evaluation.failureCode == uint8(MandateEvaluator.FailureCode.NONCE_USED));
 
         fixtureVm.expectRevert(
-            abi.encodeWithSelector(MandateRegistry.NonceAlreadyUsed.selector, fixture.mandateId, fixture.agent, 107)
+            abi.encodeWithSelector(
+                EscalationManager.NotEscalatable.selector,
+                uint8(MandateEvaluator.Decision.DENY),
+                uint8(MandateEvaluator.FailureCode.NONCE_USED)
+            )
         );
         fixture.hub.submitEscalation(plan, signature);
         (, bytes32 reservation) = fixture.hub.getNonceState(fixture.mandateId, 107);
@@ -287,7 +306,12 @@ contract NonceCancellationTest is TestFixture {
         );
         bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
         fixtureVm.expectRevert(
-            abi.encodeWithSelector(VaultExecutor.NonceAlreadyUsed.selector, fixture.mandateId, fixture.agent, nonce)
+            abi.encodeWithSelector(
+                VaultExecutor.EvaluationDenied.selector,
+                uint8(MandateEvaluator.Decision.DENY),
+                uint8(MandateEvaluator.FailureCode.NONCE_USED),
+                type(uint256).max
+            )
         );
         fixture.hub.execute(plan, signature);
     }

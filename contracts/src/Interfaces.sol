@@ -170,10 +170,12 @@ interface IEvaluator is IModule {
 
     function nativeUsdValuationEnabled() external view returns (bool);
 
-    function evaluate(ActionTypes.ActionPlan calldata plan, bytes calldata signature, bytes32 digest)
-        external
-        view
-        returns (GrantlineTypes.EvaluationResult memory);
+    function evaluate(
+        ActionTypes.ActionPlan calldata plan,
+        bytes calldata signature,
+        bytes32 digest,
+        bool allowReservedNonce
+    ) external view returns (GrantlineTypes.EvaluationResult memory);
 }
 
 interface IEscalationManager is IModule {

@@ -22,11 +22,17 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
 
     enum FailureCode {
         NONE,
+        VAULT_PAUSED,
         MANDATE_NOT_FOUND,
         MANDATE_INACTIVE,
+        MANDATE_NOT_YET_VALID,
+        MANDATE_EXPIRED,
+        MANDATE_PAUSED,
         AGENT_MISMATCH,
         INVALID_SIGNATURE,
         EXPIRED,
+        NONCE_USED,
+        NONCE_RESERVED,
         EMPTY_PLAN,
         INVALID_ACTION,
         INVALID_ACTION_PARAMETERS,
@@ -39,15 +45,10 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         NATIVE_USD_VALUE_ABOVE_MAXIMUM,
         NATIVE_USD_VALUATION_UNAVAILABLE,
         PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM,
-        MANDATE_PAUSED,
-        VAULT_PAUSED,
-        MANDATE_NOT_YET_VALID,
-        MANDATE_EXPIRED,
+        PREFLIGHT_NATIVE_USD_BALANCE_BELOW_MINIMUM,
         SWAP_UNSUPPORTED,
         INVALID_SWAP_PARAMETERS,
-        INVALID_SWAP_ROUTE,
-        SWAP_DEADLINE_EXPIRED,
-        PREFLIGHT_NATIVE_USD_BALANCE_BELOW_MINIMUM
+        INVALID_SWAP_ROUTE
     }
 
     bytes32 public constant EXECUTOR_MODULE = keccak256("EXECUTOR");
@@ -106,12 +107,12 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         return ComponentTypes.EVALUATOR;
     }
 
-    function evaluate(ActionTypes.ActionPlan calldata plan, bytes calldata signature, bytes32 digest)
-        external
-        view
-        override
-        returns (GrantlineTypes.EvaluationResult memory result)
-    {
+    function evaluate(
+        ActionTypes.ActionPlan calldata plan,
+        bytes calldata signature,
+        bytes32 digest,
+        bool allowReservedNonce
+    ) external view override returns (GrantlineTypes.EvaluationResult memory result) {
         _onlyTrustedCaller();
         if (digest != IGrantlineContext(grantline).actionDigest(plan)) {
             return _failure(FailureCode.INVALID_SIGNATURE, type(uint256).max, 0, 0, 0, 0);
@@ -164,6 +165,14 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         }
         if (plan.actions.length == 0) {
             return _failure(FailureCode.EMPTY_PLAN, type(uint256).max, 0, 0, 0, 0);
+        }
+
+        if (registryContract.nonceUsed(plan.mandateId, plan.agent, plan.nonce)) {
+            return _failure(FailureCode.NONCE_USED, type(uint256).max, 0, 0, 0, 0);
+        }
+        bytes32 reservation = registryContract.reservedDigest(plan.mandateId, plan.agent, plan.nonce);
+        if (allowReservedNonce ? reservation != digest : reservation != bytes32(0)) {
+            return _failure(FailureCode.NONCE_RESERVED, type(uint256).max, 0, 0, 0, 0);
         }
 
         return _evaluateValidPlan(plan, effectiveRules, mandate.vault, registryContract);
@@ -292,7 +301,7 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
             if (swap.amountIn == 0 || swap.minAmountOut == 0 || swap.deadline == 0 || swap.hops.length == 0) {
                 return (false, totals, FailureCode.INVALID_SWAP_PARAMETERS);
             }
-            if (block.timestamp > swap.deadline) return (false, totals, FailureCode.SWAP_DEADLINE_EXPIRED);
+            if (block.timestamp > swap.deadline) return (false, totals, FailureCode.EXPIRED);
 
             address swapAdapter = IGrantlineContext(grantline).swapAdapterFor(swap.swapAdapterId);
             if (swapAdapter == address(0)) return (false, totals, FailureCode.SWAP_UNSUPPORTED);

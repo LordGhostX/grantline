@@ -6,6 +6,7 @@ import {EscalationManager} from "../src/EscalationManager.sol";
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
+import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
 import {TestFixture} from "./TestFixture.sol";
@@ -145,6 +146,10 @@ contract EscalationEdgesTest is TestFixture {
         bytes32 digest = fixture.hub.submitEscalation(plan, signature);
         fixture.hub.approveEscalation(digest);
 
+        GrantlineTypes.EvaluationResult memory evaluation = fixture.hub.evaluate(plan, signature);
+        assert(evaluation.decision == uint8(MandateEvaluator.Decision.DENY));
+        assert(evaluation.failureCode == uint8(MandateEvaluator.FailureCode.NONCE_RESERVED));
+
         fixture.hub.pauseVault(fixture.vault);
         fixtureVm.expectRevert();
         fixture.hub.executeEscalated(digest);
@@ -164,6 +169,10 @@ contract EscalationEdgesTest is TestFixture {
         );
         bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
         bytes32 digest = fixture.hub.submitEscalation(plan, signature);
+
+        GrantlineTypes.EvaluationResult memory evaluation = fixture.hub.evaluate(plan, signature);
+        assert(evaluation.decision == uint8(MandateEvaluator.Decision.DENY));
+        assert(evaluation.failureCode == uint8(MandateEvaluator.FailureCode.NONCE_RESERVED));
 
         fixtureVm.expectRevert();
         fixture.hub.execute(plan, signature);
@@ -200,6 +209,11 @@ contract EscalationEdgesTest is TestFixture {
         bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
         bytes32 digest = fixture.hub.submitEscalation(plan, signature);
         fixture.hub.approveEscalation(digest);
+
+        GrantlineTypes.EvaluationResult memory evaluation = fixture.hub.evaluate(plan, signature);
+        assert(evaluation.decision == uint8(MandateEvaluator.Decision.DENY));
+        assert(evaluation.failureCode == uint8(MandateEvaluator.FailureCode.NONCE_RESERVED));
+
         fixture.hub.executeEscalated(digest);
 
         assert(fixture.hub.escalationStatus(digest) == uint8(EscalationManager.Status.EXECUTED));

@@ -561,7 +561,7 @@ contract SwapEdgesTest is TestFixture {
         GrantlineTypes.EvaluationResult memory result =
             fixture.hub.evaluate(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
         assert(result.decision == uint8(MandateEvaluator.Decision.DENY));
-        assert(result.failureCode == uint8(MandateEvaluator.FailureCode.SWAP_DEADLINE_EXPIRED));
+        assert(result.failureCode == uint8(MandateEvaluator.FailureCode.EXPIRED));
         assert(result.failedActionIndex == 0);
     }
 
