@@ -45,6 +45,7 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         uint256 nonce,
         uint256 nativeAmount,
         uint256 nativeUsdValue,
+        uint256 nativeBalanceUsdValue,
         uint64 submittedAt
     );
     event EscalationApproved(
@@ -132,6 +133,7 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
             plan.nonce,
             evaluation.nativeAmount,
             evaluation.nativeUsdValue,
+            evaluation.nativeBalanceUsdValue,
             escalation.submittedAt
         );
 

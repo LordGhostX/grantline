@@ -104,7 +104,7 @@ contract EvaluatorTest is TestFixture {
 
     function test_nativeAggregationAndBoundaries() public {
         GrantlineTypes.MandateRules memory rules = _rules(2 ether, false, 1 ether, true);
-        Fixture memory fixture = _fixtureWithRules(rules, _preflight(0, false));
+        Fixture memory fixture = _fixtureWithRules(rules, _preflight(0, false, 0, false));
 
         ActionTypes.ActionPlan memory plan = _singleActionPlan(
             fixture.mandateId, fixture.agent, 9, 0, _transferAction(address(0), address(0xBEEF), 1 ether)
@@ -139,7 +139,7 @@ contract EvaluatorTest is TestFixture {
 
     function test_nativeAndPreflightEscalationModes() public {
         GrantlineTypes.MandateRules memory rules = _rules(2 ether, true, 0, true);
-        Fixture memory fixture = _fixtureWithRules(rules, _preflight(0, false));
+        Fixture memory fixture = _fixtureWithRules(rules, _preflight(0, false, 0, false));
         ActionTypes.ActionPlan memory plan = _singleActionPlan(
             fixture.mandateId, fixture.agent, 14, 0, _transferAction(address(0), address(0xBEEF), 2.1 ether)
         );
@@ -148,14 +148,14 @@ contract EvaluatorTest is TestFixture {
         assert(result.decision == uint8(MandateEvaluator.Decision.ESCALATE));
         assert(result.failureCode == uint8(MandateEvaluator.FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM));
 
-        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(6 ether, false), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(6 ether, false, 0, false), 0, 0);
         plan.nonce = 15;
         plan.actions[0] = _transferAction(address(0xCAFE), address(0xBEEF), 1);
         result = fixture.hub.evaluate(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
         assert(result.failureCode == uint8(MandateEvaluator.FailureCode.PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM));
         assert(result.decision == uint8(MandateEvaluator.Decision.DENY));
 
-        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(6 ether, true), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(6 ether, true, 0, false), 0, 0);
         plan.nonce = 16;
         result = fixture.hub.evaluate(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
         assert(result.decision == uint8(MandateEvaluator.Decision.ESCALATE));

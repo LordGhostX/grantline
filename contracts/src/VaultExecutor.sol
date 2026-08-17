@@ -56,7 +56,8 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
         uint256 nativeAmount,
         uint256 nativeUsdValue,
         uint256 actionCount,
-        uint256 nativeBalanceAfter
+        uint256 nativeBalanceAfter,
+        uint256 nativeBalanceUsdValue
     );
 
     address public grantline;
@@ -171,7 +172,8 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
             evaluation.nativeAmount,
             evaluation.nativeUsdValue,
             plan.actions.length,
-            evaluation.nativeBalanceAfter
+            evaluation.nativeBalanceAfter,
+            evaluation.nativeBalanceUsdValue
         );
     }
 

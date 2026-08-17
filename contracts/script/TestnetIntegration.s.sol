@@ -993,7 +993,10 @@ contract TestnetIntegration is ScriptBase {
         returns (GrantlineTypes.PreflightRules memory)
     {
         return GrantlineTypes.PreflightRules({
-            minNativeBalance: minNativeBalance, escalateNativeBalance: escalateNativeBalance
+            minNativeBalance: minNativeBalance,
+            escalateNativeBalance: escalateNativeBalance,
+            minNativeUsdBalance: 0,
+            escalateNativeUsdBalance: false
         });
     }
 

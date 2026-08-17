@@ -167,7 +167,7 @@ The first planned Guardian is an **RWA Guardian** for tokenised real-world asset
 
 Tests **what the resulting Vault state could look like before execution**.
 
-The current MVP checks the projected native Vault balance after the plan's aggregate native outflow against an inherited minimum reserve. A violation can produce `DENY` or `ESCALATE` when the Mandate configures owner approval for it. Token-only plans still preserve the native reserve.
+The current MVP checks the projected native Vault balance after the plan's aggregate native outflow against inherited minimum reserves in native units and, when configured, whole-dollar native/USD value. A violation can produce `DENY` or `ESCALATE` according to the corresponding Preflight rule. Token-only plans still preserve the native reserve, and the USD reserve values only the actual native balance rather than wrapped-native or arbitrary token holdings.
 
 Preflight does not predict whether an investment will succeed; it checks whether execution would leave the Vault outside the owner's configured boundary. Richer portfolio, liquidity, collateral, and organisation-specific stress scenarios remain future work.
 

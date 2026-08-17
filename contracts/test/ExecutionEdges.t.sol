@@ -267,7 +267,7 @@ contract ExecutionEdgesTest is TestFixture {
     }
 
     function test_reentrantRecipientCannotStartNestedEscalatedExecution() public {
-        Fixture memory fixture = _fixtureWithRules(_rules(1 ether, true, 0, true), _preflight(0, false));
+        Fixture memory fixture = _fixtureWithRules(_rules(1 ether, true, 0, true), _preflight(0, false, 0, false));
         GrantlineEscalatedReentrantReceiver receiver = new GrantlineEscalatedReentrantReceiver();
 
         ActionTypes.ActionPlan memory nestedPlan = _singleActionPlan(

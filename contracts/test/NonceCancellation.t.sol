@@ -83,7 +83,7 @@ contract NonceCancellationTest is TestFixture {
         fixtureVm.prank(fixture.agent);
         uint256 childId = fixture.hub
             .createChildMandate(
-                fixture.mandateId, childAgent, _rules(1 ether, false, 0, false), _preflight(0, false), 0, 0
+                fixture.mandateId, childAgent, _rules(1 ether, false, 0, false), _preflight(0, false, 0, false), 0, 0
             );
 
         fixtureVm.prank(address(0xD00D));
@@ -126,7 +126,7 @@ contract NonceCancellationTest is TestFixture {
         );
         fixture.hub.cancelNonce(fixture.mandateId, 105);
 
-        Fixture memory escalating = _fixtureWithRules(_rules(1 ether, true, 0, true), _preflight(0, false));
+        Fixture memory escalating = _fixtureWithRules(_rules(1 ether, true, 0, true), _preflight(0, false, 0, false));
         ActionTypes.ActionPlan memory escalationPlan = _singleActionPlan(
             escalating.mandateId, escalating.agent, 106, 0, _transferAction(address(0), address(0xCAFE), 2 ether)
         );
@@ -152,7 +152,7 @@ contract NonceCancellationTest is TestFixture {
     }
 
     function test_cancelledEscalatablePlanCannotCreateReservation() public {
-        Fixture memory fixture = _fixtureWithRules(_rules(1 ether, true, 0, true), _preflight(0, false));
+        Fixture memory fixture = _fixtureWithRules(_rules(1 ether, true, 0, true), _preflight(0, false, 0, false));
         ActionTypes.ActionPlan memory plan = _singleActionPlan(
             fixture.mandateId, fixture.agent, 107, 0, _transferAction(address(0), address(0xBEEF), 2 ether)
         );
@@ -190,15 +190,19 @@ contract NonceCancellationTest is TestFixture {
         fixture.hub.unpauseMandate(fixture.mandateId);
         _assertCancelledPlanCannotExecute(fixture, 109);
 
-        fixture.hub.updateMandate(fixture.mandateId, _rules(2 ether, false, 0, true), _preflight(0, false), 2_000, 0);
+        fixture.hub
+            .updateMandate(fixture.mandateId, _rules(2 ether, false, 0, true), _preflight(0, false, 0, false), 2_000, 0);
         fixtureVm.prank(fixture.agent);
         fixture.hub.cancelNonce(fixture.mandateId, 110);
-        fixture.hub.updateMandate(fixture.mandateId, _rules(2 ether, false, 0, true), _preflight(0, false), 0, 0);
+        fixture.hub
+            .updateMandate(fixture.mandateId, _rules(2 ether, false, 0, true), _preflight(0, false, 0, false), 0, 0);
         _assertCancelledPlanCannotExecute(fixture, 110);
 
-        fixture.hub.updateMandate(fixture.mandateId, _rules(2 ether, false, 0, true), _preflight(0, false), 0, 999);
+        fixture.hub
+            .updateMandate(fixture.mandateId, _rules(2 ether, false, 0, true), _preflight(0, false, 0, false), 0, 999);
         fixture.hub.cancelNonce(fixture.mandateId, 111);
-        fixture.hub.updateMandate(fixture.mandateId, _rules(2 ether, false, 0, true), _preflight(0, false), 0, 0);
+        fixture.hub
+            .updateMandate(fixture.mandateId, _rules(2 ether, false, 0, true), _preflight(0, false, 0, false), 0, 0);
         _assertCancelledPlanCannotExecute(fixture, 111);
 
         fixture.hub.revokeMandate(fixture.mandateId);
@@ -211,12 +215,14 @@ contract NonceCancellationTest is TestFixture {
     function test_nonceCancellationIsIsolatedByMandateAndAgent() public {
         Fixture memory fixture = _fixture();
         uint256 secondRootId = fixture.hub
-            .createMandate(fixture.vault, fixture.agent, _rules(1 ether, false, 0, false), _preflight(0, false), 0, 0);
+            .createMandate(
+                fixture.vault, fixture.agent, _rules(1 ether, false, 0, false), _preflight(0, false, 0, false), 0, 0
+            );
         address childAgent = fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY);
         fixtureVm.prank(fixture.agent);
         uint256 childId = fixture.hub
             .createChildMandate(
-                fixture.mandateId, childAgent, _rules(1 ether, false, 0, false), _preflight(0, false), 0, 0
+                fixture.mandateId, childAgent, _rules(1 ether, false, 0, false), _preflight(0, false, 0, false), 0, 0
             );
 
         fixtureVm.prank(fixture.agent);

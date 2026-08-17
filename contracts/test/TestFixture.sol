@@ -52,7 +52,7 @@ abstract contract TestFixture {
     }
 
     function _fixture() internal returns (Fixture memory) {
-        return _fixtureWithRules(_rules(2 ether, false, 0, true), _preflight(0, false));
+        return _fixtureWithRules(_rules(2 ether, false, 0, true), _preflight(0, false, 0, false));
     }
 
     function _fixtureWithRules(
@@ -88,7 +88,8 @@ abstract contract TestFixture {
         fixtureVm.deal(fixture.controller, 20 ether);
         fixture.vault = fixture.hub.createVault();
         fixture.hub.depositNative{value: 5 ether}(fixture.vault);
-        fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
+        fixture.mandateId =
+            fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false, 0, false), 0, 0);
     }
 
     function _fixtureWithNativeUsd(
@@ -103,7 +104,8 @@ abstract contract TestFixture {
         fixtureVm.deal(fixture.controller, 20 ether);
         fixture.vault = fixture.hub.createVault();
         fixture.hub.depositNative{value: 5 ether}(fixture.vault);
-        fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
+        fixture.mandateId =
+            fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false, 0, false), 0, 0);
     }
 
     function _fixtureWithNativeUsdAndSwapAdapter(
@@ -120,7 +122,8 @@ abstract contract TestFixture {
         fixtureVm.deal(fixture.controller, 20 ether);
         fixture.vault = fixture.hub.createVault();
         fixture.hub.depositNative{value: 5 ether}(fixture.vault);
-        fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
+        fixture.mandateId =
+            fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false, 0, false), 0, 0);
     }
 
     function _deployHub() internal returns (Grantline hub, GrantlineAdmin admin) {
@@ -273,13 +276,17 @@ abstract contract TestFixture {
         });
     }
 
-    function _preflight(uint256 minNativeBalance, bool escalateNativeBalance)
-        internal
-        pure
-        returns (GrantlineTypes.PreflightRules memory)
-    {
+    function _preflight(
+        uint256 minNativeBalance,
+        bool escalateNativeBalance,
+        uint256 minNativeUsdBalance,
+        bool escalateNativeUsdBalance
+    ) internal pure returns (GrantlineTypes.PreflightRules memory) {
         return GrantlineTypes.PreflightRules({
-            minNativeBalance: minNativeBalance, escalateNativeBalance: escalateNativeBalance
+            minNativeBalance: minNativeBalance,
+            escalateNativeBalance: escalateNativeBalance,
+            minNativeUsdBalance: minNativeUsdBalance,
+            escalateNativeUsdBalance: escalateNativeUsdBalance
         });
     }
 }

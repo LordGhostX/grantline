@@ -114,7 +114,8 @@ contract GrantlineTest {
         assert(result.failureCode == uint8(MandateEvaluator.FailureCode.VAULT_PAUSED));
 
         vm.expectRevert(abi.encodeWithSelector(Grantline.VaultIsPaused.selector, fixture.vault));
-        fixture.hub.createMandate(fixture.vault, fixture.agent, _rules(1 ether, false), _preflight(0, false), 0, 0);
+        fixture.hub
+            .createMandate(fixture.vault, fixture.agent, _rules(1 ether, false), _preflight(0, false, 0, false), 0, 0);
 
         fixture.hub.withdrawNative(fixture.vault, payable(otherController), 1 ether);
         fixture.hub.depositNative{value: 1 ether}(fixture.vault);
@@ -237,8 +238,8 @@ contract GrantlineTest {
         GrantlineTypes.MandateRules memory childRules = _rules(2 ether, false);
 
         vm.prank(fixture.agent);
-        uint256 childId =
-            fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false), 0, 0);
+        uint256 childId = fixture.hub
+            .createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false, 0, false), 0, 0);
         assert(fixture.hub.getMandate(childId).agent == childAgent);
 
         address newController = address(0xF00D);
@@ -246,10 +247,10 @@ contract GrantlineTest {
 
         vm.prank(fixture.controller);
         vm.expectRevert();
-        fixture.hub.updateMandate(fixture.mandateId, childRules, _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, childRules, _preflight(0, false, 0, false), 0, 0);
 
         vm.prank(newController);
-        fixture.hub.updateMandate(fixture.mandateId, childRules, _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, childRules, _preflight(0, false, 0, false), 0, 0);
         assert(fixture.hub.getMandate(fixture.mandateId).controller == newController);
     }
 
@@ -330,7 +331,8 @@ contract GrantlineTest {
         fixture.hub.depositNative{value: 5 ether}(fixture.vault);
 
         vm.prank(fixture.controller);
-        fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
+        fixture.mandateId =
+            fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false, 0, false), 0, 0);
     }
 
     function _deployHub() private returns (Grantline hub, GrantlineAdmin admin) {
@@ -405,12 +407,18 @@ contract GrantlineTest {
         });
     }
 
-    function _preflight(uint256 minNativeBalance, bool escalate)
-        private
-        pure
-        returns (GrantlineTypes.PreflightRules memory)
-    {
-        return GrantlineTypes.PreflightRules({minNativeBalance: minNativeBalance, escalateNativeBalance: escalate});
+    function _preflight(
+        uint256 minNativeBalance,
+        bool escalate,
+        uint256 minNativeUsdBalance,
+        bool escalateNativeUsdBalance
+    ) private pure returns (GrantlineTypes.PreflightRules memory) {
+        return GrantlineTypes.PreflightRules({
+            minNativeBalance: minNativeBalance,
+            escalateNativeBalance: escalate,
+            minNativeUsdBalance: minNativeUsdBalance,
+            escalateNativeUsdBalance: escalateNativeUsdBalance
+        });
     }
 
     function _transfer(address asset, address recipient, uint256 amount)

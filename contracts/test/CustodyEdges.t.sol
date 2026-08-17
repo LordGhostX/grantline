@@ -63,9 +63,9 @@ contract CustodyEdgesTest is TestFixture {
 
         GrantlineTypes.MandateRules memory rules = _rules(2 ether, false, 0, true);
         fixtureVm.prank(controllerA);
-        uint256 mandateA = fixture.hub.createMandate(vaultA, agentA, rules, _preflight(0, false), 0, 0);
+        uint256 mandateA = fixture.hub.createMandate(vaultA, agentA, rules, _preflight(0, false, 0, false), 0, 0);
         fixtureVm.prank(controllerB);
-        uint256 mandateB = fixture.hub.createMandate(vaultB, agentB, rules, _preflight(0, false), 0, 0);
+        uint256 mandateB = fixture.hub.createMandate(vaultB, agentB, rules, _preflight(0, false, 0, false), 0, 0);
 
         fixtureVm.prank(controllerA);
         fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.NotController.selector, vaultB, controllerA));
@@ -81,7 +81,7 @@ contract CustodyEdgesTest is TestFixture {
 
         fixtureVm.prank(controllerA);
         fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.NotController.selector, vaultB, controllerA));
-        fixture.hub.createMandate(vaultB, agentA, rules, _preflight(0, false), 0, 0);
+        fixture.hub.createMandate(vaultB, agentA, rules, _preflight(0, false, 0, false), 0, 0);
 
         assert(fixture.hub.getMandate(mandateA).vault == vaultA);
         assert(fixture.hub.getMandate(mandateB).vault == vaultB);

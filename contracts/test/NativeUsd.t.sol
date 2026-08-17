@@ -32,7 +32,7 @@ contract NativeUsdTest is TestFixture {
         assert(result.nativeUsdValue == 200e8);
 
         rules.maxNativeUsd = 199;
-        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, 0, false), 0, 0);
         result = _evaluateNative(fixture, 4 ether, 2);
         assert(result.decision == uint8(MandateEvaluator.Decision.DENY));
         assert(result.failureCode == uint8(MandateEvaluator.FailureCode.NATIVE_USD_VALUE_ABOVE_MAXIMUM));
@@ -130,6 +130,39 @@ contract NativeUsdTest is TestFixture {
         assert(result.nativeUsdValue == 200e8);
     }
 
+    function test_preflightNativeUsdValuesProjectedNativeBalanceSeparately() public {
+        GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, true);
+        (Fixture memory fixture,, NativeUsdTokenMock wrappedNative) = _nativeUsdFixture(FEED_DECIMALS, FIFTY_USD, rules);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, 200, false), 0, 0);
+
+        GrantlineTypes.EvaluationResult memory result = _evaluateNative(fixture, 1 ether, 1);
+        assert(result.decision == uint8(MandateEvaluator.Decision.ALLOW));
+        assert(result.nativeUsdValue == 0);
+        assert(result.nativeBalanceAfter == 4 ether);
+        assert(result.nativeBalanceUsdValue == 200e8);
+
+        result = _evaluateNative(fixture, 1.1 ether, 2);
+        assert(result.decision == uint8(MandateEvaluator.Decision.DENY));
+        assert(result.failureCode == uint8(MandateEvaluator.FailureCode.PREFLIGHT_NATIVE_USD_BALANCE_BELOW_MINIMUM));
+        assert(result.nativeBalanceUsdValue == 195e8);
+
+        result = _evaluateToken(fixture, address(wrappedNative), 1 ether, 3);
+        assert(result.decision == uint8(MandateEvaluator.Decision.ALLOW));
+        assert(result.nativeBalanceAfter == 5 ether);
+        assert(result.nativeBalanceUsdValue == 250e8);
+    }
+
+    function test_preflightNativeUsdMinimumRoundsDownConservatively() public {
+        GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, true);
+        (Fixture memory fixture,,) = _nativeUsdFixture(FEED_DECIMALS, FIFTY_USD, rules);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, 200, false), 0, 0);
+
+        GrantlineTypes.EvaluationResult memory result = _evaluateNative(fixture, 1 ether + 1, 4);
+        assert(result.decision == uint8(MandateEvaluator.Decision.DENY));
+        assert(result.failureCode == uint8(MandateEvaluator.FailureCode.PREFLIGHT_NATIVE_USD_BALANCE_BELOW_MINIMUM));
+        assert(result.nativeBalanceUsdValue < 200e8);
+    }
+
     function test_unrelatedTokensDoNotUseNativeFeed() public {
         GrantlineTypes.MandateRules memory rules = _nativeUsdRules(0, 1, false);
         (Fixture memory fixture, NativeUsdFeedMock feed,) = _nativeUsdFixture(FEED_DECIMALS, FIFTY_USD, rules);
@@ -156,14 +189,30 @@ contract NativeUsdTest is TestFixture {
         GrantlineTypes.MandateRules memory rules = _nativeUsdRules(0, 100, false);
 
         fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.NativeUsdValuationUnsupported.selector));
-        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, 0, false), 0, 0);
 
         fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.NativeUsdValuationUnsupported.selector));
-        fixture.hub.createMandate(fixture.vault, address(0xA11CE), rules, _preflight(0, false), 0, 0);
+        fixture.hub.createMandate(fixture.vault, address(0xA11CE), rules, _preflight(0, false, 0, false), 0, 0);
 
         fixtureVm.prank(fixture.agent);
         fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.NativeUsdValuationUnsupported.selector));
-        fixture.hub.createChildMandate(fixture.mandateId, address(0xC11D), rules, _preflight(0, false), 0, 0);
+        fixture.hub.createChildMandate(fixture.mandateId, address(0xC11D), rules, _preflight(0, false, 0, false), 0, 0);
+    }
+
+    function test_unsupportedDeploymentRejectsNativeUsdPreflightRules() public {
+        Fixture memory fixture = _fixture();
+        GrantlineTypes.MandateRules memory rules = _rules(2 ether, false, 0, true);
+        GrantlineTypes.PreflightRules memory preflight = _preflight(0, false, 100, false);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.NativeUsdValuationUnsupported.selector));
+        fixture.hub.updateMandate(fixture.mandateId, rules, preflight, 0, 0);
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.NativeUsdValuationUnsupported.selector));
+        fixture.hub.createMandate(fixture.vault, address(0xA11CE), rules, preflight, 0, 0);
+
+        fixtureVm.prank(fixture.agent);
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.NativeUsdValuationUnsupported.selector));
+        fixture.hub.createChildMandate(fixture.mandateId, address(0xC11D), rules, preflight, 0, 0);
     }
 
     function test_nativeUsdRangeAndScaledThresholdAreValidated() public {
@@ -174,14 +223,23 @@ contract NativeUsdTest is TestFixture {
         fixtureVm.expectRevert(
             abi.encodeWithSelector(MandateRegistry.InvalidNativeUsdRange.selector, uint256(201), uint256(200))
         );
-        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, 0, false), 0, 0);
 
         rules.minNativeUsd = 0;
         rules.maxNativeUsd = type(uint256).max / 1e8 + 1;
         fixtureVm.expectRevert(
             abi.encodeWithSelector(MandateRegistry.NativeUsdThresholdTooLarge.selector, rules.maxNativeUsd)
         );
-        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, 0, false), 0, 0);
+    }
+
+    function test_nativeUsdPreflightThresholdIsValidated() public {
+        GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, true);
+        (Fixture memory fixture,,) = _nativeUsdFixture(FEED_DECIMALS, FIFTY_USD, rules);
+        uint256 threshold = type(uint256).max / 1e8 + 1;
+
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.NativeUsdThresholdTooLarge.selector, threshold));
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, threshold, false), 0, 0);
     }
 
     function test_nativeUsdRulesIntersectAcrossLineage() public {
@@ -191,14 +249,14 @@ contract NativeUsdTest is TestFixture {
 
         GrantlineTypes.MandateRules memory childRules = _nativeUsdRules(150, 400, true);
         fixtureVm.prank(fixture.agent);
-        uint256 childId =
-            fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false), 0, 0);
+        uint256 childId = fixture.hub
+            .createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false, 0, false), 0, 0);
 
         GrantlineTypes.MandateRules memory grandchildRules = _nativeUsdRules(150, 400, true);
         grandchildRules.canDelegate = false;
         fixtureVm.prank(childAgent);
-        uint256 grandchildId =
-            fixture.hub.createChildMandate(childId, address(0xCAFE), grandchildRules, _preflight(0, false), 0, 0);
+        uint256 grandchildId = fixture.hub
+            .createChildMandate(childId, address(0xCAFE), grandchildRules, _preflight(0, false, 0, false), 0, 0);
 
         GrantlineTypes.MandateRules memory effective = fixture.hub.getEffectiveRules(grandchildId);
         assert(effective.minNativeUsd == 150);
@@ -206,7 +264,7 @@ contract NativeUsdTest is TestFixture {
         assert(effective.escalateNativeUsd);
 
         rootRules.maxNativeUsd = 300;
-        fixture.hub.updateMandate(fixture.mandateId, rootRules, _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, rootRules, _preflight(0, false, 0, false), 0, 0);
         effective = fixture.hub.getEffectiveRules(grandchildId);
         assert(effective.maxNativeUsd == 300);
     }
@@ -220,7 +278,36 @@ contract NativeUsdTest is TestFixture {
         fixtureVm.expectRevert(
             abi.encodeWithSelector(MandateRegistry.ChildRulesExceedParent.selector, fixture.mandateId)
         );
-        fixture.hub.createChildMandate(fixture.mandateId, address(0xC11D), childRules, _preflight(0, false), 0, 0);
+        fixture.hub
+            .createChildMandate(fixture.mandateId, address(0xC11D), childRules, _preflight(0, false, 0, false), 0, 0);
+    }
+
+    function test_preflightNativeUsdRulesIntersectAcrossLineage() public {
+        GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, true);
+        (Fixture memory fixture,,) = _nativeUsdFixture(FEED_DECIMALS, FIFTY_USD, rules);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, 200, false), 0, 0);
+        address childAgent = fixtureVm.addr(FIXTURE_OTHER_AGENT_KEY);
+
+        fixtureVm.prank(fixture.agent);
+        uint256 childId = fixture.hub
+        .createChildMandate(fixture.mandateId, childAgent, rules, _preflight(0, false, 300, false), 0, 0);
+        GrantlineTypes.PreflightRules memory effective = fixture.hub.getEffectivePreflightRules(childId);
+        assert(effective.minNativeUsdBalance == 300);
+        assert(!effective.escalateNativeUsdBalance);
+
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, 400, false), 0, 0);
+        effective = fixture.hub.getEffectivePreflightRules(childId);
+        assert(effective.minNativeUsdBalance == 400);
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(MandateRegistry.ChildPreflightRulesExceedParent.selector, fixture.mandateId)
+        );
+        fixture.hub.updateMandate(childId, rules, _preflight(0, false, 100, false), 0, 0);
+
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(MandateRegistry.ChildPreflightRulesExceedParent.selector, fixture.mandateId)
+        );
+        fixture.hub.updateMandate(childId, rules, _preflight(0, false, 400, true), 0, 0);
     }
 
     function test_invalidFeedAnswersAndRuntimeDecimalsFailClosed() public {
@@ -266,7 +353,7 @@ contract NativeUsdTest is TestFixture {
 
         rules.escalateNativeAmount = false;
         rules.escalateNativeUsd = true;
-        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false), 0, 0);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, 0, false), 0, 0);
         result = _evaluateNative(fixture, 2 ether, 2);
         assert(result.failureCode == uint8(MandateEvaluator.FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM));
     }
@@ -283,6 +370,39 @@ contract NativeUsdTest is TestFixture {
         feed.setAnswer(100e8);
         fixtureVm.expectRevert();
         fixture.hub.execute(plan, signature);
+    }
+
+    function test_normalExecutionReevaluatesPreflightNativeUsdAtCurrentPrice() public {
+        GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, true);
+        (Fixture memory fixture, NativeUsdFeedMock feed,) = _nativeUsdFixture(FEED_DECIMALS, FIFTY_USD, rules);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, 200, false), 0, 0);
+
+        ActionTypes.ActionPlan memory plan = _nativePlanFor(fixture, 1 ether, 6);
+        bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
+        GrantlineTypes.EvaluationResult memory result = fixture.hub.evaluate(plan, signature);
+        assert(result.decision == uint8(MandateEvaluator.Decision.ALLOW));
+
+        feed.setAnswer(40e8);
+        fixtureVm.expectRevert();
+        fixture.hub.execute(plan, signature);
+        assert(!MandateRegistry(fixture.hub.registry()).nonceUsed(fixture.mandateId, fixture.agent, 6));
+    }
+
+    function test_approvedEscalationReevaluatesPreflightNativeUsdAtCurrentPrice() public {
+        GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, true);
+        (Fixture memory fixture, NativeUsdFeedMock feed,) = _nativeUsdFixture(FEED_DECIMALS, 40e8, rules);
+        fixture.hub.updateMandate(fixture.mandateId, rules, _preflight(0, false, 200, true), 0, 0);
+
+        ActionTypes.ActionPlan memory plan = _nativePlanFor(fixture, 1 ether, 7);
+        bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
+        assert(fixture.hub.evaluate(plan, signature).decision == uint8(MandateEvaluator.Decision.ESCALATE));
+        bytes32 digest = fixture.hub.submitEscalation(plan, signature);
+        fixture.hub.approveEscalation(digest);
+
+        feed.setAnswer(FIFTY_USD);
+        uint256 startingBalance = RECIPIENT.balance;
+        fixture.hub.executeEscalated(digest);
+        assert(RECIPIENT.balance == startingBalance + 1 ether);
     }
 
     function test_approvedEscalationReevaluatesPriceAndFeedAvailability() public {

@@ -46,7 +46,8 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         SWAP_UNSUPPORTED,
         INVALID_SWAP_PARAMETERS,
         INVALID_SWAP_ROUTE,
-        SWAP_DEADLINE_EXPIRED
+        SWAP_DEADLINE_EXPIRED,
+        PREFLIGHT_NATIVE_USD_BALANCE_BELOW_MINIMUM
     }
 
     bytes32 public constant EXECUTOR_MODULE = keccak256("EXECUTOR");
@@ -113,56 +114,56 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
     {
         _onlyTrustedCaller();
         if (digest != IGrantlineContext(grantline).actionDigest(plan)) {
-            return _failure(FailureCode.INVALID_SIGNATURE, type(uint256).max, 0, 0, 0);
+            return _failure(FailureCode.INVALID_SIGNATURE, type(uint256).max, 0, 0, 0, 0);
         }
 
         IRegistry registryContract = IRegistry(registry);
         if (plan.mandateId == 0 || plan.mandateId > registryContract.mandateCount()) {
-            return _failure(FailureCode.MANDATE_NOT_FOUND, type(uint256).max, 0, 0, 0);
+            return _failure(FailureCode.MANDATE_NOT_FOUND, type(uint256).max, 0, 0, 0, 0);
         }
 
         GrantlineTypes.Mandate memory mandate = registryContract.getMandate(plan.mandateId);
         if (mandate.status == GrantlineTypes.MandateStatus.PAUSED) {
-            return _failure(FailureCode.MANDATE_PAUSED, type(uint256).max, 0, 0, 0);
+            return _failure(FailureCode.MANDATE_PAUSED, type(uint256).max, 0, 0, 0, 0);
         }
         if (mandate.status != GrantlineTypes.MandateStatus.ACTIVE) {
-            return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, 0);
+            return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, 0, 0);
         }
         if (!registryContract.isLineageActive(plan.mandateId)) {
             if (registryContract.isLineagePaused(plan.mandateId)) {
-                return _failure(FailureCode.MANDATE_PAUSED, type(uint256).max, 0, 0, 0);
+                return _failure(FailureCode.MANDATE_PAUSED, type(uint256).max, 0, 0, 0, 0);
             }
             if (registryContract.isLineageRevoked(plan.mandateId)) {
-                return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, 0);
+                return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, 0, 0);
             }
             (uint64 validAfter, uint64 validUntil) = registryContract.getEffectiveValidityWindow(plan.mandateId);
             if (validAfter != 0 && block.timestamp < validAfter) {
-                return _failure(FailureCode.MANDATE_NOT_YET_VALID, type(uint256).max, 0, 0, 0);
+                return _failure(FailureCode.MANDATE_NOT_YET_VALID, type(uint256).max, 0, 0, 0, 0);
             }
             if (validUntil != 0 && block.timestamp > validUntil) {
-                return _failure(FailureCode.MANDATE_EXPIRED, type(uint256).max, 0, 0, 0);
+                return _failure(FailureCode.MANDATE_EXPIRED, type(uint256).max, 0, 0, 0, 0);
             }
-            return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, 0);
+            return _failure(FailureCode.MANDATE_INACTIVE, type(uint256).max, 0, 0, 0, 0);
         }
         if (IVault(mandate.vault).paused()) {
-            return _failure(FailureCode.VAULT_PAUSED, type(uint256).max, 0, 0, 0);
+            return _failure(FailureCode.VAULT_PAUSED, type(uint256).max, 0, 0, 0, 0);
         }
         GrantlineTypes.MandateRules memory effectiveRules = registryContract.getEffectiveRules(plan.mandateId);
 
         if (plan.agent != mandate.agent) {
-            return _failure(FailureCode.AGENT_MISMATCH, type(uint256).max, 0, 0, 0);
+            return _failure(FailureCode.AGENT_MISMATCH, type(uint256).max, 0, 0, 0, 0);
         }
 
         (address signer, ECDSA.RecoverError recoverError, bytes32 recoverErrorArgument) =
             ECDSA.tryRecoverCalldata(digest, signature);
         if (recoverError != ECDSA.RecoverError.NoError || signer != plan.agent || recoverErrorArgument != bytes32(0)) {
-            return _failure(FailureCode.INVALID_SIGNATURE, type(uint256).max, 0, 0, 0);
+            return _failure(FailureCode.INVALID_SIGNATURE, type(uint256).max, 0, 0, 0, 0);
         }
         if (plan.deadline != 0 && block.timestamp > plan.deadline) {
-            return _failure(FailureCode.EXPIRED, type(uint256).max, 0, 0, 0);
+            return _failure(FailureCode.EXPIRED, type(uint256).max, 0, 0, 0, 0);
         }
         if (plan.actions.length == 0) {
-            return _failure(FailureCode.EMPTY_PLAN, type(uint256).max, 0, 0, 0);
+            return _failure(FailureCode.EMPTY_PLAN, type(uint256).max, 0, 0, 0, 0);
         }
 
         return _evaluateValidPlan(plan, effectiveRules, mandate.vault, registryContract);
@@ -185,7 +186,7 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         (bool valid, Totals memory totals, FailureCode validationFailure, uint256 failedActionIndex) =
             _validatePlan(plan, vault);
         if (!valid) {
-            return _failure(validationFailure, failedActionIndex, totals.nativeAmount, 0, 0);
+            return _failure(validationFailure, failedActionIndex, totals.nativeAmount, 0, 0, 0);
         }
 
         bool nativeUsdRuleEnabled = effectiveRules.minNativeUsd != 0 || effectiveRules.maxNativeUsd != 0;
@@ -194,7 +195,9 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
                 _quoteNativeUsd(totals.nativeEquivalentAmount);
             if (!available) {
                 return
-                    _failure(FailureCode.NATIVE_USD_VALUATION_UNAVAILABLE, type(uint256).max, totals.nativeAmount, 0, 0);
+                    _failure(
+                        FailureCode.NATIVE_USD_VALUATION_UNAVAILABLE, type(uint256).max, totals.nativeAmount, 0, 0, 0
+                    );
             }
             totals.nativeUsdValue = nativeUsdValue;
             totals.nativeUsdValueCeiling = nativeUsdValueCeiling;
@@ -205,6 +208,20 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         uint256 currentNativeBalance = vault.balance;
         uint256 nativeBalanceAfter =
             currentNativeBalance >= totals.nativeAmount ? currentNativeBalance - totals.nativeAmount : 0;
+        if (preflightRules.minNativeUsdBalance != 0) {
+            (bool available, uint256 nativeBalanceUsdValue,) = _quoteNativeUsd(nativeBalanceAfter);
+            if (!available) {
+                return _failure(
+                    FailureCode.NATIVE_USD_VALUATION_UNAVAILABLE,
+                    type(uint256).max,
+                    totals.nativeAmount,
+                    totals.nativeUsdValue,
+                    nativeBalanceAfter,
+                    0
+                );
+            }
+            totals.nativeBalanceUsdValue = nativeBalanceUsdValue;
+        }
         return _applyRules(effectiveRules, preflightRules, totals, nativeBalanceAfter);
     }
 
@@ -213,6 +230,7 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         uint256 nativeEquivalentAmount;
         uint256 nativeUsdValue;
         uint256 nativeUsdValueCeiling;
+        uint256 nativeBalanceUsdValue;
     }
 
     struct RuleViolations {
@@ -221,6 +239,7 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         bool nativeUsdMinimum;
         bool nativeUsdMaximum;
         bool preflightNativeBalance;
+        bool preflightNativeUsdBalance;
     }
 
     function _validatePlan(ActionTypes.ActionPlan calldata plan, address vault)
@@ -317,6 +336,7 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         RuleViolations memory violations = _findRuleViolations(rules, preflightRules, totals, nativeBalanceAfter);
         bool nativeViolation = violations.nativeMinimum || violations.nativeMaximum;
         bool nativeUsdViolation = violations.nativeUsdMinimum || violations.nativeUsdMaximum;
+        bool preflightViolation = violations.preflightNativeBalance || violations.preflightNativeUsdBalance;
         FailureCode nativeFailureCode = violations.nativeMinimum
             ? FailureCode.NATIVE_AMOUNT_BELOW_MINIMUM
             : FailureCode.NATIVE_AMOUNT_ABOVE_MAXIMUM;
@@ -334,12 +354,21 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
             return
                 _decision(Decision.DENY, FailureCode.PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM, totals, nativeBalanceAfter);
         }
-        if (nativeViolation || nativeUsdViolation || violations.preflightNativeBalance) {
+        if (violations.preflightNativeUsdBalance && !preflightRules.escalateNativeUsdBalance) {
+            return _decision(
+                Decision.DENY, FailureCode.PREFLIGHT_NATIVE_USD_BALANCE_BELOW_MINIMUM, totals, nativeBalanceAfter
+            );
+        }
+        if (nativeViolation || nativeUsdViolation || preflightViolation) {
             return _decision(
                 Decision.ESCALATE,
                 nativeViolation
                     ? nativeFailureCode
-                    : nativeUsdViolation ? nativeUsdFailureCode : FailureCode.PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM,
+                    : nativeUsdViolation
+                        ? nativeUsdFailureCode
+                        : violations.preflightNativeBalance
+                            ? FailureCode.PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM
+                            : FailureCode.PREFLIGHT_NATIVE_USD_BALANCE_BELOW_MINIMUM,
                 totals,
                 nativeBalanceAfter
             );
@@ -364,6 +393,11 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         }
         violations.preflightNativeBalance =
             preflightRules.minNativeBalance != 0 && nativeBalanceAfter < preflightRules.minNativeBalance;
+        if (preflightRules.minNativeUsdBalance != 0) {
+            uint256 scale = 10 ** uint256(chainlinkNativeUsdFeedDecimals);
+            violations.preflightNativeUsdBalance =
+                totals.nativeBalanceUsdValue < preflightRules.minNativeUsdBalance * scale;
+        }
     }
 
     function _failure(
@@ -371,7 +405,8 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         uint256 actionIndex,
         uint256 nativeAmount,
         uint256 nativeUsdValue,
-        uint256 nativeBalanceAfter
+        uint256 nativeBalanceAfter,
+        uint256 nativeBalanceUsdValue
     ) private pure returns (GrantlineTypes.EvaluationResult memory) {
         return GrantlineTypes.EvaluationResult({
             decision: uint8(Decision.DENY),
@@ -379,7 +414,8 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
             failedActionIndex: actionIndex,
             nativeAmount: nativeAmount,
             nativeUsdValue: nativeUsdValue,
-            nativeBalanceAfter: nativeBalanceAfter
+            nativeBalanceAfter: nativeBalanceAfter,
+            nativeBalanceUsdValue: nativeBalanceUsdValue
         });
     }
 
@@ -394,7 +430,8 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
             failedActionIndex: type(uint256).max,
             nativeAmount: totals.nativeAmount,
             nativeUsdValue: totals.nativeUsdValue,
-            nativeBalanceAfter: nativeBalanceAfter
+            nativeBalanceAfter: nativeBalanceAfter,
+            nativeBalanceUsdValue: totals.nativeBalanceUsdValue
         });
     }
 

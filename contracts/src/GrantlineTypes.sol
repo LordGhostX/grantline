@@ -23,6 +23,8 @@ library GrantlineTypes {
     struct PreflightRules {
         uint256 minNativeBalance;
         bool escalateNativeBalance;
+        uint256 minNativeUsdBalance;
+        bool escalateNativeUsdBalance;
     }
 
     struct Mandate {
@@ -63,6 +65,7 @@ library GrantlineTypes {
         uint256 nativeAmount;
         uint256 nativeUsdValue;
         uint256 nativeBalanceAfter;
+        uint256 nativeBalanceUsdValue;
     }
 
     struct Escalation {

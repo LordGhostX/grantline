@@ -554,8 +554,13 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
                 if (current.preflightRules.minNativeBalance > effective.minNativeBalance) {
                     effective.minNativeBalance = current.preflightRules.minNativeBalance;
                 }
+                if (current.preflightRules.minNativeUsdBalance > effective.minNativeUsdBalance) {
+                    effective.minNativeUsdBalance = current.preflightRules.minNativeUsdBalance;
+                }
                 effective.escalateNativeBalance =
                     effective.escalateNativeBalance && current.preflightRules.escalateNativeBalance;
+                effective.escalateNativeUsdBalance =
+                    effective.escalateNativeUsdBalance && current.preflightRules.escalateNativeUsdBalance;
             }
             currentMandateId = current.parentMandateId;
         }
@@ -642,7 +647,11 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         if (
             (parentRules.minNativeBalance != 0
                     && (childRules.minNativeBalance == 0 || childRules.minNativeBalance < parentRules.minNativeBalance))
+                || (parentRules.minNativeUsdBalance != 0
+                    && (childRules.minNativeUsdBalance == 0
+                        || childRules.minNativeUsdBalance < parentRules.minNativeUsdBalance))
                 || (childRules.escalateNativeBalance && !parentRules.escalateNativeBalance)
+                || (childRules.escalateNativeUsdBalance && !parentRules.escalateNativeUsdBalance)
         ) revert ChildPreflightRulesExceedParent(parentMandateId);
     }
 
@@ -668,22 +677,26 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         if (rules.minNativeUsd != 0 && rules.maxNativeUsd != 0 && rules.minNativeUsd > rules.maxNativeUsd) {
             revert InvalidNativeUsdRange(rules.minNativeUsd, rules.maxNativeUsd);
         }
-        if (rules.minNativeUsd == 0 && rules.maxNativeUsd == 0) return;
+        _validateNativeUsdThreshold(rules.minNativeUsd);
+        _validateNativeUsdThreshold(rules.maxNativeUsd);
+    }
+
+    function _validatePreflightRules(GrantlineTypes.PreflightRules memory rules) private view {
+        _validateNativeUsdThreshold(rules.minNativeUsdBalance);
+    }
+
+    function _validateNativeUsdThreshold(uint256 threshold) private view {
+        if (threshold == 0) return;
 
         address evaluatorAddress = IGrantlineContext(grantline).moduleAddress(EVALUATOR_MODULE);
         if (evaluatorAddress == address(0) || !IEvaluator(evaluatorAddress).nativeUsdValuationEnabled()) {
             revert NativeUsdValuationUnsupported();
         }
         uint256 scale = 10 ** uint256(IEvaluator(evaluatorAddress).chainlinkNativeUsdFeedDecimals());
-        if (rules.minNativeUsd > type(uint256).max / scale) {
-            revert NativeUsdThresholdTooLarge(rules.minNativeUsd);
-        }
-        if (rules.maxNativeUsd > type(uint256).max / scale) {
-            revert NativeUsdThresholdTooLarge(rules.maxNativeUsd);
+        if (threshold > type(uint256).max / scale) {
+            revert NativeUsdThresholdTooLarge(threshold);
         }
     }
-
-    function _validatePreflightRules(GrantlineTypes.PreflightRules memory) private pure {}
 
     function _validateValidityWindow(uint64 validAfter, uint64 validUntil) private pure {
         if (validAfter != 0 && validUntil != 0 && validUntil < validAfter) {
