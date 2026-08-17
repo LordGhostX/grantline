@@ -359,7 +359,9 @@ contract GrantlineTest {
         address evaluator = address(
             new ERC1967Proxy(
                 address(evaluatorImplementation),
-                abi.encodeCall(MandateEvaluator.initialize, (address(hub), registry, address(admin)))
+                abi.encodeCall(
+                    MandateEvaluator.initialize, (address(hub), registry, address(0), 0, address(0), address(admin))
+                )
             )
         );
         address manager = address(
@@ -393,7 +395,13 @@ contract GrantlineTest {
 
     function _rules(uint256 maxNativeAmount, bool escalate) private pure returns (GrantlineTypes.MandateRules memory) {
         return GrantlineTypes.MandateRules({
-            canDelegate: true, minNativeAmount: 0, maxNativeAmount: maxNativeAmount, escalateNativeAmount: escalate
+            canDelegate: true,
+            minNativeAmount: 0,
+            maxNativeAmount: maxNativeAmount,
+            escalateNativeAmount: escalate,
+            minNativeUsd: 0,
+            maxNativeUsd: 0,
+            escalateNativeUsd: false
         });
     }
 

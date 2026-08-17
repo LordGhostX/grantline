@@ -91,14 +91,63 @@ abstract contract TestFixture {
         fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
     }
 
+    function _fixtureWithNativeUsd(
+        address feed,
+        uint8 feedDecimals,
+        address wrappedNative,
+        GrantlineTypes.MandateRules memory rules
+    ) internal returns (Fixture memory fixture) {
+        fixture.controller = address(this);
+        fixture.agent = fixtureVm.addr(FIXTURE_AGENT_KEY);
+        (fixture.hub, fixture.admin) = _deployHubWithNativeUsd(feed, feedDecimals, wrappedNative);
+        fixtureVm.deal(fixture.controller, 20 ether);
+        fixture.vault = fixture.hub.createVault();
+        fixture.hub.depositNative{value: 5 ether}(fixture.vault);
+        fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
+    }
+
+    function _fixtureWithNativeUsdAndSwapAdapter(
+        address feed,
+        uint8 feedDecimals,
+        address router,
+        address factoryAddress,
+        address wrappedNative,
+        GrantlineTypes.MandateRules memory rules
+    ) internal returns (Fixture memory fixture) {
+        fixture.controller = address(this);
+        fixture.agent = fixtureVm.addr(FIXTURE_AGENT_KEY);
+        (fixture.hub, fixture.admin) = _deployHubConfigured(feed, feedDecimals, wrappedNative, router, factoryAddress);
+        fixtureVm.deal(fixture.controller, 20 ether);
+        fixture.vault = fixture.hub.createVault();
+        fixture.hub.depositNative{value: 5 ether}(fixture.vault);
+        fixture.mandateId = fixture.hub.createMandate(fixture.vault, fixture.agent, rules, _preflight(0, false), 0, 0);
+    }
+
     function _deployHub() internal returns (Grantline hub, GrantlineAdmin admin) {
-        return _deployHubWithSwapAdapter(address(0), address(0), address(0));
+        return _deployHubConfigured(address(0), 0, address(0), address(0), address(0));
     }
 
     function _deployHubWithSwapAdapter(address router, address factoryAddress, address wrappedNative)
         internal
         returns (Grantline hub, GrantlineAdmin admin)
     {
+        return _deployHubConfigured(address(0), 0, wrappedNative, router, factoryAddress);
+    }
+
+    function _deployHubWithNativeUsd(address feed, uint8 feedDecimals, address wrappedNative)
+        internal
+        returns (Grantline hub, GrantlineAdmin admin)
+    {
+        return _deployHubConfigured(feed, feedDecimals, wrappedNative, address(0), address(0));
+    }
+
+    function _deployHubConfigured(
+        address feed,
+        uint8 feedDecimals,
+        address wrappedNative,
+        address router,
+        address factoryAddress
+    ) internal returns (Grantline hub, GrantlineAdmin admin) {
         Grantline grantlineImplementation = new Grantline();
         MandateRegistry registryImplementation = new MandateRegistry();
         MandateEvaluator evaluatorImplementation = new MandateEvaluator();
@@ -125,7 +174,10 @@ abstract contract TestFixture {
         address evaluator = address(
             new ERC1967Proxy(
                 address(evaluatorImplementation),
-                abi.encodeCall(MandateEvaluator.initialize, (address(hub), registry, address(admin)))
+                abi.encodeCall(
+                    MandateEvaluator.initialize,
+                    (address(hub), registry, feed, feedDecimals, wrappedNative, address(admin))
+                )
             )
         );
         address manager = address(
@@ -151,7 +203,7 @@ abstract contract TestFixture {
         );
 
         ActionTypes.SwapAdapterConfig[] memory swapAdapters = new ActionTypes.SwapAdapterConfig[](0);
-        if (router != address(0) || factoryAddress != address(0) || wrappedNative != address(0)) {
+        if (router != address(0) || factoryAddress != address(0)) {
             address swapAdapter = address(new UniswapV3Adapter(address(hub), router, factoryAddress, wrappedNative));
             swapAdapters = new ActionTypes.SwapAdapterConfig[](1);
             swapAdapters[0] = ActionTypes.SwapAdapterConfig({
@@ -214,7 +266,10 @@ abstract contract TestFixture {
             canDelegate: canDelegate,
             minNativeAmount: minNativeAmount,
             maxNativeAmount: maxNativeAmount,
-            escalateNativeAmount: escalateNativeAmount
+            escalateNativeAmount: escalateNativeAmount,
+            minNativeUsd: 0,
+            maxNativeUsd: 0,
+            escalateNativeUsd: false
         });
     }
 

@@ -11,6 +11,22 @@
   "admin": {
     "address": "0x3fa90fd613d192b53cb25399ebe484136b016880"
   },
+  "nativeAsset": {
+    "wrappedNative": "0x0000000000000000000000000000000000000000",
+    "chainlinkUsdFeed": {
+      "enabled": false,
+      "feed": "0x0000000000000000000000000000000000000000",
+      "decimals": 0
+    }
+  },
+  "swapAdapters": {
+    "uniswapV3": {
+      "enabled": false,
+      "swapAdapter": "0x0000000000000000000000000000000000000000",
+      "router": "0x0000000000000000000000000000000000000000",
+      "factory": "0x0000000000000000000000000000000000000000"
+    }
+  },
   "modules": {
     "registry": {
       "proxy": "0x330f162fd6b8787df62fc63839d47e6dd7504d0a",
@@ -53,44 +69,5 @@
     "codeHash": "0x0a1838b2e93e9636590921a57f5437f056a0bfb7f44b8d05c661671b2a255a50",
     "upgradeAuthority": "0x3fa90fd613d192b53cb25399ebe484136b016880",
     "version": 1
-  },
-  "vaultCount": 3,
-  "vaults": [
-    {
-      "address": "0xa8e500299818acebb2d40ba1ceff12d749c531b6",
-      "codeHash": "0x597787365047f794692c5a45feb61a306e1af9530eeff51124a094c57ef0cbf6",
-      "controller": "0x64fe1ad6c591615dd3f0fc640c92ef75365a023d",
-      "owner": "0x105467418b9745634ddbc02c5b2e3e0b3b726c0e",
-      "authority": "0xfc7ad9f4d4b89d9fff8970ee69b1786f6f96c67e",
-      "upgradeAuthority": "0x3fa90fd613d192b53cb25399ebe484136b016880",
-      "paused": false,
-      "implementation": "0x99ca0291128271808b4c1dc747c91b913202a710",
-      "implementationCodeHash": "0x0a1838b2e93e9636590921a57f5437f056a0bfb7f44b8d05c661671b2a255a50",
-      "version": 1
-    },
-    {
-      "address": "0xb16e38e37edf05b8e78daffac972e59c15793c00",
-      "codeHash": "0x597787365047f794692c5a45feb61a306e1af9530eeff51124a094c57ef0cbf6",
-      "controller": "0x64dc139e4f0344968059e2ede0acbe0e2a5a9b37",
-      "owner": "0x105467418b9745634ddbc02c5b2e3e0b3b726c0e",
-      "authority": "0xfc7ad9f4d4b89d9fff8970ee69b1786f6f96c67e",
-      "upgradeAuthority": "0x3fa90fd613d192b53cb25399ebe484136b016880",
-      "paused": false,
-      "implementation": "0x3930248e437f8a1c58200ab6c56be4f7bde3fb86",
-      "implementationCodeHash": "0xa6547d6e3f2342dedf8148183778c075c06f1855da877ed70bc086dab3017690",
-      "version": 1
-    },
-    {
-      "address": "0xe7eeed952a5df0faa264659398e6ad25b35607e7",
-      "codeHash": "0x597787365047f794692c5a45feb61a306e1af9530eeff51124a094c57ef0cbf6",
-      "controller": "0x648ac3f9297d59089b02a6091da6dd76902a785b",
-      "owner": "0x105467418b9745634ddbc02c5b2e3e0b3b726c0e",
-      "authority": "0xfc7ad9f4d4b89d9fff8970ee69b1786f6f96c67e",
-      "upgradeAuthority": "0x3fa90fd613d192b53cb25399ebe484136b016880",
-      "paused": false,
-      "implementation": "0x99ca0291128271808b4c1dc747c91b913202a710",
-      "implementationCodeHash": "0x0a1838b2e93e9636590921a57f5437f056a0bfb7f44b8d05c661671b2a255a50",
-      "version": 1
-    }
-  ]
+  }
 }

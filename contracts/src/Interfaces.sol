@@ -8,6 +8,15 @@ interface IComponent {
     function componentType() external view returns (bytes32);
 }
 
+interface IChainlinkAggregatorV3 {
+    function decimals() external view returns (uint8);
+
+    function latestRoundData()
+        external
+        view
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
+}
+
 interface IOwnable2Step {
     function owner() external view returns (address);
 
@@ -152,6 +161,14 @@ interface IRegistry is IModule {
 
 interface IEvaluator is IModule {
     function registry() external view returns (address);
+
+    function chainlinkNativeUsdFeed() external view returns (address);
+
+    function chainlinkNativeUsdFeedDecimals() external view returns (uint8);
+
+    function wrappedNative() external view returns (address);
+
+    function nativeUsdValuationEnabled() external view returns (bool);
 
     function evaluate(ActionTypes.ActionPlan calldata plan, bytes calldata signature, bytes32 digest)
         external

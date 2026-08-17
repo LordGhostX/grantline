@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ActionTypes} from "../src/ActionTypes.sol";
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
@@ -16,6 +17,8 @@ import {DeploymentManifest} from "./DeploymentManifest.s.sol";
 import {ScriptBase} from "./ScriptBase.s.sol";
 
 contract DeployGrantline is ScriptBase {
+    error InvalidNativeUsdManifest();
+
     event GrantlineDeployed(
         address indexed grantline,
         address indexed protocolAdmin,
@@ -32,6 +35,15 @@ contract DeployGrantline is ScriptBase {
         string memory bootstrapManifest = _manifest();
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address protocolAdmin = vm.addr(deployerKey);
+        address wrappedNative = vm.parseJsonAddress(bootstrapManifest, ".nativeAsset.wrappedNative");
+        bool nativeUsdEnabled = vm.parseJsonBool(bootstrapManifest, ".nativeAsset.chainlinkUsdFeed.enabled");
+        address chainlinkNativeUsdFeed = vm.parseJsonAddress(bootstrapManifest, ".nativeAsset.chainlinkUsdFeed.feed");
+        uint8 chainlinkNativeUsdFeedDecimals =
+            SafeCast.toUint8(vm.parseJsonUint(bootstrapManifest, ".nativeAsset.chainlinkUsdFeed.decimals"));
+        if (
+            nativeUsdEnabled != (chainlinkNativeUsdFeed != address(0))
+                || (!nativeUsdEnabled && chainlinkNativeUsdFeedDecimals != 0)
+        ) revert InvalidNativeUsdManifest();
 
         vm.startBroadcast(deployerKey);
         Grantline grantlineImplementation = new Grantline();
@@ -53,7 +65,17 @@ contract DeployGrantline is ScriptBase {
         );
         ERC1967Proxy evaluatorProxy = new ERC1967Proxy(
             address(evaluatorImplementation),
-            abi.encodeCall(MandateEvaluator.initialize, (address(grantline), address(registryProxy), address(admin)))
+            abi.encodeCall(
+                MandateEvaluator.initialize,
+                (
+                    address(grantline),
+                    address(registryProxy),
+                    chainlinkNativeUsdFeed,
+                    chainlinkNativeUsdFeedDecimals,
+                    wrappedNative,
+                    address(admin)
+                )
+            )
         );
         ERC1967Proxy managerProxy = new ERC1967Proxy(
             address(managerImplementation),
@@ -95,11 +117,9 @@ contract DeployGrantline is ScriptBase {
         address uniswapV3SwapAdapter;
         address uniswapV3Router;
         address uniswapV3Factory;
-        address wrappedNative;
         if (vm.parseJsonBool(bootstrapManifest, ".swapAdapters.uniswapV3.enabled")) {
             uniswapV3Router = vm.parseJsonAddress(bootstrapManifest, ".swapAdapters.uniswapV3.router");
             uniswapV3Factory = vm.parseJsonAddress(bootstrapManifest, ".swapAdapters.uniswapV3.factory");
-            wrappedNative = vm.parseJsonAddress(bootstrapManifest, ".swapAdapters.uniswapV3.wrappedNative");
             uniswapV3SwapAdapter =
                 address(new UniswapV3Adapter(address(grantline), uniswapV3Router, uniswapV3Factory, wrappedNative));
             swapAdapters = new ActionTypes.SwapAdapterConfig[](1);
@@ -130,6 +150,8 @@ contract DeployGrantline is ScriptBase {
         snapshot.uniswapV3Router = uniswapV3Router;
         snapshot.uniswapV3Factory = uniswapV3Factory;
         snapshot.wrappedNative = wrappedNative;
+        snapshot.chainlinkNativeUsdFeed = chainlinkNativeUsdFeed;
+        snapshot.chainlinkNativeUsdFeedDecimals = chainlinkNativeUsdFeedDecimals;
         snapshot.modules[0] = DeploymentManifest.ModuleSnapshot(address(registryProxy), address(registryImplementation));
         snapshot.modules[1] =
             DeploymentManifest.ModuleSnapshot(address(evaluatorProxy), address(evaluatorImplementation));

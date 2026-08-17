@@ -6,6 +6,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {ActionTypes} from "../src/ActionTypes.sol";
 import {Grantline} from "../src/Grantline.sol";
 import {GrantlineAdmin} from "../src/GrantlineAdmin.sol";
@@ -15,10 +16,11 @@ import {MandateRegistry} from "../src/MandateRegistry.sol";
 import {Vault} from "../src/Vault.sol";
 import {VaultExecutor} from "../src/VaultExecutor.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
-import {IUUPS} from "../src/Interfaces.sol";
+import {IEvaluator, IUUPS} from "../src/Interfaces.sol";
 import {DeploymentManifest} from "../script/DeploymentManifest.s.sol";
 import {TestnetIntegration} from "../script/TestnetIntegration.s.sol";
 import {VerifyGrantlineDeployment} from "../script/VerifyGrantlineDeployment.s.sol";
+import {NativeUsdFeedMock, NativeUsdTokenMock} from "./NativeUsdMocks.sol";
 
 interface GrantlineDeploymentVm {
     function prank(address sender) external;
@@ -39,6 +41,12 @@ contract GrantlineDeploymentEscalationRegistryV2 is EscalationManager {
 contract GrantlineDeploymentVaultFactoryProbe is VaultFactory {
     function setVaultImplementationForTest(address implementation) external {
         vaultImplementation = implementation;
+    }
+}
+
+contract GrantlineDeploymentNativeUsdEvaluatorProbe is MandateEvaluator {
+    function clearWrappedNativeForTest() external {
+        wrappedNative = address(0);
     }
 }
 
@@ -92,46 +100,69 @@ contract GrantlineDeploymentMissingExecuteSwapVaultImplementation is GrantlineDe
 }
 
 contract GrantlineDeploymentIntegrationManifestProbe is TestnetIntegration {
-    function build(
-        address hub,
-        address hubImplementation,
-        address admin,
+    State private _manifestState;
+
+    function loadNativeUsdManifestForTest(string calldata manifest)
+        external
+        returns (bool enabled, address feed, uint8 decimals)
+    {
+        return _loadNativeUsdManifest(manifest);
+    }
+
+    function setGrantline(address hub, address hubImplementation, address admin) external {
+        _manifestState.network = "test";
+        _manifestState.hub = hub;
+        _manifestState.hubImplementation = hubImplementation;
+        _manifestState.admin = admin;
+        _manifestState.owner = msg.sender;
+    }
+
+    function setAuthorityModules(
         address registry,
         address registryImplementation,
         address evaluator,
         address evaluatorImplementation,
         address escalationManager,
-        address escalationManagerImplementation,
+        address escalationManagerImplementation
+    ) external {
+        _manifestState.registry = registry;
+        _manifestState.registryImplementation = registryImplementation;
+        _manifestState.evaluator = evaluator;
+        _manifestState.evaluatorImplementation = evaluatorImplementation;
+        _manifestState.escalationManager = escalationManager;
+        _manifestState.escalationManagerImplementation = escalationManagerImplementation;
+    }
+
+    function setExecutionModules(
         address executor,
         address executorImplementation,
         address vaultFactory,
-        address vaultFactoryImplementation,
+        address vaultFactoryImplementation
+    ) external {
+        _manifestState.executor = executor;
+        _manifestState.executorImplementation = executorImplementation;
+        _manifestState.vaultFactory = vaultFactory;
+        _manifestState.vaultFactoryImplementation = vaultFactoryImplementation;
+    }
+
+    function setNativeAssetAndSwapAdapter(
         address swapAdapter,
         address router,
         address factory,
-        address wrappedNative
-    ) external view returns (string memory) {
-        State memory state;
-        state.network = "test";
-        state.hub = hub;
-        state.hubImplementation = hubImplementation;
-        state.admin = admin;
-        state.owner = msg.sender;
-        state.registry = registry;
-        state.registryImplementation = registryImplementation;
-        state.evaluator = evaluator;
-        state.evaluatorImplementation = evaluatorImplementation;
-        state.escalationManager = escalationManager;
-        state.escalationManagerImplementation = escalationManagerImplementation;
-        state.executor = executor;
-        state.executorImplementation = executorImplementation;
-        state.vaultFactory = vaultFactory;
-        state.vaultFactoryImplementation = vaultFactoryImplementation;
-        state.uniswapV3SwapAdapter = swapAdapter;
-        state.uniswapV3Router = router;
-        state.uniswapV3Factory = factory;
-        state.wrappedNative = wrappedNative;
-        return _verificationManifest(state);
+        address wrappedNative,
+        address chainlinkNativeUsdFeed,
+        uint8 chainlinkNativeUsdFeedDecimals
+    ) external {
+        _manifestState.uniswapV3SwapAdapter = swapAdapter;
+        _manifestState.uniswapV3Router = router;
+        _manifestState.uniswapV3Factory = factory;
+        _manifestState.wrappedNative = wrappedNative;
+        _manifestState.chainlinkNativeUsdFeed = chainlinkNativeUsdFeed;
+        _manifestState.chainlinkNativeUsdFeedDecimals = chainlinkNativeUsdFeedDecimals;
+    }
+
+    function build() external view returns (string memory) {
+        return _verificationManifest(_manifestState);
     }
 }
 
@@ -174,36 +205,160 @@ contract DeploymentTest {
         assert(!_contains(manifest, '"vaults"'));
         assert(_contains(manifest, '"swapAdapters"'));
         assert(!_contains(manifest, '"adapters"'));
+        assert(_contains(manifest, '"nativeAsset"'));
+        assert(_occurrences(manifest, '"wrappedNative"') == 1);
     }
 
     function test_integrationManifestPreservesEnabledSwapAdapterFields() public {
         Stack memory stack = _deploy();
         GrantlineDeploymentIntegrationManifestProbe probe = new GrantlineDeploymentIntegrationManifestProbe();
-        string memory manifest = probe.build(
-            address(stack.grantline),
-            address(stack.grantlineImplementation),
-            address(stack.admin),
+        probe.setGrantline(address(stack.grantline), address(stack.grantlineImplementation), address(stack.admin));
+        probe.setAuthorityModules(
             stack.registry,
             stack.registryImplementation,
             stack.evaluator,
             stack.evaluatorImplementation,
             stack.escalationManager,
-            stack.escalationManagerImplementation,
-            stack.executor,
-            stack.executorImplementation,
-            stack.vaultFactory,
-            stack.vaultFactoryImplementation,
-            address(0x1001),
-            address(0x1002),
-            address(0x1003),
-            address(0x1004)
+            stack.escalationManagerImplementation
         );
+        probe.setExecutionModules(
+            stack.executor, stack.executorImplementation, stack.vaultFactory, stack.vaultFactoryImplementation
+        );
+        probe.setNativeAssetAndSwapAdapter(
+            address(0x1001), address(0x1002), address(0x1003), address(0x1004), address(0x1005), 8
+        );
+        string memory manifest = probe.build();
 
         assert(_contains(manifest, '"enabled":true'));
         assert(_contains(manifest, '"swapAdapter":"0x0000000000000000000000000000000000001001"'));
         assert(_contains(manifest, '"router":"0x0000000000000000000000000000000000001002"'));
         assert(_contains(manifest, '"factory":"0x0000000000000000000000000000000000001003"'));
         assert(_contains(manifest, '"wrappedNative":"0x0000000000000000000000000000000000001004"'));
+        assert(_contains(manifest, '"feed":"0x0000000000000000000000000000000000001005"'));
+        assert(_contains(manifest, '"decimals":8'));
+    }
+
+    function test_integrationManifestRejectsNativeUsdEnablementMismatch() public {
+        GrantlineDeploymentIntegrationManifestProbe probe = new GrantlineDeploymentIntegrationManifestProbe();
+
+        string memory enabledWithoutFeed = _nativeUsdManifest(true, address(0), 0);
+        (bool success,) = address(probe)
+            .call(
+                abi.encodeCall(
+                    GrantlineDeploymentIntegrationManifestProbe.loadNativeUsdManifestForTest, (enabledWithoutFeed)
+                )
+            );
+        assert(!success);
+
+        string memory disabledWithFeed = _nativeUsdManifest(false, address(0x1005), 8);
+        (success,) = address(probe)
+            .call(
+                abi.encodeCall(
+                    GrantlineDeploymentIntegrationManifestProbe.loadNativeUsdManifestForTest, (disabledWithFeed)
+                )
+            );
+        assert(!success);
+    }
+
+    function test_integrationManifestRejectsDisabledNativeUsdDecimals() public {
+        GrantlineDeploymentIntegrationManifestProbe probe = new GrantlineDeploymentIntegrationManifestProbe();
+        string memory disabledWithDecimals = _nativeUsdManifest(false, address(0), 8);
+
+        (bool success,) = address(probe)
+            .call(
+                abi.encodeCall(
+                    GrantlineDeploymentIntegrationManifestProbe.loadNativeUsdManifestForTest, (disabledWithDecimals)
+                )
+            );
+        assert(!success);
+    }
+
+    function test_integrationManifestLoadsNativeUsdConfiguration() public {
+        GrantlineDeploymentIntegrationManifestProbe probe = new GrantlineDeploymentIntegrationManifestProbe();
+        string memory manifest = _nativeUsdManifest(true, address(0x1005), 8);
+
+        (bool enabled, address feed, uint8 decimals) = probe.loadNativeUsdManifestForTest(manifest);
+        assert(enabled);
+        assert(feed == address(0x1005));
+        assert(decimals == 8);
+    }
+
+    function test_integrationManifestLoadsDisabledNativeUsdConfiguration() public {
+        GrantlineDeploymentIntegrationManifestProbe probe = new GrantlineDeploymentIntegrationManifestProbe();
+        string memory manifest = _nativeUsdManifest(false, address(0), 0);
+
+        (bool enabled, address feed, uint8 decimals) = probe.loadNativeUsdManifestForTest(manifest);
+        assert(!enabled);
+        assert(feed == address(0));
+        assert(decimals == 0);
+    }
+
+    function test_grantlineDeploymentManifestVerifiesNativeUsdConfiguration() public {
+        NativeUsdFeedMock feed = new NativeUsdFeedMock(8, 50e8);
+        NativeUsdTokenMock wrappedNative = new NativeUsdTokenMock(18);
+        Stack memory stack = _deployConfigured(address(feed), 8, address(wrappedNative));
+        string memory manifest = _writeManifest(stack, address(stack.grantline).codehash);
+
+        assert(_contains(manifest, '"chainlinkUsdFeed":{"enabled":true'));
+        assert(_contains(manifest, string.concat('"feed":"', Strings.toHexString(address(feed)), '"')));
+        assert(_contains(manifest, '"decimals":8'));
+        assert(
+            _contains(manifest, string.concat('"wrappedNative":"', Strings.toHexString(address(wrappedNative)), '"'))
+        );
+
+        VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
+        verifier.runWithManifest(manifest);
+    }
+
+    function test_grantlineDeploymentManifestRejectsNativeUsdRuntimeMetadataChanges() public {
+        NativeUsdFeedMock feed = new NativeUsdFeedMock(8, 50e8);
+        NativeUsdTokenMock wrappedNative = new NativeUsdTokenMock(18);
+        Stack memory stack = _deployConfigured(address(feed), 8, address(wrappedNative));
+        string memory manifest = _writeManifest(stack, address(stack.grantline).codehash);
+        VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
+
+        feed.setDecimals(7);
+        (bool success,) = address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
+        assert(!success);
+
+        feed.setDecimals(8);
+        feed.setAnswer(0);
+        (success,) = address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
+        assert(!success);
+
+        feed.setAnswer(50e8);
+        wrappedNative.setDecimals(6);
+        (success,) = address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
+        assert(!success);
+    }
+
+    function test_grantlineDeploymentManifestRejectsEnabledNativeUsdWithoutWrappedNative() public {
+        NativeUsdFeedMock feed = new NativeUsdFeedMock(8, 50e8);
+        NativeUsdTokenMock wrappedNative = new NativeUsdTokenMock(18);
+        Stack memory stack = _deployConfigured(address(feed), 8, address(wrappedNative));
+        GrantlineDeploymentNativeUsdEvaluatorProbe implementation = new GrantlineDeploymentNativeUsdEvaluatorProbe();
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
+            key: stack.grantline.EVALUATOR_MODULE(), implementation: address(implementation), version: 1, data: ""
+        });
+        stack.admin.upgradeModules(upgrades);
+
+        GrantlineDeploymentNativeUsdEvaluatorProbe(stack.evaluator).clearWrappedNativeForTest();
+        stack.evaluatorImplementation = address(implementation);
+        assert(IEvaluator(stack.evaluator).nativeUsdValuationEnabled());
+        assert(IEvaluator(stack.evaluator).wrappedNative() == address(0));
+
+        string memory manifest = _writeManifest(stack, address(stack.grantline).codehash);
+        VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
+        (bool success, bytes memory revertData) =
+            address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
+        assert(!success);
+        assert(
+            keccak256(revertData)
+                == keccak256(
+                    abi.encodeWithSelector(VerifyGrantlineDeployment.InvalidWrappedNative.selector, address(0))
+                )
+        );
     }
 
     function test_grantlineDeploymentManifestRejectsWrongProxyHash() public {
@@ -311,6 +466,13 @@ contract DeploymentTest {
     }
 
     function _deploy() private returns (Stack memory stack) {
+        return _deployConfigured(address(0), 0, address(0));
+    }
+
+    function _deployConfigured(address feed, uint8 feedDecimals, address wrappedNative)
+        private
+        returns (Stack memory stack)
+    {
         stack.grantlineImplementation = new Grantline();
         MandateRegistry registryImplementation = new MandateRegistry();
         MandateEvaluator evaluatorImplementation = new MandateEvaluator();
@@ -345,7 +507,8 @@ contract DeploymentTest {
             new ERC1967Proxy(
                 stack.evaluatorImplementation,
                 abi.encodeCall(
-                    MandateEvaluator.initialize, (address(stack.grantline), stack.registry, address(stack.admin))
+                    MandateEvaluator.initialize,
+                    (address(stack.grantline), stack.registry, feed, feedDecimals, wrappedNative, address(stack.admin))
                 )
             )
         );
@@ -417,7 +580,27 @@ contract DeploymentTest {
             DeploymentManifest.ModuleSnapshot(stack.escalationManager, stack.escalationManagerImplementation);
         snapshot.modules[3] = DeploymentManifest.ModuleSnapshot(stack.executor, stack.executorImplementation);
         snapshot.modules[4] = DeploymentManifest.ModuleSnapshot(stack.vaultFactory, stack.vaultFactoryImplementation);
+        IEvaluator evaluator = IEvaluator(stack.evaluator);
+        snapshot.wrappedNative = evaluator.wrappedNative();
+        snapshot.chainlinkNativeUsdFeed = evaluator.chainlinkNativeUsdFeed();
+        snapshot.chainlinkNativeUsdFeedDecimals = evaluator.chainlinkNativeUsdFeedDecimals();
         return DeploymentManifest.build(snapshot);
+    }
+
+    function _occurrences(string memory value, string memory needle) private pure returns (uint256 count) {
+        bytes memory haystack = bytes(value);
+        bytes memory pattern = bytes(needle);
+        if (pattern.length == 0 || pattern.length > haystack.length) return 0;
+        for (uint256 index; index <= haystack.length - pattern.length; index++) {
+            bool matches = true;
+            for (uint256 offset; offset < pattern.length; offset++) {
+                if (haystack[index + offset] != pattern[offset]) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) count++;
+        }
     }
 
     function _contains(string memory value, string memory needle) private pure returns (bool) {
@@ -436,5 +619,17 @@ contract DeploymentTest {
             if (matches) return true;
         }
         return false;
+    }
+
+    function _nativeUsdManifest(bool enabled, address feed, uint256 decimals) private pure returns (string memory) {
+        return string.concat(
+            '{"nativeAsset":{"chainlinkUsdFeed":{"enabled":',
+            enabled ? "true" : "false",
+            ',"feed":"',
+            Strings.toHexString(feed),
+            '","decimals":',
+            Strings.toString(decimals),
+            "}}}"
+        );
     }
 }

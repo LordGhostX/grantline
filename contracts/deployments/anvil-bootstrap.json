@@ -1,12 +1,19 @@
 {
   "network": "anvil",
   "chainId": 31337,
+  "nativeAsset": {
+    "wrappedNative": "0x0000000000000000000000000000000000000000",
+    "chainlinkUsdFeed": {
+      "enabled": false,
+      "feed": "0x0000000000000000000000000000000000000000",
+      "decimals": 0
+    }
+  },
   "swapAdapters": {
     "uniswapV3": {
       "enabled": false,
       "router": "0x0000000000000000000000000000000000000000",
-      "factory": "0x0000000000000000000000000000000000000000",
-      "wrappedNative": "0x0000000000000000000000000000000000000000"
+      "factory": "0x0000000000000000000000000000000000000000"
     }
   }
 }

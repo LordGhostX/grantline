@@ -7,7 +7,9 @@ import {ActionTypes} from "../src/ActionTypes.sol";
 import {ComponentTypes} from "../src/ComponentTypes.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC1822Proxiable} from "@openzeppelin/contracts/interfaces/draft-IERC1822.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {
+    IChainlinkAggregatorV3,
     IComponent,
     IEscalationManager,
     IEvaluator,
@@ -31,6 +33,21 @@ interface UniswapV3AdapterDeploymentView {
 contract VerifyGrantlineDeployment is ScriptBase {
     bytes32 private constant IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
+    struct NativeAssetSnapshot {
+        bool nativeUsdEnabled;
+        address chainlinkNativeUsdFeed;
+        uint256 chainlinkNativeUsdFeedDecimals;
+        address wrappedNative;
+    }
+
+    struct ModuleStack {
+        address registry;
+        address evaluator;
+        address manager;
+        address executor;
+        address factory;
+    }
+
     error UnexpectedAddress(string component, address expectedAddress, address actualAddress);
     error UnexpectedUint(string component, uint256 expectedValue, uint256 actualValue);
     error UnexpectedBool(string component, bool expectedValue, bool actualValue);
@@ -40,6 +57,8 @@ contract VerifyGrantlineDeployment is ScriptBase {
     error MissingRuntimeCode(string component, address target);
     error MissingVaultController(address vault);
     error MissingVaultSelector(string component, bytes4 selector);
+    error InvalidNativeUsdFeed(address feed);
+    error InvalidWrappedNative(address wrappedNative);
 
     function run() external {
         _verify(_manifest());
@@ -50,6 +69,12 @@ contract VerifyGrantlineDeployment is ScriptBase {
     }
 
     function _verify(string memory manifest) private {
+        Grantline grantline = _verifyGrantline(manifest);
+        GrantlineAdmin admin = _verifyAdmin(manifest, grantline);
+        _verifyConfiguredStack(manifest, grantline, admin);
+    }
+
+    function _verifyGrantline(string memory manifest) private returns (Grantline grantline) {
         address grantlineProxy = vm.parseJsonAddress(manifest, ".grantline.proxy");
         address grantlineImplementation = vm.parseJsonAddress(manifest, ".grantline.implementation");
         _verifyProxy(
@@ -60,86 +85,112 @@ contract VerifyGrantlineDeployment is ScriptBase {
             vm.parseJsonBytes32(manifest, ".grantline.implementationCodeHash")
         );
 
-        Grantline grantline = Grantline(grantlineProxy);
+        grantline = Grantline(grantlineProxy);
         _requireComponentType(address(grantline), ComponentTypes.GRANTLINE, "grantline");
         _requireAddress(
             "grantline.protocolAdmin", vm.parseJsonAddress(manifest, ".grantline.protocolAdmin"), grantline.owner()
         );
         _requireBool("grantline.configured", true, grantline.configured());
+    }
 
-        GrantlineAdmin admin = GrantlineAdmin(vm.parseJsonAddress(manifest, ".admin.address"));
+    function _verifyAdmin(string memory manifest, Grantline grantline) private returns (GrantlineAdmin admin) {
+        admin = GrantlineAdmin(vm.parseJsonAddress(manifest, ".admin.address"));
         _requireAddress("admin.grantline", address(grantline), admin.grantline());
         _requireAddress("grantline.adminController", address(admin), grantline.adminController());
+    }
 
-        address registry = _verifyModule(manifest, grantline, "registry", grantline.REGISTRY_MODULE(), address(admin));
-        address evaluator =
+    function _verifyConfiguredStack(string memory manifest, Grantline grantline, GrantlineAdmin admin) private {
+        ModuleStack memory modules;
+        modules.registry = _verifyModule(manifest, grantline, "registry", grantline.REGISTRY_MODULE(), address(admin));
+        modules.evaluator =
             _verifyModule(manifest, grantline, "evaluator", grantline.EVALUATOR_MODULE(), address(admin));
-        address manager = _verifyModule(
+        modules.manager = _verifyModule(
             manifest, grantline, "escalationManager", grantline.ESCALATION_MANAGER_MODULE(), address(admin)
         );
-        address executor = _verifyModule(manifest, grantline, "executor", grantline.EXECUTOR_MODULE(), address(admin));
-        address factory =
+        modules.executor = _verifyModule(manifest, grantline, "executor", grantline.EXECUTOR_MODULE(), address(admin));
+        modules.factory =
             _verifyModule(manifest, grantline, "vaultFactory", grantline.VAULT_FACTORY_MODULE(), address(admin));
 
+        _verifyNativeUsdValuation(manifest, grantline, modules.evaluator);
         _verifySwapAdapters(manifest, grantline);
+        _verifyModuleRelationships(grantline, admin, modules);
+        _verifyVaultDeployment(manifest, grantline, admin, modules);
+    }
 
-        _requireAddress("grantline.registry", registry, grantline.registry());
-        _requireAddress("grantline.evaluator", evaluator, grantline.evaluator());
-        _requireAddress("grantline.escalationManager", manager, grantline.escalationManager());
-        _requireAddress("grantline.executor", executor, grantline.executor());
-        _requireAddress("grantline.vaultFactory", factory, grantline.vaultFactory());
-        if (IVaultFactory(factory).executor() != executor) {
-            revert UnexpectedAddress("vaultFactory.executor", executor, IVaultFactory(factory).executor());
+    function _verifyModuleRelationships(Grantline grantline, GrantlineAdmin admin, ModuleStack memory modules)
+        private
+        view
+    {
+        _requireAddress("grantline.registry", modules.registry, grantline.registry());
+        _requireAddress("grantline.evaluator", modules.evaluator, grantline.evaluator());
+        _requireAddress("grantline.escalationManager", modules.manager, grantline.escalationManager());
+        _requireAddress("grantline.executor", modules.executor, grantline.executor());
+        _requireAddress("grantline.vaultFactory", modules.factory, grantline.vaultFactory());
+        if (IVaultFactory(modules.factory).executor() != modules.executor) {
+            revert UnexpectedAddress(
+                "vaultFactory.executor", modules.executor, IVaultFactory(modules.factory).executor()
+            );
         }
-        _requireAddress("vaultFactory.upgradeAuthority", address(admin), IVaultFactory(factory).upgradeAuthority());
-        _requireAddress("evaluator.registry", registry, IEvaluator(evaluator).registry());
-        _requireAddress("manager.evaluator", evaluator, IEscalationManager(manager).evaluator());
-        _requireAddress("manager.registry", registry, IEscalationManager(manager).registry());
-        _requireAddress("executor.evaluator", evaluator, IExecutor(executor).evaluator());
-        _requireAddress("executor.manager", manager, IExecutor(executor).escalationManager());
-        _requireAddress("executor.registry", registry, IExecutor(executor).registry());
-        if (IVaultFactory(factory).vaultImplementation().code.length == 0) {
+        _requireAddress(
+            "vaultFactory.upgradeAuthority", address(admin), IVaultFactory(modules.factory).upgradeAuthority()
+        );
+        _requireAddress("evaluator.registry", modules.registry, IEvaluator(modules.evaluator).registry());
+        _requireAddress("manager.evaluator", modules.evaluator, IEscalationManager(modules.manager).evaluator());
+        _requireAddress("manager.registry", modules.registry, IEscalationManager(modules.manager).registry());
+        _requireAddress("executor.evaluator", modules.evaluator, IExecutor(modules.executor).evaluator());
+        _requireAddress("executor.manager", modules.manager, IExecutor(modules.executor).escalationManager());
+        _requireAddress("executor.registry", modules.registry, IExecutor(modules.executor).registry());
+    }
+
+    function _verifyVaultDeployment(
+        string memory manifest,
+        Grantline grantline,
+        GrantlineAdmin admin,
+        ModuleStack memory modules
+    ) private {
+        IVaultFactory factory = IVaultFactory(modules.factory);
+        if (factory.vaultImplementation().code.length == 0) {
             revert UnexpectedAddress(
                 "vaultFactory.vaultImplementation",
                 vm.parseJsonAddress(manifest, ".vaultImplementation.address"),
-                IVaultFactory(factory).vaultImplementation()
+                factory.vaultImplementation()
             );
         }
         _requireAddress(
             "vaultImplementation.address",
             vm.parseJsonAddress(manifest, ".vaultImplementation.address"),
-            IVaultFactory(factory).vaultImplementation()
+            factory.vaultImplementation()
         );
         _requireUint(
             "vaultImplementation.version",
             vm.parseJsonUint(manifest, ".vaultImplementation.version"),
-            IVaultFactory(factory).vaultImplementationVersion()
+            factory.vaultImplementationVersion()
         );
         _requireRuntimeCodeHash(
-            IVaultFactory(factory).vaultImplementation(),
+            factory.vaultImplementation(),
             vm.parseJsonBytes32(manifest, ".vaultImplementation.codeHash"),
             "vaultImplementation"
         );
         _requireAddress(
             "vaultImplementation.upgradeAuthority",
             vm.parseJsonAddress(manifest, ".vaultImplementation.upgradeAuthority"),
-            IVaultFactory(factory).upgradeAuthority()
+            factory.upgradeAuthority()
         );
-        _requireComponentType(IVaultFactory(factory).vaultImplementation(), ComponentTypes.VAULT, "vaultImplementation");
-        _requireUUPSIdentifier(IVaultFactory(factory).vaultImplementation(), "vaultImplementation");
+        _requireComponentType(factory.vaultImplementation(), ComponentTypes.VAULT, "vaultImplementation");
+        _requireUUPSIdentifier(factory.vaultImplementation(), "vaultImplementation");
         _verifyVaultTemplate(
-            IVaultFactory(factory).vaultImplementation(),
-            IVaultFactory(factory).vaultImplementationVersion(),
+            factory.vaultImplementation(),
+            factory.vaultImplementationVersion(),
             address(grantline),
-            executor,
+            modules.executor,
             address(admin)
         );
 
-        uint256 factoryVaultCount = IVaultFactory(factory).vaultCount();
+        uint256 factoryVaultCount = factory.vaultCount();
         _requireUint("grantline.vaultCount", factoryVaultCount, grantline.vaultCount());
         for (uint256 index; index < factoryVaultCount; index++) {
-            address vault = IVaultFactory(factory).vaultAt(index);
-            _verifyVault(grantline, address(admin), factory, vault, index);
+            address vault = factory.vaultAt(index);
+            _verifyVault(grantline, address(admin), modules.factory, vault, index);
         }
     }
 
@@ -179,9 +230,86 @@ contract VerifyGrantlineDeployment is ScriptBase {
         );
         _requireAddress(
             "swapAdapter.uniswapV3.wrappedNative",
-            vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.wrappedNative"),
+            vm.parseJsonAddress(manifest, ".nativeAsset.wrappedNative"),
             UniswapV3AdapterDeploymentView(actualSwapAdapter).wrappedNative()
         );
+    }
+
+    function _verifyNativeUsdValuation(string memory manifest, Grantline grantline, address evaluator) private {
+        NativeAssetSnapshot memory expected = _nativeAssetSnapshot(manifest);
+        _verifyEvaluatorNativeAsset(expected, IEvaluator(evaluator));
+        _verifyFacadeNativeAsset(expected, grantline);
+        _verifyChainlinkNativeUsdFeed(expected);
+        _verifyWrappedNative(expected);
+    }
+
+    function _nativeAssetSnapshot(string memory manifest) private returns (NativeAssetSnapshot memory snapshot) {
+        snapshot.nativeUsdEnabled = vm.parseJsonBool(manifest, ".nativeAsset.chainlinkUsdFeed.enabled");
+        snapshot.chainlinkNativeUsdFeed = vm.parseJsonAddress(manifest, ".nativeAsset.chainlinkUsdFeed.feed");
+        snapshot.chainlinkNativeUsdFeedDecimals = vm.parseJsonUint(manifest, ".nativeAsset.chainlinkUsdFeed.decimals");
+        snapshot.wrappedNative = vm.parseJsonAddress(manifest, ".nativeAsset.wrappedNative");
+    }
+
+    function _verifyEvaluatorNativeAsset(NativeAssetSnapshot memory expected, IEvaluator evaluator) private view {
+        _requireBool(
+            "nativeAsset.chainlinkUsdFeed.enabled", expected.nativeUsdEnabled, evaluator.nativeUsdValuationEnabled()
+        );
+        _requireAddress(
+            "nativeAsset.chainlinkUsdFeed.feed", expected.chainlinkNativeUsdFeed, evaluator.chainlinkNativeUsdFeed()
+        );
+        _requireUint(
+            "nativeAsset.chainlinkUsdFeed.decimals",
+            expected.chainlinkNativeUsdFeedDecimals,
+            evaluator.chainlinkNativeUsdFeedDecimals()
+        );
+        _requireAddress("nativeAsset.wrappedNative", expected.wrappedNative, evaluator.wrappedNative());
+    }
+
+    function _verifyFacadeNativeAsset(NativeAssetSnapshot memory expected, Grantline grantline) private view {
+        (bool enabled, address feed, uint8 decimals, address wrappedNative) = grantline.getNativeUsdValuation();
+        _requireBool("grantline.nativeUsd.enabled", expected.nativeUsdEnabled, enabled);
+        _requireAddress("grantline.nativeUsd.feed", expected.chainlinkNativeUsdFeed, feed);
+        _requireUint("grantline.nativeUsd.decimals", expected.chainlinkNativeUsdFeedDecimals, decimals);
+        _requireAddress("grantline.nativeUsd.wrappedNative", expected.wrappedNative, wrappedNative);
+    }
+
+    function _verifyChainlinkNativeUsdFeed(NativeAssetSnapshot memory expected) private view {
+        address feed = expected.chainlinkNativeUsdFeed;
+        if (!expected.nativeUsdEnabled) {
+            if (feed != address(0) || expected.chainlinkNativeUsdFeedDecimals != 0) {
+                revert InvalidNativeUsdFeed(feed);
+            }
+            return;
+        }
+        if (feed == address(0) || feed.code.length == 0 || expected.chainlinkNativeUsdFeedDecimals > 18) {
+            revert InvalidNativeUsdFeed(feed);
+        }
+        try IChainlinkAggregatorV3(feed).decimals() returns (uint8 actualDecimals) {
+            _requireUint(
+                "nativeAsset.chainlinkUsdFeed.liveDecimals", expected.chainlinkNativeUsdFeedDecimals, actualDecimals
+            );
+        } catch {
+            revert InvalidNativeUsdFeed(feed);
+        }
+        try IChainlinkAggregatorV3(feed).latestRoundData() returns (uint80, int256 answer, uint256, uint256, uint80) {
+            if (answer <= 0) revert InvalidNativeUsdFeed(feed);
+        } catch {
+            revert InvalidNativeUsdFeed(feed);
+        }
+    }
+
+    function _verifyWrappedNative(NativeAssetSnapshot memory expected) private view {
+        address wrappedNative = expected.wrappedNative;
+        if (wrappedNative == address(0)) {
+            if (expected.nativeUsdEnabled) revert InvalidWrappedNative(wrappedNative);
+            return;
+        }
+        if (wrappedNative.code.length == 0) revert InvalidWrappedNative(wrappedNative);
+        try IERC20Metadata(wrappedNative).decimals() returns (uint8 actualDecimals) {
+            if (actualDecimals != 18) revert InvalidWrappedNative(wrappedNative);
+        } catch {
+            revert InvalidWrappedNative(wrappedNative);
+        }
     }
 
     function _verifyVault(Grantline grantline, address admin, address factory, address vault, uint256 index) private {

@@ -5,7 +5,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
-import {IGrantlineContext, IRegistry} from "./Interfaces.sol";
+import {IGrantlineContext, IEvaluator, IRegistry} from "./Interfaces.sol";
 import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
 
 interface IVaultIdentity {
@@ -17,6 +17,7 @@ interface IVaultIdentity {
 contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUpgradeable, IRegistry {
     bytes32 public constant EXECUTOR_MODULE = keccak256("EXECUTOR");
     bytes32 public constant ESCALATION_MANAGER_MODULE = keccak256("ESCALATION_MANAGER");
+    bytes32 public constant EVALUATOR_MODULE = keccak256("EVALUATOR");
 
     uint8 public constant MAX_DELEGATION_DEPTH = 2;
 
@@ -34,6 +35,9 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         uint256 mandateId, address agent, uint256 nonce, bytes32 expectedDigest, bytes32 reservedDigest
     );
     error InvalidNativeAmountRange(uint256 minimum, uint256 maximum);
+    error InvalidNativeUsdRange(uint256 minimum, uint256 maximum);
+    error NativeUsdValuationUnsupported();
+    error NativeUsdThresholdTooLarge(uint256 value);
     error InvalidValidityWindow(uint64 validAfter, uint64 validUntil);
     error NotGrantline(address caller);
     error NotExecutor(address caller);
@@ -517,8 +521,18 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
                 ) {
                     effective.maxNativeAmount = current.rules.maxNativeAmount;
                 }
+                if (current.rules.minNativeUsd > effective.minNativeUsd) {
+                    effective.minNativeUsd = current.rules.minNativeUsd;
+                }
+                if (
+                    current.rules.maxNativeUsd != 0
+                        && (effective.maxNativeUsd == 0 || current.rules.maxNativeUsd < effective.maxNativeUsd)
+                ) {
+                    effective.maxNativeUsd = current.rules.maxNativeUsd;
+                }
                 effective.canDelegate = effective.canDelegate && current.rules.canDelegate;
                 effective.escalateNativeAmount = effective.escalateNativeAmount && current.rules.escalateNativeAmount;
+                effective.escalateNativeUsd = effective.escalateNativeUsd && current.rules.escalateNativeUsd;
             }
             currentMandateId = current.parentMandateId;
         }
@@ -610,8 +624,13 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
                     && (childRules.minNativeAmount == 0 || childRules.minNativeAmount < parentRules.minNativeAmount))
                 || (parentRules.maxNativeAmount != 0
                     && (childRules.maxNativeAmount == 0 || childRules.maxNativeAmount > parentRules.maxNativeAmount))
+                || (parentRules.minNativeUsd != 0
+                    && (childRules.minNativeUsd == 0 || childRules.minNativeUsd < parentRules.minNativeUsd))
+                || (parentRules.maxNativeUsd != 0
+                    && (childRules.maxNativeUsd == 0 || childRules.maxNativeUsd > parentRules.maxNativeUsd))
                 || (childRules.canDelegate && !parentRules.canDelegate)
                 || (childRules.escalateNativeAmount && !parentRules.escalateNativeAmount)
+                || (childRules.escalateNativeUsd && !parentRules.escalateNativeUsd)
         ) revert ChildRulesExceedParent(parentMandateId);
     }
 
@@ -642,9 +661,25 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         }
     }
 
-    function _validateRules(GrantlineTypes.MandateRules memory rules) private pure {
+    function _validateRules(GrantlineTypes.MandateRules memory rules) private view {
         if (rules.minNativeAmount != 0 && rules.maxNativeAmount != 0 && rules.minNativeAmount > rules.maxNativeAmount) {
             revert InvalidNativeAmountRange(rules.minNativeAmount, rules.maxNativeAmount);
+        }
+        if (rules.minNativeUsd != 0 && rules.maxNativeUsd != 0 && rules.minNativeUsd > rules.maxNativeUsd) {
+            revert InvalidNativeUsdRange(rules.minNativeUsd, rules.maxNativeUsd);
+        }
+        if (rules.minNativeUsd == 0 && rules.maxNativeUsd == 0) return;
+
+        address evaluatorAddress = IGrantlineContext(grantline).moduleAddress(EVALUATOR_MODULE);
+        if (evaluatorAddress == address(0) || !IEvaluator(evaluatorAddress).nativeUsdValuationEnabled()) {
+            revert NativeUsdValuationUnsupported();
+        }
+        uint256 scale = 10 ** uint256(IEvaluator(evaluatorAddress).chainlinkNativeUsdFeedDecimals());
+        if (rules.minNativeUsd > type(uint256).max / scale) {
+            revert NativeUsdThresholdTooLarge(rules.minNativeUsd);
+        }
+        if (rules.maxNativeUsd > type(uint256).max / scale) {
+            revert NativeUsdThresholdTooLarge(rules.maxNativeUsd);
         }
     }
 

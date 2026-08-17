@@ -3,12 +3,14 @@ pragma solidity ^0.8.28;
 
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {IERC1822Proxiable} from "@openzeppelin/contracts/interfaces/draft-IERC1822.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ActionTypes} from "./ActionTypes.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {Grantline} from "./Grantline.sol";
 import {
     IComponent,
+    IChainlinkAggregatorV3,
     IGrantlineAdminTarget,
     IEscalationManager,
     IEvaluator,
@@ -20,6 +22,10 @@ import {
     IVault,
     IVaultFactory
 } from "./Interfaces.sol";
+
+interface IUniswapV3SwapAdapterConfiguration {
+    function wrappedNative() external view returns (address);
+}
 
 /// @notice Protocol-only coordinator for module and Vault administration.
 /// @dev This contract is intentionally not upgradeable. User and agent flows stay on Grantline.
@@ -167,6 +173,7 @@ contract GrantlineAdmin is ReentrancyGuard {
         if (IEvaluator(evaluatorAddress).registry() != registryAddress) {
             revert InvalidModuleRelationship("evaluator.registry");
         }
+        _validateNativeUsdValuation(IEvaluator(evaluatorAddress));
         if (IEscalationManager(managerAddress).evaluator() != evaluatorAddress) {
             revert InvalidModuleRelationship("manager.evaluator");
         }
@@ -204,6 +211,49 @@ contract GrantlineAdmin is ReentrancyGuard {
         }
         if (ISwapAdapter(swapAdapter).version() != 1) {
             revert InvalidModuleRelationship("swapAdapter.version");
+        }
+        if (
+            IUniswapV3SwapAdapterConfiguration(swapAdapter).wrappedNative()
+                != IEvaluator(hub.evaluator()).wrappedNative()
+        ) {
+            revert InvalidModuleRelationship("swapAdapter.wrappedNative");
+        }
+    }
+
+    function _validateNativeUsdValuation(IEvaluator evaluatorContract) private view {
+        address feed = evaluatorContract.chainlinkNativeUsdFeed();
+        uint8 feedDecimals = evaluatorContract.chainlinkNativeUsdFeedDecimals();
+        address wrappedNativeAddress = evaluatorContract.wrappedNative();
+
+        if (feed == address(0)) {
+            if (feedDecimals != 0 || evaluatorContract.nativeUsdValuationEnabled()) {
+                revert InvalidModuleRelationship("evaluator.nativeUsd.disabled");
+            }
+        } else {
+            if (
+                feed.code.length == 0 || feedDecimals > 18 || !evaluatorContract.nativeUsdValuationEnabled()
+                    || wrappedNativeAddress == address(0)
+            ) revert InvalidModuleRelationship("evaluator.nativeUsd.enabled");
+            try IChainlinkAggregatorV3(feed).decimals() returns (uint8 actualDecimals) {
+                if (actualDecimals != feedDecimals) {
+                    revert InvalidModuleRelationship("evaluator.nativeUsd.feedDecimals");
+                }
+            } catch {
+                revert InvalidModuleRelationship("evaluator.nativeUsd.feed");
+            }
+        }
+
+        if (wrappedNativeAddress != address(0)) {
+            if (wrappedNativeAddress.code.length == 0) {
+                revert InvalidModuleRelationship("evaluator.wrappedNative");
+            }
+            try IERC20Metadata(wrappedNativeAddress).decimals() returns (uint8 actualDecimals) {
+                if (actualDecimals != 18) {
+                    revert InvalidModuleRelationship("evaluator.wrappedNativeDecimals");
+                }
+            } catch {
+                revert InvalidModuleRelationship("evaluator.wrappedNative");
+            }
         }
     }
 

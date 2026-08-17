@@ -229,6 +229,18 @@ contract Grantline is
         return _modules[EVALUATOR_MODULE];
     }
 
+    function getNativeUsdValuation()
+        external
+        view
+        returns (bool enabled, address chainlinkFeed, uint8 feedDecimals, address wrappedNativeAddress)
+    {
+        IEvaluator evaluatorContract = IEvaluator(evaluator());
+        enabled = evaluatorContract.nativeUsdValuationEnabled();
+        chainlinkFeed = evaluatorContract.chainlinkNativeUsdFeed();
+        feedDecimals = evaluatorContract.chainlinkNativeUsdFeedDecimals();
+        wrappedNativeAddress = evaluatorContract.wrappedNative();
+    }
+
     function escalationManager() public view returns (address) {
         return _modules[ESCALATION_MANAGER_MODULE];
     }

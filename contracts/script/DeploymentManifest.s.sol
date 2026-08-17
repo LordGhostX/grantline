@@ -25,6 +25,8 @@ library DeploymentManifest {
         address uniswapV3Router;
         address uniswapV3Factory;
         address wrappedNative;
+        address chainlinkNativeUsdFeed;
+        uint8 chainlinkNativeUsdFeedDecimals;
         ModuleSnapshot[5] modules;
     }
 
@@ -34,6 +36,7 @@ library DeploymentManifest {
         json = string.concat('{"network":"', snapshot.network, '","chainId":', snapshot.chainId.toString());
         json = string.concat(json, ',"grantline":', _grantlineJson(snapshot));
         json = string.concat(json, ',"admin":', _adminJson(snapshot));
+        json = string.concat(json, ',"nativeAsset":', _nativeAssetJson(snapshot));
         json = string.concat(json, ',"swapAdapters":', _swapAdaptersJson(snapshot));
         json = string.concat(json, ',"modules":', _modulesJson(snapshot.modules));
         json = string.concat(json, ',"vaultImplementation":', _vaultImplementationJson(factory));
@@ -50,7 +53,15 @@ library DeploymentManifest {
         json = string.concat(json, ',"swapAdapter":"', _address(snapshot.uniswapV3SwapAdapter), '"');
         json = string.concat(json, ',"router":"', _address(snapshot.uniswapV3Router), '"');
         json = string.concat(json, ',"factory":"', _address(snapshot.uniswapV3Factory), '"');
-        json = string.concat(json, ',"wrappedNative":"', _address(snapshot.wrappedNative), '"}}');
+        json = string.concat(json, "}}");
+    }
+
+    function _nativeAssetJson(Snapshot memory snapshot) private pure returns (string memory json) {
+        bool enabled = snapshot.chainlinkNativeUsdFeed != address(0);
+        json = string.concat('{"wrappedNative":"', _address(snapshot.wrappedNative), '"');
+        json = string.concat(json, ',"chainlinkUsdFeed":{"enabled":', enabled ? "true" : "false");
+        json = string.concat(json, ',"feed":"', _address(snapshot.chainlinkNativeUsdFeed), '"');
+        json = string.concat(json, ',"decimals":', uint256(snapshot.chainlinkNativeUsdFeedDecimals).toString(), "}}");
     }
 
     function _grantlineJson(Snapshot memory snapshot) private view returns (string memory json) {

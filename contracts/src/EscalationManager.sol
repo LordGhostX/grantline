@@ -44,6 +44,7 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         address submittedBy,
         uint256 nonce,
         uint256 nativeAmount,
+        uint256 nativeUsdValue,
         uint64 submittedAt
     );
     event EscalationApproved(
@@ -124,7 +125,14 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         escalation.signature = signature;
 
         emit EscalationSubmitted(
-            digest, plan.mandateId, plan.agent, submittedBy, plan.nonce, evaluation.nativeAmount, escalation.submittedAt
+            digest,
+            plan.mandateId,
+            plan.agent,
+            submittedBy,
+            plan.nonce,
+            evaluation.nativeAmount,
+            evaluation.nativeUsdValue,
+            escalation.submittedAt
         );
 
         IRegistry(registry).reserveNonce(plan.mandateId, plan.agent, plan.nonce, digest);

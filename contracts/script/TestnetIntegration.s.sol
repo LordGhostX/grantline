@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {ActionTypes} from "../src/ActionTypes.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ComponentTypes} from "../src/ComponentTypes.sol";
 import {EscalationManager} from "../src/EscalationManager.sol";
 import {Grantline} from "../src/Grantline.sol";
@@ -175,6 +176,9 @@ contract TestnetIntegration is ScriptBase {
         address uniswapV3Router;
         address uniswapV3Factory;
         address wrappedNative;
+        bool nativeUsdEnabled;
+        address chainlinkNativeUsdFeed;
+        uint8 chainlinkNativeUsdFeedDecimals;
         uint256 ownerKey;
         uint256 agentKey;
         uint256 delegatedKey;
@@ -250,7 +254,9 @@ contract TestnetIntegration is ScriptBase {
         state.uniswapV3SwapAdapter = vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.swapAdapter");
         state.uniswapV3Router = vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.router");
         state.uniswapV3Factory = vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.factory");
-        state.wrappedNative = vm.parseJsonAddress(manifest, ".swapAdapters.uniswapV3.wrappedNative");
+        state.wrappedNative = vm.parseJsonAddress(manifest, ".nativeAsset.wrappedNative");
+        (state.nativeUsdEnabled, state.chainlinkNativeUsdFeed, state.chainlinkNativeUsdFeedDecimals) =
+            _loadNativeUsdManifest(manifest);
 
         state.ownerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         state.agentKey = vm.envUint("AGENT_PRIVATE_KEY");
@@ -261,6 +267,21 @@ contract TestnetIntegration is ScriptBase {
 
         _requireAgentAddress(state.agent, integrationVm.envAddress("AGENT_PUBLIC_KEY"));
         _requireAgentAddress(state.delegatedAgent, integrationVm.envAddress("DELEGATED_AGENT_PUBLIC_KEY"));
+    }
+
+    function _loadNativeUsdManifest(string memory manifest)
+        internal
+        returns (bool enabled, address feed, uint8 decimals)
+    {
+        enabled = vm.parseJsonBool(manifest, ".nativeAsset.chainlinkUsdFeed.enabled");
+        feed = vm.parseJsonAddress(manifest, ".nativeAsset.chainlinkUsdFeed.feed");
+        decimals = SafeCast.toUint8(vm.parseJsonUint(manifest, ".nativeAsset.chainlinkUsdFeed.decimals"));
+        _validateNativeUsdManifest(enabled, feed, decimals);
+    }
+
+    function _validateNativeUsdManifest(bool enabled, address feed, uint8 decimals) internal pure {
+        _require(enabled == (feed != address(0)), "native USD manifest enablement mismatch");
+        _require(enabled || decimals == 0, "native USD manifest decimals mismatch");
     }
 
     function _validateStack(State memory state) private view {
@@ -276,6 +297,12 @@ contract TestnetIntegration is ScriptBase {
         _require(hub.escalationManager() == state.escalationManager, "escalation manager proxy mismatch");
         _require(hub.executor() == state.executor, "executor proxy mismatch");
         _require(hub.vaultFactory() == state.vaultFactory, "Vault factory proxy mismatch");
+        (bool nativeUsdEnabled, address nativeUsdFeed, uint8 nativeUsdDecimals, address wrappedNativeAddress) =
+            hub.getNativeUsdValuation();
+        _require(nativeUsdEnabled == state.nativeUsdEnabled, "native USD enablement mismatch");
+        _require(nativeUsdFeed == state.chainlinkNativeUsdFeed, "native USD feed mismatch");
+        _require(nativeUsdDecimals == state.chainlinkNativeUsdFeedDecimals, "native USD decimals mismatch");
+        _require(wrappedNativeAddress == state.wrappedNative, "wrapped native mismatch");
         _require(hub.vaultCount() == 0, "integration requires a fresh Grantline deployment");
 
         _require(hub.componentType() == ComponentTypes.GRANTLINE, "Grantline component type mismatch");
@@ -871,6 +898,8 @@ contract TestnetIntegration is ScriptBase {
         snapshot.uniswapV3Router = state.uniswapV3Router;
         snapshot.uniswapV3Factory = state.uniswapV3Factory;
         snapshot.wrappedNative = state.wrappedNative;
+        snapshot.chainlinkNativeUsdFeed = state.chainlinkNativeUsdFeed;
+        snapshot.chainlinkNativeUsdFeedDecimals = state.chainlinkNativeUsdFeedDecimals;
         snapshot.modules[0] = DeploymentManifest.ModuleSnapshot(state.registry, state.registryImplementation);
         snapshot.modules[1] = DeploymentManifest.ModuleSnapshot(state.evaluator, state.evaluatorImplementation);
         snapshot.modules[2] =
@@ -951,7 +980,10 @@ contract TestnetIntegration is ScriptBase {
             canDelegate: canDelegate,
             minNativeAmount: 0,
             maxNativeAmount: maxNativeAmount,
-            escalateNativeAmount: escalateNativeAmount
+            escalateNativeAmount: escalateNativeAmount,
+            minNativeUsd: 0,
+            maxNativeUsd: 0,
+            escalateNativeUsd: false
         });
     }
 

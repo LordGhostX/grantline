@@ -6,6 +6,7 @@ import {Grantline} from "../src/Grantline.sol";
 import {GrantlineTypes} from "../src/GrantlineTypes.sol";
 import {MandateEvaluator} from "../src/MandateEvaluator.sol";
 import {UniswapV3Adapter} from "../src/UniswapV3Adapter.sol";
+import {NativeUsdFeedMock} from "./NativeUsdMocks.sol";
 import {TestFixture} from "./TestFixture.sol";
 
 contract SwapTestToken {
@@ -14,6 +15,10 @@ contract SwapTestToken {
 
     function mint(address account, uint256 amount) external {
         _mint(account, amount);
+    }
+
+    function decimals() external pure returns (uint8) {
+        return 18;
     }
 
     function _mint(address account, uint256 amount) internal {
@@ -659,6 +664,71 @@ contract SwapEdgesTest is TestFixture {
         );
         fixture.hub.execute(nativeOutputPlan, _sign(fixture.hub, nativeOutputPlan, FIXTURE_AGENT_KEY));
         assert(address(fixture.vault).balance == 6 ether);
+    }
+
+    function test_nativeInputSwapCountsTowardNativeUsdLimit() public {
+        SwapTestToken tokenOut = new SwapTestToken();
+        SwapTestWrappedNative wrappedNative = new SwapTestWrappedNative();
+        SwapTestFactory factory = new SwapTestFactory();
+        SwapTestRouter router = new SwapTestRouter(address(wrappedNative), address(factory));
+        SwapTestPool pool = new SwapTestPool(address(factory), address(wrappedNative), address(tokenOut), 500);
+        factory.setPool(address(wrappedNative), address(tokenOut), 500, address(pool));
+        NativeUsdFeedMock feed = new NativeUsdFeedMock(8, 50e8);
+        GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, true);
+        rules.maxNativeUsd = 49;
+        Fixture memory fixture = _fixtureWithNativeUsdAndSwapAdapter(
+            address(feed), 8, address(router), address(factory), address(wrappedNative), rules
+        );
+
+        ActionTypes.SwapHop[] memory hops = new ActionTypes.SwapHop[](1);
+        hops[0] = ActionTypes.SwapHop({pool: address(pool), tokenIn: address(0), tokenOut: address(tokenOut)});
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId,
+            fixture.agent,
+            65,
+            0,
+            _swapAction(address(0), 1 ether, address(tokenOut), 1 ether, block.timestamp + 100, hops)
+        );
+
+        GrantlineTypes.EvaluationResult memory result =
+            fixture.hub.evaluate(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
+        assert(result.decision == uint8(MandateEvaluator.Decision.DENY));
+        assert(result.failureCode == uint8(MandateEvaluator.FailureCode.NATIVE_USD_VALUE_ABOVE_MAXIMUM));
+        assert(result.nativeAmount == 1 ether);
+        assert(result.nativeUsdValue == 50e8);
+    }
+
+    function test_wrappedNativeInputSwapCountsTowardNativeUsdLimit() public {
+        SwapTestToken tokenOut = new SwapTestToken();
+        SwapTestWrappedNative wrappedNative = new SwapTestWrappedNative();
+        SwapTestFactory factory = new SwapTestFactory();
+        SwapTestRouter router = new SwapTestRouter(address(wrappedNative), address(factory));
+        SwapTestPool pool = new SwapTestPool(address(factory), address(wrappedNative), address(tokenOut), 500);
+        factory.setPool(address(wrappedNative), address(tokenOut), 500, address(pool));
+        NativeUsdFeedMock feed = new NativeUsdFeedMock(8, 50e8);
+        GrantlineTypes.MandateRules memory rules = _rules(0, false, 0, true);
+        rules.maxNativeUsd = 49;
+        Fixture memory fixture = _fixtureWithNativeUsdAndSwapAdapter(
+            address(feed), 8, address(router), address(factory), address(wrappedNative), rules
+        );
+
+        ActionTypes.SwapHop[] memory hops = new ActionTypes.SwapHop[](1);
+        hops[0] =
+            ActionTypes.SwapHop({pool: address(pool), tokenIn: address(wrappedNative), tokenOut: address(tokenOut)});
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            fixture.mandateId,
+            fixture.agent,
+            66,
+            0,
+            _swapAction(address(wrappedNative), 1 ether, address(tokenOut), 1 ether, block.timestamp + 100, hops)
+        );
+
+        GrantlineTypes.EvaluationResult memory result =
+            fixture.hub.evaluate(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
+        assert(result.decision == uint8(MandateEvaluator.Decision.DENY));
+        assert(result.failureCode == uint8(MandateEvaluator.FailureCode.NATIVE_USD_VALUE_ABOVE_MAXIMUM));
+        assert(result.nativeAmount == 0);
+        assert(result.nativeUsdValue == 50e8);
     }
 
     function test_swapRejectsPoolThatIsNotRegisteredByFactory() public {

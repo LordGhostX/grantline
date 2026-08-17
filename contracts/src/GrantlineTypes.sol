@@ -15,6 +15,9 @@ library GrantlineTypes {
         uint256 minNativeAmount;
         uint256 maxNativeAmount;
         bool escalateNativeAmount;
+        uint256 minNativeUsd;
+        uint256 maxNativeUsd;
+        bool escalateNativeUsd;
     }
 
     struct PreflightRules {
@@ -58,6 +61,7 @@ library GrantlineTypes {
         uint8 failureCode;
         uint256 failedActionIndex;
         uint256 nativeAmount;
+        uint256 nativeUsdValue;
         uint256 nativeBalanceAfter;
     }
 
