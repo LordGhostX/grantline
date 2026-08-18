@@ -1,0 +1,197 @@
+---
+title: Vault and Mandate setup
+description: Create a Vault, fund it with native asset or tokens, and create a Mandate with configured authority.
+---
+
+This guide walks through the full setup flow: creating a Vault, funding it, and creating a Mandate that binds an agent to the Vault's capital. It uses the deployment manifest and Foundry's `cast` commands.
+
+## Load the deployment values
+
+Run this from `contracts/` after copying `.env.example` to `.env` and setting the public RPC and manifest values. The commands below read only public values; keep private keys out of this workflow.
+
+```sh
+cd contracts
+set -a
+source .env
+set +a
+
+MANIFEST="$DEPLOYMENT_MANIFEST_PATH"
+GRANTLINE="$(jq -r '.grantline.proxy' "$MANIFEST")"
+REGISTRY="$(jq -r '.modules.registry.proxy' "$MANIFEST")"
+RPC="$XLAYER_TESTNET_RPC_URL"
+CONTROLLER="$DEPLOYER_ADDRESS"
+```
+
+The controller is the address that will own the Vault and administer its Mandates.
+
+## Create a Vault
+
+Call `createVault` through the Grantline facade. The caller becomes the Vault controller.
+
+```sh
+cast send "$GRANTLINE" \
+  "createVault()(address)" \
+  --rpc-url "$RPC" \
+  --private-key "$DEPLOYER_PRIVATE_KEY"
+```
+
+Read the `VaultCreated` event from the transaction receipt to get the Vault address:
+
+```sh
+TX_HASH=0x...
+cast logs --rpc-url "$RPC" --address "$GRANTLINE" \
+  'VaultCreated(address,address,address,address,address,uint64)' \
+  --from-block 0 | grep "$TX_HASH"
+```
+
+The event fields are: `vault`, `controller`, `owner`, `authority`, `implementation`, `version`.
+
+Verify the Vault with the `getVault` view:
+
+```sh
+cast call "$GRANTLINE" \
+  "getVault(address)((address,address,address,address,address,uint64,uint256,bool))" \
+  "$VAULT" \
+  --rpc-url "$RPC"
+```
+
+This returns the controller, owner (should be Grantline), authority (should be the executor), implementation, version, native balance, and pause state.
+
+## Fund the Vault with native asset
+
+Deposit native OKB through the facade:
+
+```sh
+cast send "$GRANTLINE" \
+  "depositNative(address)()" \
+  "$VAULT" \
+  --value 1ether \
+  --rpc-url "$RPC" \
+  --private-key "$DEPLOYER_PRIVATE_KEY"
+```
+
+Verify the balance:
+
+```sh
+cast balance "$VAULT" --rpc-url "$RPC"
+```
+
+## Fund the Vault with ERC-20 tokens
+
+First approve the Vault to spend tokens from the controller's wallet, then deposit:
+
+```sh
+TOKEN=0x...
+
+cast send "$TOKEN" \
+  "approve(address,uint256)(bool)" \
+  "$GRANTLINE" \
+  1000000000000000000 \
+  --rpc-url "$RPC" \
+  --private-key "$DEPLOYER_PRIVATE_KEY"
+
+cast send "$GRANTLINE" \
+  "depositToken(address,address,uint256)()" \
+  "$VAULT" \
+  "$TOKEN" \
+  1000000000000000000 \
+  --rpc-url "$RPC" \
+  --private-key "$DEPLOYER_PRIVATE_KEY"
+```
+
+Check the token balance:
+
+```sh
+cast call "$VAULT" "tokenBalance(address)(uint256)" "$TOKEN" --rpc-url "$RPC"
+```
+
+## Create a Mandate
+
+Define the rules for the agent. The example below sets a maximum native amount of 10 OKB, with escalation enabled, and no native-USD limits.
+
+```sh
+AGENT=0x...
+
+cast send "$GRANTLINE" \
+  "createMandate(address,address,(bool,uint256,uint256,bool,uint256,uint256,bool),(uint256,bool,uint256,bool),uint64,uint64)(uint256)" \
+  "$VAULT" \
+  "$AGENT" \
+  "(false, 0, 10000000000000000000, true, 0, 0, false)" \
+  "(0, false, 0, false)" \
+  0 \
+  0 \
+  --rpc-url "$RPC" \
+  --private-key "$DEPLOYER_PRIVATE_KEY"
+```
+
+The arguments are:
+
+1. `vault`: the Vault address
+2. `agent`: the agent that will sign Action Plans
+3. `rules`: `(canDelegate, minNativeAmount, maxNativeAmount, escalateNativeAmount, minNativeUsd, maxNativeUsd, escalateNativeUsd)`
+4. `preflightRules`: `(minNativeBalance, escalateNativeBalance, minNativeUsdBalance, escalateNativeUsdBalance)`
+5. `validAfter`: Unix timestamp (0 = no start constraint)
+6. `validUntil`: Unix timestamp (0 = no end constraint)
+
+Read the `MandateCreated` event to get the mandate ID:
+
+```sh
+cast logs --rpc-url "$RPC" --address "$REGISTRY" \
+  'MandateCreated(uint256,address,address,uint256,uint8,(bool,uint256,uint256,bool,uint256,uint256,bool),(uint256,bool,uint256,bool),uint64,uint64,address,uint64)' \
+  --from-block 0
+```
+
+## Read the Mandate
+
+```sh
+MANDATE_ID=1
+
+cast call "$GRANTLINE" \
+  "getMandate(uint256)((uint256,address,address,address,uint256,uint8,uint8,(bool,uint256,uint256,bool,uint256,uint256,bool),(uint256,bool,uint256,bool),uint64,uint64,uint64,uint64))" \
+  "$MANDATE_ID" \
+  --rpc-url "$RPC"
+```
+
+The returned MandateView includes the controller, Vault, agent, parent ID, delegation depth, status, rules, Preflight rules, validAfter, validUntil, createdAt, and revokedAt.
+
+## Check effective authority
+
+Read the active lineage and effective rules:
+
+```sh
+cast call "$GRANTLINE" \
+  "getLineage(uint256)(uint256[])" \
+  "$MANDATE_ID" \
+  --rpc-url "$RPC"
+
+cast call "$GRANTLINE" \
+  "getEffectiveRules(uint256)((bool,uint256,uint256,bool,uint256,uint256,bool))" \
+  "$MANDATE_ID" \
+  --rpc-url "$RPC"
+
+cast call "$GRANTLINE" \
+  "getEffectivePreflightRules(uint256)((uint256,bool,uint256,bool))" \
+  "$MANDATE_ID" \
+  --rpc-url "$RPC"
+
+cast call "$GRANTLINE" \
+  "getEffectiveValidityWindow(uint256)(uint64,uint64)" \
+  "$MANDATE_ID" \
+  --rpc-url "$RPC"
+```
+
+For a root Mandate, the effective rules are the same as the stored rules. For a child Mandate, the effective rules are the intersection with the parent's boundaries.
+
+## Check Vault context
+
+Read the Vault owner, authority, and balance to confirm the setup:
+
+```sh
+cast call "$VAULT" "owner()(address)" --rpc-url "$RPC"
+cast call "$VAULT" "authority()(address)" --rpc-url "$RPC"
+cast balance "$VAULT" --rpc-url "$RPC"
+```
+
+The Vault is now ready for an agent to sign and execute Action Plans against it.
+
+See [Normal execution](/docs/guides/normal-execution) for the next step.

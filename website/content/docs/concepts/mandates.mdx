@@ -11,8 +11,9 @@ A Mandate can describe:
 
 - the agent allowed to act;
 - the [Vault](/docs/concepts/vaults) covered by the authority;
-- permitted actions and their limits;
-- conditions that must hold before an action proceeds;
+- permitted actions and their limits (native amounts, native-USD amounts, SWAP routes);
+- conditions that must hold before an action proceeds (Preflight floors);
+- when the authority is valid (`validAfter` / `validUntil`);
 - when additional approval is required;
 - whether narrower authority may be delegated; and
 - how the authority begins, changes, and ends.
@@ -23,7 +24,35 @@ The model can expand with new actions, assets, conditions, and approval paths wh
 
 A Mandate does not give an agent unrestricted control. It grants a defined area of authority, and every [Action Plan](/docs/concepts/action-plans) is checked against the boundaries that apply when it is evaluated.
 
-Updates can change what an agent is allowed to do. [Revocation](/docs/enforcement/revocation) prevents future use of the authority while preserving the history needed to understand what was granted and when it changed.
+Updates can change what an agent is allowed to do. [Revocation](/docs/enforcement/revocation) permanently stops future use of the authority. [Pausing](/docs/enforcement/revocation) temporarily suspends it without destroying the record.
+
+## Lifecycle
+
+A Mandate has three possible states:
+
+- **ACTIVE**: the authority can be used for evaluation and execution.
+- **PAUSED**: temporarily suspended. Blocks execution, escalation submission and approval, and new child Mandate creation. Deposits, withdrawals, and Mandate administration still work. Resuming restores the same authority.
+- **REVOKED**: permanently stopped. Cannot be resumed. The original records and history are preserved.
+
+```text
+ACTIVE → PAUSED → ACTIVE   (resumable)
+ACTIVE → REVOKED           (permanent)
+```
+
+The Vault controller and authorised parent agents can pause and revoke within their respective boundaries.
+
+## Validity windows
+
+Each Mandate carries `validAfter` and `validUntil` timestamps. The authority cannot be used outside this window. Before `validAfter`, the Mandate is not active. After `validUntil`, it stops being active. A value of `0` for either field means no constraint on that side.
+
+Validity windows intersect across lineage. A child's effective window is the tightest combination of every active ancestor:
+
+```text
+effective validAfter  = latest ancestor validAfter
+effective validUntil  = earliest ancestor validUntil
+```
+
+This is different from the Action Plan `deadline`, which limits one signed proposal. A Mandate window applies to the authority itself.
 
 ## Effective authority
 
@@ -35,10 +64,12 @@ effective authority
   ∩ active ancestor boundaries
 ```
 
-This is why a child Mandate cannot broaden the authority that created it, and why revoking an ancestor affects the descendants below it. The current contracts apply this model to the implemented Mandate limits, escalation permissions, delegation permission, and the [Preflight](/docs/concepts/preflight) rules. Preflight is an additional execution gate rather than authority itself.
+This is why a child Mandate cannot broaden the authority that created it, and why revoking an ancestor affects the descendants below it. The current contracts apply this model to the implemented Mandate limits, escalation permissions, delegation permission, the [Preflight](/docs/concepts/preflight) rules, and the validity window. Pausing an ancestor also blocks descendant execution.
 
 ## Authority lineage
 
-Mandates can form a lineage when an authorised agent delegates a narrower grant to a sub-agent. A proposal is valid only when the authority behind it, including any relevant ancestors, remains active.
+Mandates form a lineage when an authorised agent delegates a narrower grant to a sub-agent. The current contracts support a root Mandate, a child Mandate, and one further sub-agent level (maximum depth of 2). At depth 2, `canDelegate` is forced off so no further delegation is possible.
+
+A proposal is valid only when the authority behind it, including any relevant ancestors, remains active and unpaused.
 
 See [Delegation](/docs/concepts/delegation) for the general inheritance model and [Decisions](/docs/concepts/decisions) for how a proposal's result is expressed.

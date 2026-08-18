@@ -11,6 +11,18 @@ The current contracts emit durable onchain events for authority changes, approva
 
 The event stream is evidence, not a complete human-readable receipt. [Events](/docs/reference/events) show what committed, while the transaction receipt shows whether the enclosing transaction succeeded.
 
+## State transitions
+
+Every authority lifecycle change produces a committed event:
+
+- `MandateCreated` records the initial rules, Preflight rules, and validity window.
+- `MandateUpdated` records replacement rules and window.
+- `MandatePaused` / `MandateUnpaused` record temporary suspension and resumption.
+- `MandateRevoked` records permanent termination.
+- `NonceCancelled` records permanent invalidation of an unused nonce.
+
+These events accumulate over time. An observer can reconstruct what authority existed, when it changed, and when it stopped being usable.
+
 ## Decisions and failed paths
 
 A read-only evaluation can return `DENY` without creating a state change. A submitted execution can also fail before completion, so the absence of a successful execution record does not mean no proposal was evaluated.

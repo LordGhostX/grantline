@@ -7,12 +7,15 @@ Preflight is the set of checks Grantline performs against the state surrounding 
 
 ## Before execution
 
-The current Preflight check considers the proposal as a whole and compares its expected native outflow with the Vault's current native balance. It requires the projected balance after execution to stay above the inherited minimum reserve.
+The current Preflight check considers the proposal as a whole and evaluates two dimensions:
 
-When the projected balance is outside its boundary, the result is `DENY` or `ESCALATE` depending on how the Mandate configured that condition. When the boundary holds, the proposal can continue to the other checks.
+- **Native balance**: compares the projected Vault native balance after the plan's aggregate native outflow against the inherited minimum reserve.
+- **Native-USD balance**: compares the USD value of the projected remaining native balance against the inherited USD floor, using the configured Chainlink feed.
+
+Each dimension can independently produce `DENY` or `ESCALATE` depending on how the Mandate configured that condition. When both dimensions hold, the proposal can continue to the other checks.
 
 ## What Preflight does not decide
 
-Preflight does not decide whether a strategy is profitable or whether an external asset is eligible. It is an additional execution gate, not a source of authority. [Guardians](/docs/concepts/guardians) are the planned way to bring external context into an authorisation decision; the current contracts only have the native-balance check.
+Preflight does not decide whether a strategy is profitable or whether an external asset is eligible. It is an additional execution gate, not a source of authority. [Guardians](/docs/concepts/guardians) are the planned way to bring external context into an authorisation decision; the current contracts only have the native-balance and native-USD balance checks.
 
 See [Decisions](/docs/concepts/decisions) for how a failed Preflight check affects authorisation and [Mandates](/docs/concepts/mandates) for how conditions attach to authority.

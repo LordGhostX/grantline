@@ -1,0 +1,207 @@
+---
+title: Lifecycle management
+description: Pause, revoke, cancel nonces, update rules, and manage validity windows.
+---
+
+This guide covers the authority lifecycle tools: pausing Vaults and Mandates, revoking Mandates, cancelling nonces, updating rules, and managing validity windows.
+
+## Load the deployment values
+
+```sh
+cd contracts
+set -a
+source .env
+set +a
+
+MANIFEST="$DEPLOYMENT_MANIFEST_PATH"
+GRANTLINE="$(jq -r '.grantline.proxy' "$MANIFEST")"
+REGISTRY="$(jq -r '.modules.registry.proxy' "$MANIFEST")"
+RPC="$XLAYER_TESTNET_RPC_URL"
+CONTROLLER="$DEPLOYER_ADDRESS"
+VAULT=0x...
+MANDATE_ID=1
+```
+
+## Pause a Vault
+
+Pausing the Vault blocks autonomous agent execution, escalation submission, and new Mandate creation. Deposits, withdrawals, and Mandate administration still work.
+
+```sh
+cast send "$GRANTLINE" \
+  "pauseVault(address)()" \
+  "$VAULT" \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+Verify the pause state:
+
+```sh
+cast call "$GRANTLINE" \
+  "getVault(address)((address,address,address,address,address,uint64,uint256,bool))" \
+  "$VAULT" \
+  --rpc-url "$RPC"
+```
+
+The last field (`paused`) should be `true`.
+
+An agent that tries to execute against a paused Vault receives `DENY` with `VAULT_PAUSED`.
+
+### Unpause a Vault
+
+```sh
+cast send "$GRANTLINE" \
+  "unpauseVault(address)()" \
+  "$VAULT" \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+## Pause a Mandate
+
+Pausing a Mandate blocks execution and escalation for that specific Mandate. Other Mandates on the same Vault are unaffected.
+
+```sh
+cast send "$GRANTLINE" \
+  "pauseMandate(uint256)()" \
+  "$MANDATE_ID" \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+Read the `MandatePaused` event:
+
+```sh
+cast logs --rpc-url "$RPC" --address "$GRANTLINE" \
+  'MandatePaused(uint256,address)' \
+  --from-block 0
+```
+
+An agent that tries to execute against a paused Mandate receives `DENY` with `MANDATE_PAUSED`.
+
+### Unpause a Mandate
+
+```sh
+cast send "$GRANTLINE" \
+  "unpauseMandate(uint256)()" \
+  "$MANDATE_ID" \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+The Mandate returns to `ACTIVE` status. All previously valid authority is restored.
+
+## Revoke a Mandate
+
+Revocation is permanent. The Mandate cannot be resumed.
+
+```sh
+cast send "$GRANTLINE" \
+  "revokeMandate(uint256)()" \
+  "$MANDATE_ID" \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+Read the `MandateRevoked` event:
+
+```sh
+cast logs --rpc-url "$RPC" --address "$REGISTRY" \
+  'MandateRevoked(uint256,address,uint64)' \
+  --from-block 0
+```
+
+A proposal from a revoked Mandate or any descendant returns `DENY` with `MANDATE_INACTIVE`.
+
+## Update Mandate rules
+
+The controller can change rules, Preflight rules, and the validity window at any time:
+
+```sh
+cast send "$GRANTLINE" \
+  "updateMandate(uint256,(bool,uint256,uint256,bool,uint256,uint256,bool),(uint256,bool,uint256,bool),uint64,uint64)()" \
+  "$MANDATE_ID" \
+  "(true, 0, 8000000000000000000, true, 0, 0, false)" \
+  "(1000000000000000000, true, 0, false)" \
+  0 \
+  0 \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+Updates take effect immediately. A plan signed before the update is evaluated against the current rules.
+
+For a child Mandate, the new rules must be narrower than the parent's effective rules. Attempting to broaden fails with `ChildRulesExceedParent`.
+
+## Cancel a nonce
+
+The agent or Vault controller can permanently invalidate an unused, unreserved nonce:
+
+```sh
+cast send "$GRANTLINE" \
+  "cancelNonce(uint256,uint256)()" \
+  "$MANDATE_ID" \
+  1 \
+  --rpc-url "$RPC" \
+  --private-key "$AGENT_PRIVATE_KEY"
+```
+
+Read the `NonceCancelled` event:
+
+```sh
+cast logs --rpc-url "$RPC" --address "$GRANTLINE" \
+  'NonceCancelled(uint256,address,uint256,address,uint64)' \
+  --from-block 0
+```
+
+A cancelled nonce cannot be used for execution or reserved for an escalation. This is useful for invalidating a signed plan that was never submitted.
+
+Cancellation works even during pause, outside validity windows, or after revocation. It is a recovery-only restriction on a specific execution slot.
+
+## Validity windows
+
+### Create a time-bounded Mandate
+
+```sh
+cast send "$GRANTLINE" \
+  "createMandate(address,address,(bool,uint256,uint256,bool,uint256,uint256,bool),(uint256,bool,uint256,bool),uint64,uint64)(uint256)" \
+  "$VAULT" \
+  "$AGENT" \
+  "(false, 0, 5000000000000000000, true, 0, 0, false)" \
+  "(0, false, 0, false)" \
+  1700000000 \
+  1700010000 \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+The Mandate is valid between timestamps `1700000000` and `1700010000`. Outside this window, the evaluator returns `DENY` with `MANDATE_NOT_YET_VALID` or `MANDATE_EXPIRED`.
+
+### Check effective validity window
+
+```sh
+cast call "$GRANTLINE" \
+  "getEffectiveValidityWindow(uint256)(uint64,uint64)" \
+  "$MANDATE_ID" \
+  --rpc-url "$RPC"
+```
+
+For a child Mandate, the effective window is the intersection of the child and all ancestor windows.
+
+### Update the window
+
+```sh
+cast send "$GRANTLINE" \
+  "updateMandate(uint256,(bool,uint256,uint256,bool,uint256,uint256,bool),(uint256,bool,uint256,bool),uint64,uint64)()" \
+  "$MANDATE_ID" \
+  "(false, 0, 5000000000000000000, true, 0, 0, false)" \
+  "(0, false, 0, false)" \
+  0 \
+  1700020000 \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+The window is now open-ended on the start side and expires at `1700020000`.
+
+See [Mandates](/docs/concepts/mandates) for the lifecycle model and [Mandate rules](/docs/reference/mandate-rules) for the exact field semantics.

@@ -1,30 +1,45 @@
 ---
 title: Events
-description: The current registry, escalation, Vault, and executor events and what each one proves.
+description: The current registry, escalation, Vault, executor, and facade events and what each one proves.
 ---
 
 Committed events are the current onchain evidence surface. An event can show that a state transition or execution step committed, but it cannot replace the transaction receipt: a reverted transaction leaves no events behind. See [Records](/docs/concepts/records) for how events fit into the broader traceability model.
 
 ## MandateRegistry
 
-| Event                      | Fields                                                                                                                                                                                | What it records                                                                                                 |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `MandateCreated`           | `mandateId` indexed, `owner` indexed, `vault` indexed, `agent`, `parentMandateId`, `delegationDepth`, `MandateRules rules`, `PreflightRules preflightRules`, `createdBy`, `createdAt` | Creation of a Mandate and the rules written at creation time.                                                   |
-| `MandateUpdated`           | `mandateId` indexed, `MandateRules rules`, `PreflightRules preflightRules`, `updatedBy` indexed, `updatedAt`                                                                          | A committed replacement of the stored rules. Effective lineage rules still apply when the evaluator reads them. |
-| `MandateRevoked`           | `mandateId` indexed, `revokedBy` indexed, `revokedAt`                                                                                                                                 | Revocation of a Mandate. A revoked ancestor also makes descendant lineage inactive during evaluation.           |
-| `NonceReservationCreated`  | `mandateId` indexed, `agent` indexed, `nonce` indexed, `digest`                                                                                                                       | Reservation of a nonce for one escalation digest.                                                               |
-| `NonceReservationConsumed` | `mandateId` indexed, `agent` indexed, `nonce` indexed, `digest`                                                                                                                       | Consumption of an escalation reservation when the approved plan executes.                                       |
+| Event                      | Fields                                                                                                                                                                                                    | What it records                                                                                                 |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `MandateCreated`           | `mandateId` indexed, `vault` indexed, `agent` indexed, `parentMandateId`, `delegationDepth`, `MandateRules rules`, `PreflightRules preflightRules`, `validAfter`, `validUntil`, `createdBy`, `createdAt` | Creation of a Mandate and the rules, Preflight rules, and validity window written at creation time.             |
+| `MandateUpdated`           | `mandateId` indexed, `MandateRules rules`, `PreflightRules preflightRules`, `validAfter`, `validUntil`, `updatedBy` indexed, `updatedAt`                                                                  | A committed replacement of the stored rules, Preflight rules, and validity window. Effective lineage rules still apply when the evaluator reads them. |
+| `MandateRevoked`           | `mandateId` indexed, `revokedBy` indexed, `revokedAt`                                                                                                                                                     | Revocation of a Mandate. A revoked ancestor also makes descendant lineage inactive during evaluation.           |
+| `MandatePaused`            | `mandateId` indexed, `pausedBy` indexed, `pausedAt`                                                                                                                                                       | Pausing of a Mandate. A paused ancestor blocks execution, escalation submission, and new child Mandate creation. |
+| `MandateUnpaused`          | `mandateId` indexed, `unpausedBy` indexed, `unpausedAt`                                                                                                                                                   | Unpausing of a previously paused Mandate.                                                                       |
+| `NonceReservationCreated`  | `mandateId` indexed, `agent` indexed, `nonce` indexed, `digest`                                                                                                                                           | Reservation of a nonce for one escalation digest.                                                               |
+| `NonceReservationConsumed` | `mandateId` indexed, `agent` indexed, `nonce` indexed, `digest`                                                                                                                                           | Consumption of an escalation reservation when the approved plan executes.                                       |
 
-The registry events describe authority and nonce state. `MandateUpdated` carries the rules supplied to that update, while `getEffectiveRules` and `getEffectivePreflightRules` are still needed to see the inherited result used by the evaluator.
+The registry events describe authority and nonce state. `MandateUpdated` carries the rules and validity window supplied to that update, while `getEffectiveRules`, `getEffectivePreflightRules`, and `getEffectiveValidityWindow` are still needed to see the inherited result used by the evaluator.
+
+## Grantline (facade)
+
+| Event                | Fields                                                                                                          | What it records                                                                                                     |
+| -------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `VaultCreated`       | `vault` indexed, `controller` indexed, `owner` indexed, `authority`, `implementation`, `version`                | A new Vault proxy was created and registered.                                                                       |
+| `VaultPaused`        | `vault` indexed, `pausedBy` indexed                                                                             | A Vault controller paused the Vault. Execution is blocked until unpause.                                            |
+| `VaultUnpaused`      | `vault` indexed, `unpausedBy` indexed                                                                           | A Vault controller unpaused the Vault.                                                                              |
+| `MandatePaused`      | `mandateId` indexed, `pausedBy` indexed                                                                         | A Mandate was paused through the facade.                                                                            |
+| `MandateUnpaused`    | `mandateId` indexed, `unpausedBy` indexed                                                                       | A Mandate was unpaused through the facade.                                                                          |
+| `NonceCancelled`     | `mandateId` indexed, `agent` indexed, `nonce` indexed, `cancelledBy`, `cancelledAt`                             | An unused, unreserved nonce was permanently invalidated by the agent or Vault controller.                           |
+| `ActionPlanSubmitted`| `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `submittedBy`                                     | A signed plan was submitted to the escalation manager for owner review.                                             |
+| `ActionPlanExecuted` | `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `vault`, `nonce`                                   | A plan completed executor-side action processing. The executor's `ActionPlanExecuted` event carries the full detail. |
 
 ## EscalationManager
 
-| Event                 | Fields                                                                                                                               | What it records                                                                                                                 |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `EscalationSubmitted` | `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `nonce`, `nativeAmount`, `usdAmount`, `usdLimitSkipped`, `submittedAt` | A complete plan and signature were stored after evaluation returned `ESCALATE`, and its nonce was reserved.                     |
-| `EscalationApproved`  | `actionDigest` indexed, `mandateId` indexed, `owner` indexed, `approvedAt`                                                           | The current Vault owner approved the stored escalation while its Mandate lineage was active. It does not prove later execution. |
-| `EscalationDenied`    | `actionDigest` indexed, `mandateId` indexed, `owner` indexed, `deniedAt`                                                             | The current Vault owner denied a pending escalation.                                                                            |
-| `EscalationExecuted`  | `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `nonce`, `executedAt`                                                  | An approved escalation completed executor-side action processing and was marked executed.                                       |
+| Event                 | Fields                                                                                                                                   | What it records                                                                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `EscalationSubmitted` | `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `submittedBy`, `nonce`, `nativeAmount`, `nativeUsdValue`, `nativeBalanceUsdValue`, `submittedAt` | A complete plan and signature were stored after evaluation returned `ESCALATE`, and its nonce was reserved.                     |
+| `EscalationApproved`  | `actionDigest` indexed, `mandateId` indexed, `controller` indexed, `approvedAt`                                                          | The current Vault controller approved the stored escalation while its Mandate lineage was active. It does not prove later execution. |
+| `EscalationDenied`    | `actionDigest` indexed, `mandateId` indexed, `controller` indexed, `deniedAt`                                                            | The current Vault controller denied a pending escalation.                                                                       |
+| `EscalationExecuted`  | `actionDigest` indexed, `mandateId` indexed, `agent` indexed, `nonce`, `executedAt`                                                      | An approved escalation completed executor-side action processing and was marked executed.                                       |
 
 The manager stores the full `ActionPlan` and signature behind the digest. Query `getEscalation` when an event identifies a digest; the event alone does not contain the original parameters or signature.
 
@@ -54,14 +69,14 @@ event ActionPlanExecuted(
     address vault,
     uint256 nonce,
     uint256 nativeAmount,
-    uint256 usdAmount,
-    bool usdLimitSkipped,
+    uint256 nativeUsdValue,
     uint256 actionCount,
-    uint256 nativeBalanceAfter
+    uint256 nativeBalanceAfter,
+    uint256 nativeBalanceUsdValue
 );
 ```
 
-It records the digest that was signed, the Mandate and agent, the Vault used, the consumed nonce, aggregate amounts, whether unavailable USD valuation was skipped, the number of actions, and the projected native balance after evaluation. Because it is emitted after the action loop, its presence in a committed transaction is evidence that all actions reached the executor's successful completion point.
+It records the digest that was signed, the Mandate and agent, the Vault used, the consumed nonce, aggregate native amount, USD valuation of the native outflow, the number of actions, projected native balance after evaluation, and USD valuation of the projected remaining balance. Because it is emitted after the action loop, its presence in a committed transaction is evidence that all actions reached the executor's successful completion point.
 
 ## What events do not prove
 
@@ -69,4 +84,4 @@ Events do not prove that a read-only evaluation was performed at a particular ti
 
 Events emitted by a transaction that reverts are rolled back. For a failed executor call, inspect the receipt status and revert data, then use earlier committed registry or manager events to understand the authority state that led to the failure.
 
-See [Inspect execution evidence](/docs/guides/inspect-execution-evidence) for `cast` and explorer workflows.
+See [Inspecting evidence](/docs/guides/inspecting-evidence) for `cast` and explorer workflows.

@@ -11,6 +11,15 @@ An Action Plan gives Grantline a complete object to evaluate rather than a reque
 
 The proposal format can expand as Grantline supports more capabilities, while the principle stays the same: the agent submits a structured request that Grantline can evaluate before execution.
 
+## Action types
+
+The current contracts support two action types:
+
+- **TRANSFER** (version 1): moves native asset or ERC-20 tokens from the Vault to a recipient.
+- **SWAP** (version 1): swaps tokens through a configured adapter (currently Uniswap V3). The adapter validates the route before execution.
+
+A plan can contain multiple actions of either type. The executor runs them in array order.
+
 ## Ordered and atomic
 
 An Action Plan can contain multiple actions. Grantline evaluates the plan as a whole, which prevents separate actions from being used to bypass a boundary that applies to their combined effect.

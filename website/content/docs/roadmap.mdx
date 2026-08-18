@@ -1,48 +1,37 @@
 ---
 title: Roadmap
-description: Planned direction for mandate policy, external conditions, integration tools, and indexed decision evidence.
+description: Planned direction for external conditions, integration tools, and indexed decision evidence.
 icon: Map
 ---
 
 <Callout type="info" title="Planned direction">
-  The current contracts MVP is the reference point for this page. The
-  capabilities below describe where Grantline can go next; they are not
-  available in the current X Layer testnet deployment.
+  The current contracts include Vault custody, TRANSFER and SWAP actions,
+  Mandates with validity windows, delegation, Preflight, owner-approved
+  escalation, revocation, pausing, nonce cancellation, and native-USD
+  valuation. The capabilities below describe where Grantline can go next.
 </Callout>
 
-## Mandate lifecycle and policy
-
-The current [Mandate](/docs/concepts/mandates) model defines what an agent may do and how that authority is delegated, updated, or revoked. Future policy controls can make that authority easier to operate over time and more precise at the point of execution.
-
-### Pausing mandates
-
-A paused Mandate would temporarily stop new proposals from using its authority without deleting the Mandate or its history. Resuming it would restore the same authority, while [Revocation](/docs/enforcement/revocation) would remain the action that permanently stops future use. The effect on delegated sub-agents and pending [Escalations](/docs/enforcement/escalation) would need to follow the same lineage and approval rules as the current model.
-
-### Mandate validity windows
-
-A Mandate validity window would use `validFrom` and `validUntil` to define when the authority can be used. Before `validFrom`, the Mandate would not authorise proposals; after `validUntil`, it would stop doing so. This is different from the current Action Plan `deadline`, which limits one signed proposal. A Mandate window would apply to the authority itself and would need to remain consistent across delegated Mandates and approved escalations.
-
-### Destination and capability policies
+## Destination and capability policies
 
 A future destination policy would let an owner restrict a Mandate to approved targets. That would give a Treasury or Payments sub-agent a clear destination boundary in addition to amount limits. A delegated Mandate should be able to narrow an inherited policy, while the policy must remain clear for approvals that are already pending when the list changes. The current `TRANSFER` action has no such allowlist and accepts any non-zero recipient.
 
 The same policy needs to cover actions that create reusable downstream authority, such as token allowances or operator approvals. An authorised action should not create a capability that bypasses later Grantline evaluation unless the Mandate explicitly permits that capability. The action-specific rules and enforcement path for this are not defined yet.
 
-### Shared cumulative ancestor budgets
+## Shared cumulative ancestor budgets
 
 A shared cumulative budget would limit total usage across an authority chain. It would prevent a parent and its sub-agents from each spending up to a separate allowance and exceeding the amount the owner intended for the whole group. The budget could become a shared boundary alongside the current per-plan amount limits, with usage and pending approval capacity accounted for across the lineage.
 
 ## Guardians
 
-[Preflight](/docs/concepts/preflight) currently checks the projected native balance left in a [Vault](/docs/concepts/vaults). [Guardians](/docs/concepts/guardians) are a planned way to bring relevant context from outside the current contract state into the same authorisation decision.
+[Preflight](/docs/concepts/preflight) currently checks the projected native balance and native-USD balance left in a [Vault](/docs/concepts/vaults). [Guardians](/docs/concepts/guardians) are a planned way to bring relevant context from outside the current contract state into the same authorisation decision.
 
 A Guardian could answer a narrow question chosen by the owner, such as whether an asset is eligible, whether a market condition is within policy, whether a counterparty is acceptable, or whether an organisation's policy permits the action. It would add context to a decision; it would not choose an agent's strategy or replace the Vault's custody boundary.
 
-The first proposed direction is an RWA Guardian for tokenised real-world assets. The product direction may later include other specialised condition modules, but no Guardian check or external condition provider is part of the current contracts MVP.
+The first proposed direction is an RWA Guardian for tokenised real-world assets. The product direction may later include other specialised condition modules, but no Guardian check or external condition provider is part of the current contracts.
 
 ## SDK and API
 
-The current integration surface uses the contract interfaces, external wallet tooling, and read-only [cast guides](/docs/guides/inspect-a-mandate). A future SDK could make the same flow easier to use by helping integrators construct Action Plans, sign them, submit them, read decisions, manage Escalations, and inspect execution evidence.
+The current integration surface uses the contract interfaces, external wallet tooling, and the [cast guides](/docs/guides/vault-and-mandate-setup). A future SDK could make the same flow easier to use by helping integrators construct Action Plans, sign them, submit them, read decisions, manage Escalations, and inspect execution evidence.
 
 A future API could provide server-side coordination and presentation around those contract calls. The authority decision would remain in the deployed contracts, and signing authority would remain with the configured agent rather than with a hosted service.
 
@@ -50,10 +39,10 @@ When those tools are introduced, their package, authentication, and response des
 
 ## Indexing and Decision Receipts
 
-The current contracts emit committed events from the registry, escalation manager, Vault, and executor. Integrators can inspect those events and transaction receipts directly using [Events](/docs/reference/events) and the [execution evidence guide](/docs/guides/inspect-execution-evidence).
+The current contracts emit committed events from the registry, escalation manager, Vault, and executor. Integrators can inspect those events and transaction receipts directly using [Events](/docs/reference/events) and the [inspecting evidence guide](/docs/guides/inspecting-evidence).
 
-An offchain indexer could organise that evidence by Mandate, authority lineage, nonce, and action digest. A Decision Receipt could then present the proposal, authority, decision path, owner approval, transaction, and execution outcome in one human-readable view.
+An offchain indexer could organise that evidence by Mandate, authority lineage, nonce, and action digest. A Decision Receipt could then present the proposal, authority, decision path, controller approval, transaction, and execution outcome in one human-readable view.
 
-The future receipt is better understood as an evidence bundle than as a renamed activity log. It may connect the Action Plan and `actionDigest` with Mandate lineage, the effective rules used, Preflight results, Guardian evidence, owner approval, transaction status, and downstream failure details. A Mandate revision or effective-policy commitment may help make that explanation reproducible, but neither has a defined canonical construction today.
+The future receipt is better understood as an evidence bundle than as a renamed activity log. It may connect the Action Plan and `actionDigest` with Mandate lineage, the effective rules used, Preflight results, Guardian evidence, controller approval, transaction status, and downstream failure details. A Mandate revision or effective-policy commitment may help make that explanation reproducible, but neither has a defined canonical construction today.
 
 The distinction between an authorisation decision and an execution outcome must remain visible. An `ALLOW` result can lead to a reverted transaction, an approved Escalation can remain unexecuted, and a read-only `DENY` does not create a committed event. Indexing and Decision Receipts are deferred until the supporting service and data model exist.

@@ -5,11 +5,6 @@ description: Current Grantline contract evidence on X Layer testnet, including n
 
 The current contracts MVP is deployed and exercised on X Layer testnet. This page records the network and deployment-specific evidence; shared authorisation and execution mechanics belong in the enforcement and execution pages.
 
-<Callout type="warning" title="Testnet evidence">
-  This is a testnet deployment for inspection and integration work. Do not use
-  the listed contracts with production capital.
-</Callout>
-
 ## Network settings
 
 | Setting   | Value                                                                         |
@@ -38,17 +33,17 @@ The X Layer testnet integration exercised:
 
 - a successful root `ALLOW` transfer;
 - a hard-denied over-limit plan and a consumed-nonce replay;
-- escalation submission, owner approval, and execution;
+- escalation submission, controller approval, and execution;
 - delegated authority through a child and a grandchild Mandate;
-- inherited Preflight denial followed by owner-approved execution;
+- inherited Preflight denial followed by controller-approved execution;
 - ancestor tightening and lineage revocation; and
 - failed execution receipts that moved no funds.
 
-This is evidence of the current contract flow on this network. Use [Inspect execution evidence](/docs/guides/inspect-execution-evidence) for the reusable receipt, event, and explorer workflow.
+This is evidence of the current contract flow on this network. Use [Inspecting evidence](/docs/guides/inspecting-evidence) for the reusable receipt, event, and explorer workflow.
 
 ## Testnet-specific boundaries
 
-The deployed evaluator has no USD value provider and is configured to skip unavailable USD valuation. Available quotes still contribute to the USD subtotal, while a missing quote marks the result as skipped and prevents a USD minimum from being enforced for an incomplete valuation. This setting belongs to the current testnet deployment and must not be read as a production valuation policy.
+The current deployment has no Chainlink USD feed configured. Native-USD rules and Preflight floors are not available on this deployment until a fresh deployment with a configured feed is performed.
 
 Offchain indexing, sponsored submission, production USD resolution, and assembled Decision Receipts remain deferred. Those are product or integration capabilities, not properties of X Layer testnet itself.
 

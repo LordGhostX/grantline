@@ -3,13 +3,15 @@ title: Revocation
 description: Revocation stops future use of a Mandate and its descendants while preserving authority history.
 ---
 
-Revocation changes a Mandate from `ACTIVE` to `REVOKED` and records the revocation time. It does not delete the Mandate, its parent reference, its agent address, or the events that explain its history. It is the current contract's way to stop a Mandate; pausing and validity windows are planned roadmap items.
+Revocation changes a Mandate from `ACTIVE` to `REVOKED` and records the revocation time. It does not delete the Mandate, its parent reference, its agent address, or the events that explain its history. It is the current contract's way to permanently stop a Mandate.
+
+Pausing is a lighter alternative that temporarily suspends authority without destroying the record. See the pause section below for the distinction.
 
 ## Who can revoke
 
-The Vault owner can revoke any Mandate for that Vault. The direct parent agent can revoke its child while the parent lineage is active. A parent agent cannot administer a child through an inactive parent, and an unrelated agent cannot revoke either record.
+The Vault controller can revoke any Mandate for that Vault. The direct parent agent can revoke its child while the parent lineage is active. A parent agent cannot administer a child through an inactive parent, and an unrelated agent cannot revoke either record.
 
-The same administrator boundary applies to Mandate updates. Updates are read by the evaluator at execution time, so a tightened rule can affect a plan that was signed before the update.
+The same administrator boundary applies to Mandate updates and pauses. Updates are read by the evaluator at execution time, so a tightened rule can affect a plan that was signed before the update.
 
 ## Active lineage
 
@@ -37,10 +39,29 @@ Revocation affects every stage of an escalation:
 
 - a new escalation cannot reserve a nonce for an inactive lineage
 - a pending escalation cannot be approved after its Mandate or ancestor is revoked
-- a pending escalation can still be denied by the Vault owner to close it operationally
+- a pending escalation can still be denied by the Vault controller to close it operationally
 - an approved escalation remains stored as history, but current evaluation prevents execution
 
 The reserved digest is not silently reassigned when authority changes. This keeps the old proposal's history intact and prevents a different plan from inheriting its execution slot.
+
+## Pausing as an alternative
+
+Pausing a Mandate temporarily suspends authority without permanently destroying it. The stored Mandate remains `PAUSED` rather than `REVOKED`, and resuming restores the same authority.
+
+Pausing blocks:
+
+- normal and escalated execution
+- escalation submission and approval
+- new child Mandate creation
+
+Pausing does not block:
+
+- controller deposits and withdrawals
+- Mandate updates, revocation, and nonce cancellation
+
+The effect on delegated sub-agents follows the same lineage rules as revocation: a paused ancestor blocks execution for descendants. The evaluator returns `DENY` with `MANDATE_PAUSED` instead of `MANDATE_INACTIVE`.
+
+An administrator can pause and later unpause a Mandate. The pause and unpause transitions produce committed events (`MandatePaused`, `MandateUnpaused`) that record who paused and when.
 
 ## Historical record
 

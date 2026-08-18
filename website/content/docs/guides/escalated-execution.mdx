@@ -1,0 +1,158 @@
+---
+title: Escalated execution
+description: Submit, approve, and execute a plan through the ESCALATE path.
+---
+
+This guide walks through the full escalation lifecycle: creating a plan that triggers `ESCALATE`, submitting it for controller review, approving or denying it, and executing the approved plan.
+
+## Load the deployment values
+
+```sh
+cd contracts
+set -a
+source .env
+set +a
+
+MANIFEST="$DEPLOYMENT_MANIFEST_PATH"
+GRANTLINE="$(jq -r '.grantline.proxy' "$MANIFEST")"
+REGISTRY="$(jq -r '.modules.registry.proxy' "$MANIFEST")"
+MANAGER="$(jq -r '.modules.escalationManager.proxy' "$MANIFEST")"
+RPC="$XLAYER_TESTNET_RPC_URL"
+AGENT="$AGENT_ADDRESS"
+```
+
+## Create an escalatable plan
+
+A plan triggers `ESCALATE` when it crosses a boundary with escalation enabled. For example, a plan that exceeds `maxNativeAmount` with `escalateNativeAmount` set to `true`:
+
+```json
+{
+  "mandateId": "1",
+  "agent": "0xAgent",
+  "nonce": "3",
+  "deadline": "0",
+  "actions": [
+    {
+      "actionType": "TRANSFER",
+      "version": 1,
+      "asset": "native",
+      "to": "0xRecipient",
+      "amount": "15000000000000000000"
+    }
+  ]
+}
+```
+
+The amount is 15 OKB, which exceeds the 10 OKB maximum. Because `escalateNativeAmount` is `true`, the evaluator returns `ESCALATE` instead of `DENY`.
+
+### Sign and evaluate
+
+Sign the plan using the EIP-712 flow from [Normal execution](/docs/guides/normal-execution). Then evaluate:
+
+```sh
+cast call "$GRANTLINE" \
+  "evaluate((uint256,address,uint256,uint256,(uint8,uint8,bytes)[]),bytes)((uint8,uint8,uint256,uint256,uint256,uint256,uint256))" \
+  "($MANDATE_ID, $AGENT, 3, 0, ((0, 1, $TRANSFER_PARAMS)))" \
+  "$SIGNATURE" \
+  --rpc-url "$RPC"
+```
+
+The result should show `decision: 1` (`ESCALATE`) and `failureCode: 19` (`NATIVE_AMOUNT_ABOVE_MAXIMUM`).
+
+## Submit the escalation
+
+Anyone can submit after the evaluator returns `ESCALATE`. The Grantline facade computes the digest and routes to the escalation manager:
+
+```sh
+cast send "$GRANTLINE" \
+  "submitEscalation((uint256,address,uint256,uint256,(uint8,uint8,bytes)[]),bytes)(bytes32)" \
+  "($MANDATE_ID, $AGENT, 3, 0, ((0, 1, $TRANSFER_PARAMS)))" \
+  "$SIGNATURE" \
+  --rpc-url "$RPC" \
+  --private-key "$AGENT_PRIVATE_KEY"
+```
+
+The return value is the action digest. Read the `EscalationSubmitted` event to confirm:
+
+```sh
+cast logs --rpc-url "$RPC" --address "$MANAGER" \
+  'EscalationSubmitted(bytes32,uint256,address,address,uint256,uint256,uint256,uint256,uint64)' \
+  --from-block 0
+```
+
+## Check escalation state
+
+```sh
+DIGEST=0x...
+
+cast call "$GRANTLINE" \
+  "escalationStatus(bytes32)(uint8)" \
+  "$DIGEST" \
+  --rpc-url "$RPC"
+
+cast call "$GRANTLINE" \
+  "getEscalation(bytes32)((uint256,address,uint256,uint256,(uint8,uint8,bytes)[]),bytes,address,uint8,uint64)" \
+  "$DIGEST" \
+  --rpc-url "$RPC"
+```
+
+Status `1` is `PENDING`. The stored plan and signature are the evidence for what the controller will review.
+
+## Controller approves
+
+Only the Vault controller can approve. The Grantline facade verifies the controller before routing to the manager:
+
+```sh
+cast send "$GRANTLINE" \
+  "approveEscalation(bytes32)()" \
+  "$DIGEST" \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+Read the `EscalationApproved` event:
+
+```sh
+cast logs --rpc-url "$RPC" --address "$MANAGER" \
+  'EscalationApproved(bytes32,uint256,address,uint64)' \
+  --from-block 0
+```
+
+The status is now `2` (`APPROVED`).
+
+## Execute the approved escalation
+
+The executor loads the stored plan, evaluates it again against current state, and executes if the current result is not `DENY`:
+
+```sh
+cast send "$GRANTLINE" \
+  "executeEscalated(bytes32)(bytes32)" \
+  "$DIGEST" \
+  --rpc-url "$RPC" \
+  --private-key "$AGENT_PRIVATE_KEY"
+```
+
+The executor recomputes the digest, confirms it matches the reserved value, consumes the reserved nonce, executes the actions, and marks the escalation `EXECUTED`.
+
+## Controller denies
+
+Denial closes the operational record without authorising execution:
+
+```sh
+cast send "$GRANTLINE" \
+  "denyEscalation(bytes32)()" \
+  "$DIGEST" \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+The status becomes `3` (`DENIED`). The reserved nonce is not released. The slot cannot be reused through the ordinary path.
+
+## Key points
+
+- Approval is tied to the exact stored plan. A later plan that reuses the nonce cannot inherit the approval.
+- The executor re-evaluates at execution time. If the Mandate was revoked, paused, or its rules changed after approval, the current evaluation may return `DENY` and prevent execution.
+- If the execution reverts (downstream failure), the escalation stays `APPROVED`. The controller can retry later.
+- A denied escalation leaves the nonce reserved. The agent or controller can cancel it with `cancelNonce` to release the slot.
+
+See [Escalation](/docs/enforcement/escalation) for the lifecycle mechanics and [Inspecting evidence](/docs/guides/inspecting-evidence) for reading escalation events.

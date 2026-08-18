@@ -3,21 +3,23 @@ title: Enforcement boundary
 description: Grantline keeps proposal evaluation, approval, and capital movement on an authorised contract path.
 ---
 
-Grantline separates the agent's signed proposal from the Vault that holds capital. The evaluator decides whether the proposal is authorised, the executor translates an authorised plan into Vault calls, and the Vault accepts calls only from its configured authority. This is the contract boundary that prevents an agent's signing key from becoming direct Vault authority.
+Grantline separates the agent's signed proposal from the Vault that holds capital. The `Grantline` facade routes all operations to internal modules. The evaluator decides whether the proposal is authorised, the executor translates an authorised plan into Vault calls, and the Vault accepts calls only from its configured authority. This is the contract boundary that prevents an agent's signing key from becoming direct Vault authority.
 
 ```text
 Agent signs an Action Plan
         ↓
-MandateEvaluator checks current authority
+Grantline routes to MandateEvaluator
         ↓
 VaultExecutor accepts an allowed or approved plan
         ↓
-Vault performs the transfer
+Vault performs the transfer or swap
 ```
 
 ## Contract path
 
-`MandateEvaluator` is the decision boundary. It checks the [Mandate](/docs/concepts/mandates) and active lineage, the agent binding, the signature, the deadline, the complete [Action Plan](/docs/concepts/action-plans), amount rules, and [Preflight](/docs/concepts/preflight) state. It returns `ALLOW`, `ESCALATE`, or `DENY` with the first relevant failure code; it never moves capital itself.
+`Grantline` is the only external entry point. It validates that the caller is configured, computes the action digest, and routes to the correct module. Direct calls to internal modules fail.
+
+`MandateEvaluator` is the decision boundary. It checks the [Mandate](/docs/concepts/mandates) and active lineage, the validity window, the agent binding, the signature, the deadline, the complete [Action Plan](/docs/concepts/action-plans), amount rules, SWAP route validation, and [Preflight](/docs/concepts/preflight) state. It returns `ALLOW`, `ESCALATE`, or `DENY` with the first relevant failure code; it never moves capital itself.
 
 `VaultExecutor` is the execution boundary above the Vault. Its normal entrypoint accepts only an `ALLOW` result. Its escalated entrypoint loads the complete plan stored by `EscalationManager`, confirms that the escalation is approved, recomputes the evaluation against current state, and rejects the plan only when the current result is `DENY`. An approved plan can therefore remain executable when current rules still return `ALLOW` or `ESCALATE`, but approval never skips re-evaluation.
 
@@ -27,17 +29,17 @@ The executor checks that the supplied Vault is the Vault named by the Mandate, c
 
 The agent's authority comes from the signature recovered from the Action Plan. The public executor entrypoint does not trust the transaction sender as the agent; it trusts the plan's signed `agent` field after the evaluator confirms that it matches the Mandate. In the current integration, the agent or operator submits the transaction and pays gas directly. Sponsored submission is future work and would not change this contract boundary.
 
-Escalation submission is permissionless after the evaluator returns `ESCALATE`, but the manager can reserve a nonce only when it is exposed by the current Vault authority. Approval and denial belong to the current Vault owner. The current Vault authority is the `VaultExecutor`, which is also the only component allowed to consume a normal or reserved nonce for execution.
+Escalation submission is permissionless after the evaluator returns `ESCALATE`, but the manager can reserve a nonce only when it is exposed by the current Vault authority. Approval and denial belong to the current Vault controller. The current Vault authority is the `VaultExecutor`, which is also the only component allowed to consume a normal or reserved nonce for execution.
 
 ## Why direct Vault calls fail
 
-The Vault's generic `execute` function is restricted to its `authority` address. The owner controls deposits, withdrawals, ownership, and authority assignment, while the agent address in a Mandate is not given direct Vault authority. An agent that bypasses the evaluator and calls the Vault directly therefore fails the Vault's authority check.
+The Vault's generic `execute` function is restricted to its `authority` address. The controller controls deposits, withdrawals, ownership, and authority assignment, while the agent address in a Mandate is not given direct Vault authority. An agent that bypasses the evaluator and calls the Vault directly therefore fails the Vault's authority check.
 
-The owner must explicitly configure the executor as the Vault authority. This keeps custody in the Vault, keeps action translation in the executor, and prevents a signing key from becoming an unrestricted capital-movement key.
+The controller must explicitly configure the executor as the Vault authority. This keeps custody in the Vault, keeps action translation in the executor, and prevents a signing key from becoming an unrestricted capital-movement key.
 
 ## Re-evaluation and re-entrancy
 
-Approved escalations are evaluated again immediately before execution. Current Mandate rules, active lineage, valuation behaviour, and the projected Vault balance still apply, so tightening or revoking authority can stop an approved plan before capital moves.
+Approved escalations are evaluated again immediately before execution. Current Mandate rules, active lineage, validity window, and the projected Vault balance still apply, so tightening or revoking authority can stop an approved plan before capital moves. Pausing the Vault or Mandate also blocks execution.
 
 Both public executor entrypoints share one OpenZeppelin `ReentrancyGuard` lock. If a recipient makes an external callback during a native or token transfer, that callback cannot start a nested plan through the executor while the active plan is using its point-in-time Preflight balance.
 

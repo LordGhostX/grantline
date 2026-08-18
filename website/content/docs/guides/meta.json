@@ -1,8 +1,11 @@
 {
   "icon": "BookOpen",
   "pages": [
-    "inspect-a-mandate",
-    "build-and-sign-an-action-plan",
-    "inspect-execution-evidence"
+    "vault-and-mandate-setup",
+    "normal-execution",
+    "escalated-execution",
+    "delegation",
+    "lifecycle-management",
+    "inspecting-evidence"
   ]
 }

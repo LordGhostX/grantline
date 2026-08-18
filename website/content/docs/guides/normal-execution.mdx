@@ -1,0 +1,247 @@
+---
+title: Normal execution
+description: Sign, evaluate, and execute a TRANSFER or SWAP Action Plan through the ALLOW path.
+---
+
+This guide covers signing an Action Plan, evaluating it read-only, and executing it through the normal `ALLOW` path. It shows both TRANSFER and SWAP examples.
+
+## Load the deployment values
+
+```sh
+cd contracts
+set -a
+source .env
+set +a
+
+MANIFEST="$DEPLOYMENT_MANIFEST_PATH"
+GRANTLINE="$(jq -r '.grantline.proxy' "$MANIFEST")"
+EVALUATOR="$(jq -r '.modules.evaluator.proxy' "$MANIFEST")"
+REGISTRY="$(jq -r '.modules.registry.proxy' "$MANIFEST")"
+RPC="$XLAYER_TESTNET_RPC_URL"
+AGENT="$AGENT_ADDRESS"
+```
+
+## TRANSFER example
+
+### Human-readable plan
+
+```json
+{
+  "mandateId": "1",
+  "agent": "0xAgent",
+  "nonce": "1",
+  "deadline": "0",
+  "actions": [
+    {
+      "actionType": "TRANSFER",
+      "version": 1,
+      "asset": "native",
+      "to": "0xRecipient",
+      "amount": "1000000000000000000"
+    }
+  ]
+}
+```
+
+Native `asset` is encoded as the zero address. The amount is `1 OKB` in raw base units.
+
+### Encode the action parameters
+
+```ts
+import { encodeAbiParameters, parseEther, zeroAddress } from "viem";
+
+const asset = zeroAddress;
+const recipient = "0xRecipient" as `0x${string}`;
+
+const parameters = encodeAbiParameters(
+  [{ type: "address" }, { type: "address" }, { type: "uint256" }],
+  [asset, recipient, parseEther("1")],
+);
+
+const actionPlan = {
+  mandateId: 1n,
+  agent: agentAddress,
+  nonce: 1n,
+  deadline: 0n,
+  actions: [
+    {
+      actionType: 0,
+      version: 1,
+      parameters,
+    },
+  ],
+} as const;
+```
+
+For a token transfer, set `asset` to the token contract address and use the token's raw base units for `amount`.
+
+### Sign the EIP-712 message
+
+```ts
+const domain = {
+  name: "Grantline",
+  version: "1",
+  chainId: 1952,
+  verifyingContract: evaluatorAddress,
+} as const;
+
+const types = {
+  Action: [
+    { name: "actionType", type: "uint8" },
+    { name: "version", type: "uint8" },
+    { name: "parameters", type: "bytes" },
+  ],
+  ActionPlan: [
+    { name: "mandateId", type: "uint256" },
+    { name: "agent", type: "address" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+    { name: "actions", type: "Action[]" },
+  ],
+} as const;
+
+const signature = await walletClient.signTypedData({
+  account: agentAddress,
+  domain,
+  types,
+  primaryType: "ActionPlan",
+  message: actionPlan,
+});
+```
+
+### Evaluate before submitting
+
+Use `cast` to evaluate the plan read-only:
+
+```sh
+cast call "$GRANTLINE" \
+  "evaluate((uint256,address,uint256,uint256,(uint8,uint8,bytes)[]),bytes)((uint8,uint8,uint256,uint256,uint256,uint256,uint256))" \
+  "($MANDATE_ID, $AGENT, 1, 0, ((0, 1, $TRANSFER_PARAMS)))" \
+  "$SIGNATURE" \
+  --rpc-url "$RPC"
+```
+
+The result fields are: `decision`, `failureCode`, `failedActionIndex`, `nativeAmount`, `nativeUsdValue`, `nativeBalanceAfter`, `nativeBalanceUsdValue`.
+
+An `ALLOW` result (decision `0`) means the plan can be executed.
+
+### Execute
+
+Submit the transaction through the Grantline facade:
+
+```sh
+cast send "$GRANTLINE" \
+  "execute((uint256,address,uint256,uint256,(uint8,uint8,bytes)[]),bytes)(bytes32)" \
+  "($MANDATE_ID, $AGENT, 1, 0, ((0, 1, $TRANSFER_PARAMS)))" \
+  "$SIGNATURE" \
+  --rpc-url "$RPC" \
+  --private-key "$AGENT_PRIVATE_KEY"
+```
+
+### Verify
+
+Read the `ActionPlanExecuted` event:
+
+```sh
+cast logs --rpc-url "$RPC" --address "$GRANTLINE" \
+  'ActionPlanExecuted(bytes32,uint256,address,address,uint256)' \
+  --from-block 0
+```
+
+Check that the nonce is now consumed:
+
+```sh
+cast call "$GRANTLINE" \
+  "getNonceState(uint256,uint256)(bool,bytes32)" \
+  "$MANDATE_ID" 1 \
+  --rpc-url "$RPC"
+```
+
+The first field (`used`) should be `true`. The second field (`reservation`) should be the zero hash.
+
+## SWAP example
+
+### Human-readable plan
+
+```json
+{
+  "mandateId": "1",
+  "agent": "0xAgent",
+  "nonce": "2",
+  "deadline": "0",
+  "actions": [
+    {
+      "actionType": "SWAP",
+      "version": 1,
+      "swapAdapterId": "UNISWAP_V3",
+      "tokenIn": "0xTokenIn",
+      "amountIn": "1000000000000000000",
+      "tokenOut": "0xTokenOut",
+      "minAmountOut": "950000000000000000",
+      "deadline": "1700000000",
+      "hops": [
+        {
+          "pool": "0xPoolAddress",
+          "tokenIn": "0xTokenIn",
+          "tokenOut": "0xTokenOut"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Encode SWAP parameters
+
+```ts
+const swapParameters = encodeAbiParameters(
+  [
+    { type: "uint8" },    // swapAdapterId
+    { type: "address" },  // tokenIn
+    { type: "uint256" },  // amountIn
+    { type: "address" },  // tokenOut
+    { type: "uint256" },  // minAmountOut
+    { type: "uint256" },  // deadline
+    {
+      type: "tuple[]",
+      components: [
+        { name: "pool", type: "address" },
+        { name: "tokenIn", type: "address" },
+        { name: "tokenOut", type: "address" },
+      ],
+    },
+  ],
+  [
+    1, // SwapAdapterId.UNISWAP_V3
+    tokenInAddress,
+    parseEther("1"),
+    tokenOutAddress,
+    parseEther("0.95"),
+    1700000000n,
+    [{ pool: poolAddress, tokenIn: tokenInAddress, tokenOut: tokenOutAddress }],
+  ],
+);
+```
+
+The plan uses `actionType: 1` (SWAP) and `version: 1`.
+
+### Evaluate and execute
+
+The evaluate and execute calls follow the same pattern as TRANSFER. The evaluator validates the SWAP route through the configured adapter before returning `ALLOW`. If the adapter is not configured or the route is invalid, the evaluation returns `DENY` with `SWAP_UNSUPPORTED` or `INVALID_SWAP_ROUTE`.
+
+```sh
+cast send "$GRANTLINE" \
+  "execute((uint256,address,uint256,uint256,(uint8,uint8,bytes)[]),bytes)(bytes32)" \
+  "($MANDATE_ID, $AGENT, 2, 0, ((1, 1, $SWAP_PARAMS)))" \
+  "$SIGNATURE" \
+  --rpc-url "$RPC" \
+  --private-key "$AGENT_PRIVATE_KEY"
+```
+
+## Failed execution
+
+If evaluation returns `DENY`, the executor reverts before calling the Vault. A submitted transaction reverts with `EvaluationDenied` and leaves no committed events.
+
+If evaluation returns `ALLOW` but a downstream action fails (recipient rejects, token returns false, SWAP output below minimum), the complete transaction reverts. The nonce is not consumed. The receipt status is `0` with revert data.
+
+See [Decisions and failures](/docs/reference/decisions-and-failures) for the full list of failure codes.

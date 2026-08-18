@@ -1,6 +1,6 @@
 ---
 title: Mandate rules
-description: The current MandateRules and PreflightRules fields, units, inheritance, and escalation behaviour.
+description: The current Mandate rules, Preflight rules, and validity window fields, units, inheritance, and escalation behaviour.
 ---
 
 `MandateRegistry` stores the authority that binds an agent to a Vault. The stored rules are the rules written for that Mandate. The evaluator uses effective rules, which combine the active Mandate with every active ancestor in its lineage. These effective rules are the current implementation of the [effective authority](/docs/concepts/mandates) that a proposal can actually use.
@@ -15,23 +15,23 @@ struct MandateRules {
     uint256 minNativeAmount;
     uint256 maxNativeAmount;
     bool escalateNativeAmount;
-    uint256 minUsdAmount;
-    uint256 maxUsdAmount;
-    bool escalateUsdAmount;
+    uint256 minNativeUsd;
+    uint256 maxNativeUsd;
+    bool escalateNativeUsd;
 }
 ```
 
-| Field                  | Meaning                                                                                                                                                  |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canDelegate`          | Whether this Mandate can create a narrower Mandate for a sub-agent. The effective value must remain enabled through the whole lineage.                   |
-| `minNativeAmount`      | Minimum aggregate native amount for a plan, in the native asset's raw base units. A zero value disables this minimum.                                    |
-| `maxNativeAmount`      | Maximum aggregate native amount for a plan, in raw base units. A zero value disables this maximum.                                                       |
-| `escalateNativeAmount` | Whether a native amount violation may produce `ESCALATE`; otherwise it produces `DENY`. This remains enabled only when every active ancestor enables it. |
-| `minUsdAmount`         | Minimum aggregate USD valuation, scaled to 18 decimals. A zero value disables this minimum.                                                              |
-| `maxUsdAmount`         | Maximum aggregate USD valuation, scaled to 18 decimals. A zero value disables this maximum.                                                              |
-| `escalateUsdAmount`    | Whether a USD amount violation may produce `ESCALATE`; otherwise it produces `DENY`. This remains enabled only when every active ancestor enables it.    |
+| Field                  | Meaning                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `canDelegate`          | Whether this Mandate can create a narrower Mandate for a sub-agent. The effective value must remain enabled through the whole lineage.                       |
+| `minNativeAmount`      | Minimum aggregate native amount for a plan, in the native asset's raw base units. A zero value disables this minimum.                                        |
+| `maxNativeAmount`      | Maximum aggregate native amount for a plan, in raw base units. A zero value disables this maximum.                                                           |
+| `escalateNativeAmount` | Whether a native amount violation may produce `ESCALATE`; otherwise it produces `DENY`. This remains enabled only when every active ancestor enables it.     |
+| `minNativeUsd`         | Minimum aggregate native-asset USD valuation, expressed as a whole-dollar threshold. A zero value disables this minimum.                                     |
+| `maxNativeUsd`         | Maximum aggregate native-asset USD valuation, expressed as a whole-dollar threshold. A zero value disables this maximum.                                     |
+| `escalateNativeUsd`    | Whether a native-USD amount violation may produce `ESCALATE`; otherwise it produces `DENY`. This remains enabled only when every active ancestor enables it. |
 
-Native amounts are integer units of the native token. On the current X Layer testnet, OKB uses 18 decimals, so `1000000000000000000` represents `1 OKB`. USD limits use the same integer convention with `1e18` representing one USD. These are display conversions only; contract calls and signatures use the raw integers.
+Native amounts are integer units of the native token. On the current X Layer testnet, OKB uses 18 decimals, so `1000000000000000000` represents `1 OKB`. Native-USD thresholds are whole dollars; the evaluator multiplies them by the Chainlink feed's decimal scale internally. Deployments without a configured Chainlink feed reject nonzero native-USD rules.
 
 Both bounds in one denomination may be zero-disabled, but when both are non-zero the minimum cannot exceed the maximum. The registry rejects an invalid range when a Mandate is created or updated.
 
@@ -43,15 +43,37 @@ The current Solidity shape is:
 struct PreflightRules {
     uint256 minNativeBalance;
     bool escalateNativeBalance;
+    uint256 minNativeUsdBalance;
+    bool escalateNativeUsdBalance;
 }
 ```
 
-| Field                   | Meaning                                                                                                                                                                |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `minNativeBalance`      | Minimum native balance that must remain in the Vault after the plan's aggregate native outflow, in the native asset's raw base units. A zero value disables the floor. |
-| `escalateNativeBalance` | Whether a projected balance below the floor may produce `ESCALATE`; otherwise it produces `DENY`. This remains enabled only when every active ancestor enables it.     |
+| Field                      | Meaning                                                                                                                                                                |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `minNativeBalance`         | Minimum native balance that must remain in the Vault after the plan's aggregate native outflow, in the native asset's raw base units. A zero value disables the floor. |
+| `escalateNativeBalance`    | Whether a projected balance below the floor may produce `ESCALATE`; otherwise it produces `DENY`. This remains enabled only when every active ancestor enables it.     |
+| `minNativeUsdBalance`      | Minimum USD value of Vault native balance after execution, expressed as a whole-dollar threshold. A zero value disables the floor.                                     |
+| `escalateNativeUsdBalance` | Whether a projected USD balance below the floor may produce `ESCALATE`; otherwise it produces `DENY`. This remains enabled only when every active ancestor enables it. |
 
-The evaluator applies these fields to the projected Vault balance after the plan's aggregate native outflow. A Preflight breach is separate from the native amount range: a plan can be below a native amount maximum and still fail because the Vault would retain too little native balance.
+The evaluator applies these fields to the projected Vault balance after the plan's aggregate native outflow. A Preflight breach is separate from the amount range: a plan can be below a native amount maximum and still fail because the Vault would retain too little native balance or its remaining balance would fall below a USD floor.
+
+## Validity windows
+
+Each Mandate carries `validAfter` and `validUntil` fields (both `uint64`). These define when the authority can be used:
+
+- `validAfter`: the Mandate cannot authorise proposals before this Unix timestamp. A value of `0` means no start constraint.
+- `validUntil`: the Mandate cannot authorise proposals after this Unix timestamp. A value of `0` means no end constraint.
+
+When both are non-zero, `validUntil` must be at or after `validAfter`. The registry rejects an invalid window at creation and update time.
+
+Validity windows intersect across lineage. The effective window is the tightest combination of every active ancestor:
+
+```text
+effective validAfter  = latest ancestor validAfter
+effective validUntil  = earliest ancestor validUntil
+```
+
+Outside the effective window, the Mandate is not active for evaluation even if its stored status is `ACTIVE`.
 
 ## Inheritance
 
@@ -60,12 +82,13 @@ The registry supports a maximum delegation depth of `2`. A child Mandate cannot 
 - the effective minimum is the greatest active minimum in the lineage;
 - the effective non-zero maximum is the tightest active maximum in the lineage;
 - `canDelegate` and every escalation flag remain enabled only when all active lineage entries enable them;
-- the effective Preflight floor is the greatest active floor, and its escalation flag is also the conjunction of the lineage flags.
+- the effective Preflight floor is the greatest active floor, and its escalation flag is also the conjunction of the lineage flags;
+- the effective validity window is the intersection of all ancestor windows.
 
-At the maximum delegation depth, `canDelegate` is forced off. `getEffectiveRules` and `getEffectivePreflightRules` require an active lineage, while `getLineage` can still be used to inspect a revoked lineage.
+At the maximum delegation depth, `canDelegate` is forced off. `getEffectiveRules`, `getEffectivePreflightRules`, and `getEffectiveValidityWindow` require an active lineage, while `getLineage` can still be used to inspect a revoked lineage.
 
-## Testnet behaviour and future rules
+## Testnet behaviour
 
-The current X Layer testnet evaluator has no USD valuation provider and is configured to skip unavailable USD quotes. USD totals can therefore be incomplete and marked with `usdLimitSkipped`; native rules and Preflight still run. A production valuation provider and external condition modules are planned, so they are not part of the fields described on this page.
+The current X Layer deployment predates SWAP, native-USD limits, nonce cancellation, and pausing. Deployments with a configured Chainlink feed support native-USD rules and Preflight floors; deployments without one reject nonzero native-USD thresholds. A production valuation provider and external condition modules are planned as separate work.
 
-See [Inspect a Mandate](/docs/guides/inspect-a-mandate) for read-only calls and [Mandates](/docs/concepts/mandates) for the stable product model.
+See [Inspect a Mandate](/docs/guides/vault-and-mandate-setup) for read-only calls and [Mandates](/docs/concepts/mandates) for the stable product model.

@@ -5,38 +5,43 @@ description: The tracked deployment manifest defines the Grantline deployment id
 
 import { DeploymentManifestTables } from "@/components/docs/deployment-manifest-table";
 
-The X Layer testnet manifest is `contracts/deployments/xlayer-testnet.json`. It currently contains only the expected chain because the fresh Grantline deployment has not been broadcast yet; once deployed, it will contain the Grantline proxy, internal module proxies and implementations, Vault template, ordered Vault records, dependency wiring, authority, versions, and runtime code hashes.
+The X Layer testnet manifest is `contracts/deployments/xlayer-testnet.json`. It contains the Grantline proxy, internal module proxies and implementations, Vault template, dependency wiring, authority, versions, and runtime code hashes.
 
 ## Current wiring
 
 ```text
-Grantline
+Grantline (user-facing facade)
+├── GrantlineAdmin (protocol coordinator)
 ├── MandateRegistry
 ├── MandateEvaluator
 ├── EscalationManager
 ├── VaultExecutor
 ├── VaultFactory
-└── Vault proxies
+│   └── Vault proxies
+└── Swap adapters (e.g. UniswapV3Adapter)
 ```
 
 > Arrows show contract dependency or call direction.
 
 The roles are separate so each part has one job:
 
-- `Grantline` is the stable public entrypoint for controller and agent workflows; the other components are internal modules.
+- `Grantline` is the stable public entrypoint for controller and agent workflows. It routes all operations to internal modules.
+- `GrantlineAdmin` is a non-upgradeable protocol coordinator. It manages module configuration, module upgrades, Vault template changes, existing Vault upgrades, Vault controller reassignment, and adapter validation. It has no independent owner; its authority derives from `Grantline.owner()`.
 - `Vault` holds native and token capital, exposes controller custody through Grantline, and accepts agent execution only from its configured executor.
 - `MandateRegistry` stores Mandates, lineage, effective rules, nonce usage, and escalation reservations.
 - `MandateEvaluator` reads the registry and returns a structured authorisation result without moving capital.
 - `EscalationManager` stores complete escalated plans, accepts permissionless submission through Grantline, and restricts approval or denial to the current controller.
-- `VaultExecutor` binds the evaluator, escalation manager, registry, and Vault execution path, then translates supported actions into atomic Vault calls.
+- `VaultExecutor` binds the evaluator, escalation manager, registry, and Vault execution path, then translates supported actions (TRANSFER, SWAP) into atomic Vault calls.
+- `VaultFactory` creates Vault proxies, validates implementations, and manages the Vault template.
+- Swap adapters (e.g. `UniswapV3Adapter`) validate and execute token swaps. Adapter support is immutable after one-time module configuration.
 
 ## Deployment manifests
 
-Each registered Grantline deployment will produce its own table below in the declared order. The bootstrap manifest has no deployed addresses yet:
+Each registered Grantline deployment will produce its own table below in the declared order:
 
 <DeploymentManifestTables />
 
-After deployment, the verifier will check that the evaluator, escalation manager, executor, factory, and Vault proxies all match the manifest-defined wiring and versions.
+After deployment, the verifier checks that the evaluator, escalation manager, executor, factory, Vault proxies, and swap adapters all match the manifest-defined wiring and versions.
 
 ## Verification before use
 
@@ -50,7 +55,7 @@ set +a
 forge script script/VerifyGrantlineDeployment.s.sol:VerifyGrantlineDeployment --rpc-url xlayer_testnet
 ```
 
-`VerifyGrantlineDeployment` checks the expected chain, proxy implementations, runtime hashes, initialiser state, UUPS identifiers, ownership, authority, controller assignments, module wiring, factory state, and every recorded Vault. A mismatch stops verification instead of allowing an internally inconsistent manifest to look valid.
+`VerifyGrantlineDeployment` checks the expected chain, proxy implementations, runtime hashes, initialiser state, UUPS identifiers, ownership, authority, controller assignments, module wiring, adapter configuration, factory state, and every recorded Vault. A mismatch stops verification instead of allowing an internally inconsistent manifest to look valid.
 
 ## Updating a deployment
 

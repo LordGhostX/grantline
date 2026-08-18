@@ -6,9 +6,9 @@ description: Delegation gives a sub-agent a narrower authority grant while prese
 An authorised agent can delegate a narrower authority grant to a sub-agent when its own [Mandate](/docs/concepts/mandates) allows it. The sub-agent has its own identity, but it remains connected to the parent grant and the [Vault](/docs/concepts/vaults) above it.
 
 ```text
-Capital owner
+Capital controller
     ↓
-Treasury sub-agent
+Treasury agent
     ↓
 Execution sub-agent
 ```
@@ -19,7 +19,14 @@ The governing rule is simple:
 
 ## Inherited boundaries
 
-The effective authority of a sub-agent is constrained by the grant that created it and by the active lineage above it. A sub-agent may receive fewer actions, tighter limits, stricter conditions, or less discretion, but it cannot use delegation to create authority its parent did not have. The current implementation applies this rule to amount limits, escalation permissions, delegation permission, and the native-balance Preflight floor.
+The effective authority of a sub-agent is constrained by the grant that created it and by the active lineage above it. A sub-agent may receive fewer actions, tighter limits, stricter conditions, or less discretion, but it cannot use delegation to create authority its parent did not have. The current implementation applies this inheritance to:
+
+- native amount limits;
+- native-USD amount limits;
+- escalation permissions;
+- delegation permission;
+- Preflight floors (native and native-USD); and
+- the validity window.
 
 In the current model:
 
@@ -32,10 +39,18 @@ effective authority
 
 The [Preflight](/docs/concepts/preflight) check then applies its own state boundary to the proposed action. It does not give the child authority that is absent from its active lineage.
 
-This model lets organisations separate responsibilities between agents while keeping the original source of authority visible. The current contracts support a root Mandate, a child Mandate, and one further sub-agent level.
+## Delegation depth
+
+The current contracts support a root Mandate, a child Mandate, and one further sub-agent level. Maximum delegation depth is 2.
+
+At depth 2, `canDelegate` is forced off. A grandchild cannot create further descendants regardless of what its rules specify. This prevents unbounded delegation chains.
+
+## Pausing and delegation
+
+Pausing an ancestor blocks execution for all descendants. A paused parent means the child's lineage is not active for evaluation, even if the child's own status is `ACTIVE`. Unpausing the ancestor restores execution for the entire lineage.
 
 ## Administration and revocation
 
-The Vault owner and authorised parent can administer the grants within their respective boundaries. [Revocation](/docs/enforcement/revocation) of an ancestor prevents descendant authority from being used, while preserving the records needed to understand the lineage and its history.
+The Vault controller and authorised parent agents can administer the grants within their respective boundaries. [Revocation](/docs/enforcement/revocation) of an ancestor prevents descendant authority from being used, while preserving the records needed to understand the lineage and its history.
 
 See [Mandates](/docs/concepts/mandates) for the authority grant itself and [Decisions](/docs/concepts/decisions) for how an inactive or insufficient lineage affects a proposal.

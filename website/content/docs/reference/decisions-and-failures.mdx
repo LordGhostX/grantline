@@ -19,35 +19,41 @@ An `ESCALATE` result does not approve the plan. Submission stores the complete p
 
 ```solidity
 struct EvaluationResult {
-    Decision decision;
-    FailureCode failureCode;
+    uint8 decision;
+    uint8 failureCode;
     uint256 failedActionIndex;
     uint256 nativeAmount;
-    uint256 usdAmount;
-    bool usdLimitSkipped;
+    uint256 nativeUsdValue;
     uint256 nativeBalanceAfter;
+    uint256 nativeBalanceUsdValue;
 }
 ```
 
-`failedActionIndex` is the zero-based action index for an action-specific validation failure. `type(uint256).max` means that no individual action is identified, which is the normal value for a successful result, rule-level failures, and plan-level failures. `nativeAmount`, `usdAmount`, and `nativeBalanceAfter` are raw integer units; USD values use 18-decimal scaling when valuation is present.
+`failedActionIndex` is the zero-based action index for an action-specific validation failure. `type(uint256).max` means that no individual action is identified, which is the normal value for a successful result, rule-level failures, and plan-level failures. `nativeAmount` is the aggregate native outflow in raw base units. `nativeUsdValue` is the USD valuation of that outflow when a Chainlink feed is available. `nativeBalanceAfter` is the projected Vault native balance after execution. `nativeBalanceUsdValue` is the USD valuation of the projected remaining balance.
 
 ## Plan and authority failures
 
 These failures happen before amount rules are applied and always return `DENY`:
 
-| Failure code        | Meaning                                                              |
-| ------------------- | -------------------------------------------------------------------- |
-| `MANDATE_NOT_FOUND` | `mandateId` is zero or outside the registry's current Mandate count. |
-| `MANDATE_INACTIVE`  | The Mandate or one of its ancestors is revoked.                      |
-| `AGENT_MISMATCH`    | The plan agent differs from the agent stored on the Mandate.         |
-| `EXPIRED`           | `deadline` is non-zero and earlier than the current block timestamp. |
-| `EMPTY_PLAN`        | The plan contains no actions.                                        |
+| Failure code          | Meaning                                                              |
+| --------------------- | -------------------------------------------------------------------- |
+| `MANDATE_NOT_FOUND`   | `mandateId` is zero or outside the registry's current Mandate count. |
+| `MANDATE_INACTIVE`    | The Mandate or one of its ancestors is revoked.                      |
+| `MANDATE_NOT_YET_VALID` | Current block timestamp is before the effective `validAfter`.      |
+| `MANDATE_EXPIRED`     | Current block timestamp is after the effective `validUntil`.         |
+| `MANDATE_PAUSED`      | The Mandate or one of its ancestors is paused.                       |
+| `VAULT_PAUSED`        | The Vault referenced by the Mandate is paused.                       |
+| `AGENT_MISMATCH`      | The plan agent differs from the agent stored on the Mandate.         |
+| `EXPIRED`             | `deadline` is non-zero and earlier than the current block timestamp. |
+| `EMPTY_PLAN`          | The plan contains no actions.                                        |
 
-## Signature failures
+## Signature and nonce failures
 
 | Failure code        | Meaning                                                                                                                              |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `INVALID_SIGNATURE` | The EIP-712 signature is malformed, does not recover to the Mandate agent, uses an invalid recovery value, or uses a high-`s` value. |
+| `NONCE_USED`        | The nonce for this (Mandate, agent) pair was already consumed by a previous execution or cancelled.                                  |
+| `NONCE_RESERVED`    | The nonce is reserved for an escalation digest. A normal execution cannot use it.                                                    |
 
 The evaluator binds the digest to the current chain and evaluator address, then requires the recovered signer to match the Mandate agent. `NONE` means that no failure was found; the evaluator returns it with `ALLOW`.
 
@@ -57,7 +63,7 @@ These failures identify the first invalid action where applicable:
 
 | Failure code                | Meaning                                                                                                         |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `INVALID_ACTION`            | The action version is not the current `TRANSFER` version, or its parameter bytes are empty.                     |
+| `INVALID_ACTION`            | The action version is not the current version for its type, or its parameter bytes are empty.                   |
 | `INVALID_ACTION_PARAMETERS` | The current transfer parameter bytes are not exactly the 96-byte ABI encoding expected by `TransferParameters`. |
 | `INVALID_RECIPIENT`         | The decoded transfer recipient is the zero address.                                                             |
 | `INVALID_AMOUNT`            | The decoded transfer amount is zero.                                                                            |
@@ -66,28 +72,36 @@ These failures identify the first invalid action where applicable:
 
 These failures compare aggregate plan amounts with effective Mandate rules:
 
-| Failure code                  | Meaning                                                                                                                                                     |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AMOUNT_OVERFLOW`             | Aggregate native amount would overflow `uint256`.                                                                                                           |
-| `NATIVE_AMOUNT_BELOW_MINIMUM` | Aggregate native amount is below a configured non-zero minimum. The result becomes `ESCALATE` only when effective native escalation remains enabled.        |
-| `NATIVE_AMOUNT_ABOVE_MAXIMUM` | Aggregate native amount exceeds a configured non-zero maximum. The result becomes `ESCALATE` only when effective native escalation remains enabled.         |
-| `USD_AMOUNT_OVERFLOW`         | Aggregate available USD valuation would overflow `uint256`.                                                                                                 |
-| `USD_AMOUNT_BELOW_MINIMUM`    | Available aggregate USD valuation is below a configured non-zero minimum. The result becomes `ESCALATE` only when effective USD escalation remains enabled. |
-| `USD_AMOUNT_ABOVE_MAXIMUM`    | Aggregate available USD valuation exceeds a configured non-zero maximum. The result becomes `ESCALATE` only when effective USD escalation remains enabled.  |
+| Failure code                    | Meaning                                                                                                                                                     |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AMOUNT_OVERFLOW`               | Aggregate native amount would overflow `uint256`.                                                                                                           |
+| `NATIVE_AMOUNT_BELOW_MINIMUM`   | Aggregate native amount is below a configured non-zero minimum. The result becomes `ESCALATE` only when effective native escalation remains enabled.        |
+| `NATIVE_AMOUNT_ABOVE_MAXIMUM`   | Aggregate native amount exceeds a configured non-zero maximum. The result becomes `ESCALATE` only when effective native escalation remains enabled.         |
+| `NATIVE_USD_VALUE_BELOW_MINIMUM`  | Aggregate native-asset USD valuation is below a configured non-zero minimum. The result becomes `ESCALATE` only when effective native-USD escalation remains enabled. |
+| `NATIVE_USD_VALUE_ABOVE_MAXIMUM`  | Aggregate native-asset USD valuation exceeds a configured non-zero maximum. The result becomes `ESCALATE` only when effective native-USD escalation remains enabled.  |
 
 ## Valuation
 
-| Failure code                | Meaning                                                                                                                     |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `USD_VALUATION_UNAVAILABLE` | A USD limit is enabled, a required quote is unavailable, and the evaluator is configured not to skip unavailable valuation. |
+| Failure code                  | Meaning                                                                                                                     |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `NATIVE_USD_VALUATION_UNAVAILABLE` | A native-USD limit is enabled, a required Chainlink quote is unavailable, and the evaluator cannot complete valuation. |
 
 ## Preflight
 
-| Failure code                             | Meaning                                                                                                                                                                                           |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM` | The projected Vault native balance after aggregate native outflow is below the effective Preflight floor. The result becomes `ESCALATE` only when effective Preflight escalation remains enabled. |
+| Failure code                               | Meaning                                                                                                                                                                                           |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PREFLIGHT_NATIVE_BALANCE_BELOW_MINIMUM`   | The projected Vault native balance after aggregate native outflow is below the effective Preflight floor. The result becomes `ESCALATE` only when effective Preflight escalation remains enabled. |
+| `PREFLIGHT_NATIVE_USD_BALANCE_BELOW_MINIMUM` | The USD value of projected Vault native balance after execution is below the effective native-USD Preflight floor. The result becomes `ESCALATE` only when effective escalation remains enabled. |
 
-Native amount rules apply to the aggregate native outflow. USD rules use available valuations, and an unavailable quote sets `usdLimitSkipped` when the evaluator is configured to skip it. The current X Layer testnet stack has no USD provider and skips unavailable quotes, so this path is visible in the result rather than treated as a live valuation.
+## SWAP failures
+
+| Failure code              | Meaning                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `SWAP_UNSUPPORTED`        | No configured adapter exists for the requested `SwapAdapterId`.                                              |
+| `INVALID_SWAP_PARAMETERS` | Decoded swap parameters fail validation (zero amounts, missing deadline, empty hops).                        |
+| `INVALID_SWAP_ROUTE`      | The adapter's `validateSwap` call rejected the route (wrong factory, bad pool, token mismatch, fee issues). |
+
+Native amount rules apply to the aggregate native outflow of both TRANSFER and SWAP actions. SWAP actions contribute their input amount to the native total when the input is native or wrapped native.
 
 ## Transaction boundary
 

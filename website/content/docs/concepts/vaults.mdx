@@ -1,29 +1,36 @@
 ---
 title: Vaults
-description: Vaults hold controlled capital while the owner retains custody and control.
+description: Vaults hold controlled capital while the controller retains custody and control.
 ---
-
-<Callout type="info" title="Development status">
-  The current X Layer deployment uses non-upgradeable contracts. While Grantline
-  remains under active development, the next Grantline deployment is expected to
-  use upgradeable Vaults so custody and enforcement issues can be corrected. The
-  protocol admin controls those upgrades, which is part of the current trust
-  model. Once the Vault interface and enforcement stack stabilise, the intended
-  direction is a non-upgradeable Vault boundary.
-</Callout>
 
 A Vault holds the capital that a Mandate governs. An agent receives permission to propose actions against that capital; it does not receive ownership of the Vault or a private-key path around its controls.
 
-## Owner and authority
+## Controller and authority
 
-The owner remains responsible for the Vault and its administration. Grantline's execution authority acts for the Vault only through the controls placed around the [Mandate](/docs/concepts/mandates) and [Action Plan](/docs/concepts/action-plans).
+The Vault controller is responsible for custody, deposits, withdrawals, and administration. Grantline's execution authority acts for the Vault only through the controls placed around the [Mandate](/docs/concepts/mandates) and [Action Plan](/docs/concepts/action-plans).
 
-This separates custody from operation. An allowed action can proceed without the owner signing every routine transaction, while an action that crosses a configured boundary can require the owner's approval through [Escalation](/docs/enforcement/escalation).
+This separates custody from operation. An allowed action can proceed without the controller signing every routine transaction, while an action that crosses a configured boundary can require the controller's approval through [Escalation](/docs/enforcement/escalation).
 
 ## A boundary around capital
 
 The Vault is the final controlled boundary between an authorised proposal and capital movement. Its generic execution surface accepts calls only from its configured authority, so an agent cannot turn a valid signing identity into unrestricted access to the Vault.
 
-Vaults can support different kinds of capital, actions, and execution integrations over time, but the custody boundary remains the same: authority to act does not become ownership of the capital.
+Vaults are UUPS upgradeable proxies. The protocol admin controls upgrades through `GrantlineAdmin`, which derives authority from `Grantline.owner()`. Once the Vault interface and enforcement stack stabilise, the intended direction is a non-upgradeable Vault boundary.
+
+## Pausing
+
+The Vault controller can pause and unpause the Vault through Grantline. A paused Vault blocks:
+
+- autonomous agent execution (normal and escalated)
+- escalation submission and approval
+- new Mandate creation against the Vault
+
+A paused Vault still allows controller deposits, withdrawals, and Mandate administration (updates, revocation, pausing, nonce cancellation). This lets the controller recover or restructure authority without losing custody.
+
+## Deposits and withdrawals
+
+The controller deposits native asset or ERC-20 tokens into the Vault through Grantline. Withdrawals are owner-controlled and go directly from the Vault to the specified recipient.
+
+Grantline's guarantee is limited to capital held behind this execution boundary. An agent may still obtain another wallet, acquire assets outside the Vault, or use an off-platform resource that Grantline does not control.
 
 See [Mandates](/docs/concepts/mandates) for the authority applied to a Vault and [Decisions](/docs/concepts/decisions) for the outcomes that precede execution.

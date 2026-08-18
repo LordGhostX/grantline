@@ -1,6 +1,6 @@
 ---
 title: Grantline Documentation
-description: Learn how Grantline gives AI agents bounded authority over capital through Mandates, Preflight, delegation, owner approval, and traceable execution.
+description: Learn how Grantline gives AI agents bounded authority over capital through Mandates, Preflight, delegation, controller approval, and traceable execution.
 icon: Landmark
 ---
 
@@ -9,54 +9,66 @@ Grantline is the financial authority layer between an AI agent's intent and exec
 The concepts explain the model. Enforcement and execution show how the current contracts apply it. Guides and reference pages then give integrators the exact fields, calls, and evidence.
 
 <Callout type="info" title="Current MVP">
-  The current contracts MVP is deployed and exercised on X Layer testnet. It
-  supports Vault custody, typed `TRANSFER` Action Plans, Mandates, delegation,
-  Preflight, owner-approved escalation, revocation, and committed execution
-  events.
+  The current contracts are deployed and exercised on X Layer testnet. They
+  support Vault custody, typed `TRANSFER` and `SWAP` Action Plans, Mandates with
+  validity windows, delegation, Preflight with native-USD reserves,
+  owner-approved escalation, revocation, pausing, nonce cancellation, and
+  native-asset USD valuation through Chainlink.
 </Callout>
 
 ## Start with the model
 
 - [Strategy vs authority](/docs/concepts/strategy-vs-authority) explains the distinction between an agent's intent and Grantline's authorisation decision.
-- [Mandates](/docs/concepts/mandates) explains the rules that bind an agent to a Vault.
-- [Vaults](/docs/concepts/vaults) explains the custody boundary around controlled capital.
-- [Action Plans](/docs/concepts/action-plans) explains the structured proposal format.
+- [Mandates](/docs/concepts/mandates) explains the rules that bind an agent to a Vault, including lifecycle, validity windows, and native-USD limits.
+- [Vaults](/docs/concepts/vaults) explains the custody boundary around controlled capital, including UUPS upgrades and pausing.
+- [Action Plans](/docs/concepts/action-plans) explains the structured proposal format with `TRANSFER` and `SWAP` actions.
 - [Decisions](/docs/concepts/decisions) explains the `ALLOW`, `ESCALATE`, and `DENY` outcomes.
 - [Delegation](/docs/concepts/delegation) explains how authority moves to a sub-agent without becoming broader.
-- [Preflight](/docs/concepts/preflight) explains the current projected-balance check.
+- [Preflight](/docs/concepts/preflight) explains the native-balance and native-USD balance checks.
 - [Guardians](/docs/concepts/guardians) explains the planned model for adding external conditions.
 - [Records](/docs/concepts/records) explains how authority, decisions, and execution outcomes stay traceable.
 
 ## Follow an action through the system
 
-- [Security model](/docs/enforcement/security-model) explains the current boundaries between agent intent, authority, execution, and custody.
+- [Security model](/docs/enforcement/security-model) explains the current boundaries between agent intent, authority, execution, and custody, including the GrantlineAdmin coordinator.
 - [Enforcement boundary](/docs/enforcement/enforcement-boundary) follows the contract path from a signed plan to the Vault.
-- [Action commitments, signatures and nonces](/docs/enforcement/action-commitments-signatures-and-nonces) explains the canonical plan digest, domain binding, replay protection, and escalation reservations.
-- [Escalation](/docs/enforcement/escalation) explains owner approval and current-state re-evaluation.
-- [Revocation](/docs/enforcement/revocation) explains how authority stops without erasing its history.
+- [Action commitments, signatures and nonces](/docs/enforcement/action-commitments-signatures-and-nonces) explains the canonical plan digest, domain binding, replay protection, escalation reservations, and nonce cancellation.
+- [Escalation](/docs/enforcement/escalation) explains controller approval and current-state re-evaluation.
+- [Revocation](/docs/enforcement/revocation) explains how authority stops without erasing its history, including pausing as a lighter alternative.
 - [Transaction lifecycle](/docs/execution/transaction-lifecycle) separates authorisation, execution, and receipt status.
 - [X Layer testnet](/docs/execution/networks/x-layer-testnet) records the current network and environment-specific integration boundaries.
 - [Contracts and deployments](/docs/execution/contracts-and-deployments) explains the manifest and contract wiring.
 
-## Inspect and integrate
+## Guides
 
-- [Inspect a Mandate](/docs/guides/inspect-a-mandate) shows read-only `cast` calls for stored and effective authority.
-- [Build and sign an Action Plan](/docs/guides/build-and-sign-an-action-plan) shows the current raw `TRANSFER` encoding and EIP-712 signing shape.
-- [Inspect execution evidence](/docs/guides/inspect-execution-evidence) shows how to inspect receipts, events, escalation state, and reverted attempts.
+- [Vault and Mandate setup](/docs/guides/vault-and-mandate-setup) walks through creating a Vault, funding it, and creating a Mandate.
+- [Normal execution](/docs/guides/normal-execution) covers signing, evaluating, and executing TRANSFER and SWAP plans.
+- [Escalated execution](/docs/guides/escalated-execution) covers the full escalation lifecycle from submission to execution.
+- [Delegation](/docs/guides/delegation) covers creating child Mandates and managing inherited authority.
+- [Lifecycle management](/docs/guides/lifecycle-management) covers pausing, revoking, cancelling nonces, updating rules, and validity windows.
+- [Inspecting evidence](/docs/guides/inspecting-evidence) shows how to read receipts, events, and explorer data.
+
+## Reference
+
 - [Mandate rules](/docs/reference/mandate-rules) lists the exact rule fields, units, zero-disabled values, and inheritance behaviour.
 - [Action Plan reference](/docs/reference/action-plan) lists the current action types, parameter encoding, and signature fields.
 - [Decisions and failures](/docs/reference/decisions-and-failures) lists evaluator outputs and failure codes without treating them as execution records.
-- [Events](/docs/reference/events) explains the current registry, escalation, Vault, and executor event surface.
+- [Events](/docs/reference/events) explains the current registry, escalation, Vault, executor, and facade event surface.
 
 ## Current implementation
 
-The current contracts MVP runs on X Layer testnet and includes:
+The current contracts run on X Layer testnet and include:
 
-- Vault custody and onchain execution events
-- typed `TRANSFER` Action Plans and EIP-712 signatures
-- inherited Mandate rules and native-balance Preflight
-- owner-approved escalation and revocation
-- delegation to sub-agents with bounded authority
+- Vault custody, UUPS upgrades, and onchain execution events
+- typed `TRANSFER` and `SWAP` Action Plans with EIP-712 signatures
+- Mandates with validity windows, native-amount limits, and native-USD limits
+- inherited Mandate rules, native-balance Preflight, and native-USD Preflight
+- controller-approved escalation and revocation
+- Vault and Mandate pausing for temporary suspension
+- targeted nonce cancellation for recovery
+- delegation to sub-agents with bounded authority and depth cap of 2
+- GrantlineAdmin as the non-upgradeable protocol coordinator
+- native-asset USD valuation through Chainlink price feeds
 
 ## For AI agents and tools
 

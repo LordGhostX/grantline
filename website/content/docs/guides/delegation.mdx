@@ -1,0 +1,153 @@
+---
+title: Delegation
+description: Create child Mandates, inspect inherited authority, and manage delegated agents.
+---
+
+This guide walks through creating child Mandates, inspecting inherited authority, and managing the delegation lifecycle. It assumes a root Mandate already exists (see [Vault and Mandate setup](/docs/guides/vault-and-mandate-setup)).
+
+## Load the deployment values
+
+```sh
+cd contracts
+set -a
+source .env
+set +a
+
+MANIFEST="$DEPLOYMENT_MANIFEST_PATH"
+GRANTLINE="$(jq -r '.grantline.proxy' "$MANIFEST")"
+REGISTRY="$(jq -r '.modules.registry.proxy' "$MANIFEST")"
+RPC="$XLAYER_TESTNET_RPC_URL"
+CONTROLLER="$DEPLOYER_ADDRESS"
+ROOT_MANDATE_ID=1
+```
+
+## Create a child Mandate
+
+The root Mandate's `canDelegate` must be `true`. The child rules must be narrower than the parent's effective rules.
+
+```sh
+CHILD_AGENT=0xChildAgent
+
+cast send "$GRANTLINE" \
+  "createChildMandate(uint256,address,(bool,uint256,uint256,bool,uint256,uint256,bool),(uint256,bool,uint256,bool),uint64,uint64)(uint256)" \
+  "$ROOT_MANDATE_ID" \
+  "$CHILD_AGENT" \
+  "(true, 0, 5000000000000000000, true, 0, 0, false)" \
+  "(0, false, 0, false)" \
+  0 \
+  0 \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+The child rules set a tighter maximum of 5 OKB (vs the parent's 10 OKB). `canDelegate` is `true` so this Mandate can create further children.
+
+Read the `MandateCreated` event to get the child mandate ID.
+
+## Inspect lineage
+
+```sh
+CHILD_MANDATE_ID=2
+
+cast call "$GRANTLINE" \
+  "getLineage(uint256)(uint256[])" \
+  "$CHILD_MANDATE_ID" \
+  --rpc-url "$RPC"
+```
+
+The result is `[1, 2]` — the root Mandate followed by the child.
+
+## Check effective rules on the child
+
+```sh
+cast call "$GRANTLINE" \
+  "getEffectiveRules(uint256)((bool,uint256,uint256,bool,uint256,uint256,bool))" \
+  "$CHILD_MANDATE_ID" \
+  --rpc-url "$RPC"
+```
+
+The effective `maxNativeAmount` is the tightest of the parent and child. If the parent has `maxNativeAmount = 10 OKB` and the child has `maxNativeAmount = 5 OKB`, the effective maximum is 5 OKB.
+
+## Execute through the child
+
+The child agent signs a plan using the same EIP-712 flow. The evaluator checks the child's effective authority (the intersection with the parent).
+
+If the child agent tries to transfer more than the effective maximum:
+
+- with `escalateNativeAmount` enabled: returns `ESCALATE`
+- without escalation: returns `DENY` with `NATIVE_AMOUNT_ABOVE_MAXIMUM`
+
+## Create a grandchild (depth 2)
+
+```sh
+GRANDCHILD_AGENT=0xGrandchildAgent
+
+cast send "$GRANTLINE" \
+  "createChildMandate(uint256,address,(bool,uint256,uint256,bool,uint256,uint256,bool),(uint256,bool,uint256,bool),uint64,uint64)(uint256)" \
+  "$CHILD_MANDATE_ID" \
+  "$GRANDCHILD_AGENT" \
+  "(false, 0, 2000000000000000000, false, 0, 0, false)" \
+  "(0, false, 0, false)" \
+  0 \
+  0 \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+At depth 2, `canDelegate` is forced off. Even if the rules specify `canDelegate: true`, the registry normalises it to `false`. The grandchild cannot create further descendants.
+
+```sh
+GRANDCHILD_MANDATE_ID=3
+
+cast call "$GRANTLINE" \
+  "getLineage(uint256)(uint256[])" \
+  "$GRANDCHILD_MANDATE_ID" \
+  --rpc-url "$RPC"
+```
+
+The result is `[1, 2, 3]`.
+
+## Revoking the root
+
+When the root Mandate is revoked, both the child and grandchild become inactive:
+
+```sh
+cast send "$GRANTLINE" \
+  "revokeMandate(uint256)()" \
+  "$ROOT_MANDATE_ID" \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+Check that the child's lineage is no longer active:
+
+```sh
+cast call "$GRANTLINE" \
+  "isLineageActive(uint256)(bool)" \
+  "$CHILD_MANDATE_ID" \
+  --rpc-url "$RPC"
+```
+
+This returns `false`. A proposal from the child or grandchild now returns `DENY` with `MANDATE_INACTIVE`.
+
+## Updating child rules
+
+The controller can tighten a child's rules:
+
+```sh
+cast send "$GRANTLINE" \
+  "updateMandate(uint256,(bool,uint256,uint256,bool,uint256,uint256,bool),(uint256,bool,uint256,bool),uint64,uint64)()" \
+  "$CHILD_MANDATE_ID" \
+  "(false, 0, 3000000000000000000, false, 0, 0, false)" \
+  "(0, false, 0, false)" \
+  0 \
+  0 \
+  --rpc-url "$RPC" \
+  --private-key "$CONTROLLER_PRIVATE_KEY"
+```
+
+The new maximum is 3 OKB. `canDelegate` is set to `false`, so the child can no longer create descendants (though its existing children remain as records).
+
+Attempting to broaden the rules (e.g. setting a higher maximum than the parent) fails with `ChildRulesExceedParent`.
+
+See [Delegation](/docs/concepts/delegation) for the product model and [Mandate rules](/docs/reference/mandate-rules) for the exact inheritance semantics.

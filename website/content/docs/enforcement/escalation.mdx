@@ -1,20 +1,20 @@
 ---
 title: Escalation
-description: Escalation routes a boundary-crossing proposal to owner approval without bypassing current authority checks.
+description: Escalation routes a boundary-crossing proposal to controller approval without bypassing current authority checks.
 ---
 
-Escalation is an approval path for a proposal that crossed a configured amount or [Preflight](/docs/concepts/preflight) boundary. It does not turn a denied proposal into an executable one: the evaluator must return `ESCALATE`, the [Vault](/docs/concepts/vaults) owner must approve the stored proposal, and the executor must accept its current evaluation before capital moves.
+Escalation is an approval path for a proposal that crossed a configured amount or [Preflight](/docs/concepts/preflight) boundary. It does not turn a denied proposal into an executable one: the evaluator must return `ESCALATE`, the [Vault](/docs/concepts/vaults) controller must approve the stored proposal, and the executor must accept its current evaluation before capital moves.
 
 ## Lifecycle
 
 ```text
 ESCALATE result
       ↓
-PENDING
+    PENDING
    ↙       ↘
 DENIED   APPROVED
-             ↓
-         EXECUTED
+            ↓
+        EXECUTED
 ```
 
 The manager also exposes `NONE` for a digest that has no stored escalation. A stored escalation moves from `PENDING` to `APPROVED`, `DENIED`, or `EXECUTED`; it cannot be submitted twice or move backwards.
@@ -23,13 +23,13 @@ The manager also exposes `NONE` for a digest that has no stored escalation. A st
 
 `EscalationManager.submit` calls the evaluator itself and accepts only an `ESCALATE` result. It computes the EIP-712 digest, reserves the plan's nonce through the registry, stores the complete Action Plan and signature, and marks the record `PENDING`.
 
-Submission is permissionless after evaluation, so the transaction sender does not become the approving authority. The manager still has to be the escalation manager exposed by the current Vault authority, which prevents a detached manager from creating reservations for the Vault.
+The manager checks that the Mandate lineage is active, the Vault is not paused, and the Mandate is within its validity window before accepting the submission. Submission is permissionless after evaluation, so the transaction sender does not become the approving authority.
 
 ## Approval and denial
 
-Only the current Vault owner can approve or deny a pending escalation. Approval records the digest and changes its status to `APPROVED`; denial changes it to `DENIED`. The owner is approving or denying the exact stored plan, not a later plan that happens to reuse its nonce.
+Only the current Vault controller can approve or deny a pending escalation. Approval records the digest and changes its status to `APPROVED`; denial changes it to `DENIED`. The controller is approving or denying the exact stored plan, not a later plan that happens to reuse its nonce.
 
-Approval checks that the Mandate and its full lineage are active. It does not permanently bypass the evaluator: the executor evaluates the stored plan again at execution time, so a later rule update, valuation result, balance change, expired deadline, or revocation can still prevent execution.
+Approval checks that the Mandate and its full lineage are active, unpaused, and within the validity window. It does not permanently bypass the evaluator: the executor evaluates the stored plan again at execution time, so a later rule update, balance change, expired deadline, revocation, or pause can still prevent execution.
 
 Denial does not release the reserved nonce. The reservation remains part of the historical binding for that digest, and the slot cannot be reused through the ordinary path.
 
@@ -37,10 +37,12 @@ Denial does not release the reserved nonce. The reservation remains part of the 
 
 `VaultExecutor.executeEscalated` accepts only an `APPROVED` record. It loads the stored plan and signature, evaluates them against current state, recomputes the digest, consumes the matching reserved nonce, executes the complete plan, and asks the manager to mark the digest `EXECUTED`.
 
-The current evaluation may return `ALLOW` or `ESCALATE` for an approved escalation because owner approval has already covered the configured boundary. A current `DENY` reverts before Vault calls. If a downstream action fails, the transaction rolls back the nonce consumption, execution event, and status change, leaving the escalation `APPROVED` for a later retry if the underlying condition changes.
+The current evaluation may return `ALLOW` or `ESCALATE` for an approved escalation because controller approval has already covered the configured boundary. A current `DENY` reverts before Vault calls. If a downstream action fails, the transaction rolls back the nonce consumption, execution event, and status change, leaving the escalation `APPROVED` for a later retry if the underlying condition changes.
 
-## Revocation during the lifecycle
+## Revocation and pausing during the lifecycle
 
-Revocation blocks new escalation reservations and approval through the active-lineage checks. The owner can still deny a pending escalation after revocation, which closes the operational record without authorising it. An already approved escalation remains `APPROVED` as history, but current evaluation returns `DENY` for an inactive lineage and prevents execution.
+Revocation blocks new escalation reservations and approval through the active-lineage checks. The controller can still deny a pending escalation after revocation, which closes the operational record without authorising it. An already approved escalation remains `APPROVED` as history, but current evaluation returns `DENY` for an inactive lineage and prevents execution.
+
+Pausing the Vault blocks escalation submission, approval, and execution. Pausing the Mandate blocks submission and approval. The stored escalation remains during the pause; approval or execution can proceed after unpause if the Mandate is still within its validity window and the lineage is otherwise active.
 
 See [Action commitments, signatures and nonces](/docs/enforcement/action-commitments-signatures-and-nonces) for reservation behaviour and [Revocation](/docs/enforcement/revocation) for the authority lifecycle that affects pending and approved escalations.

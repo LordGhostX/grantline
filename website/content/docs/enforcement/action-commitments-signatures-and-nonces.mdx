@@ -17,22 +17,9 @@ The current digest includes:
 
 The EIP-712 domain adds `Grantline`, version `1`, the active chain ID, and the deployed `MandateEvaluator` address. Changing any signed plan value, the action order, the evaluator, or the chain changes the digest.
 
-Mandate rules are not copied into the signed bytes. The signature binds the agent to the exact Action Plan and Mandate ID it uses; the evaluator reads the current Mandate rules, active lineage, and Preflight state when it checks the plan. A signature therefore does not freeze earlier permissions.
+Mandate rules are not copied into the signed bytes. The signature binds the agent to the exact Action Plan and Mandate ID it uses; the evaluator reads the current Mandate rules, active lineage, validity window, and Preflight state when it checks the plan. A signature therefore does not freeze earlier permissions.
 
 `actionDigest` is derived at the points that need it. It is not a field on `ActionPlan`, and the current `EvaluationResult` does not return it directly.
-
-## EIP-712 domain
-
-Every signature uses this domain:
-
-| Field              | Current value                                |
-| ------------------ | -------------------------------------------- |
-| Name               | `Grantline`                                  |
-| Version            | `1`                                          |
-| Chain ID           | The chain on which the evaluator is deployed |
-| Verifying contract | The `MandateEvaluator` address               |
-
-The verifying contract is the evaluator, not the executor. A signature is therefore tied to the active chain and evaluator address, so the same signed plan cannot be moved to another chain or evaluator and retain the same meaning.
 
 ## What the signature covers
 
@@ -64,6 +51,23 @@ The executor rejects a normal plan when that slot is reserved for an escalation.
 When `EscalationManager.submit` accepts an `ESCALATE` result, it computes the exact Action Plan digest and reserves the plan's nonce against that digest. The reservation prevents an ordinary execution from using the same slot and prevents another escalation from replacing the stored plan.
 
 The reservation is shared through `MandateRegistry`, not kept only in the manager. The current executor's configured escalation manager is the only caller allowed to create a reservation, and an escalated execution must consume the same digest that was reserved. Pending or denied reservations remain binding, while successful approved execution deletes the reservation and marks the nonce used.
+
+## Nonce cancellation
+
+The Mandate agent or the Vault controller can permanently invalidate an unused, unreserved nonce through `Grantline.cancelNonce()`. This is a targeted recovery mechanism: it does not pause or revoke the broader authority.
+
+Cancellation marks the nonce as used. A cancelled nonce cannot be consumed by a normal execution or reserved for an escalation. The Registry repeats the authority check before cancelling, so a parent agent cannot cancel a child's nonces.
+
+Cancellation remains available during pause, outside validity windows, and after revocation. It is a recovery-only restriction on a specific execution slot.
+
+## Nonce-aware evaluation
+
+The evaluator returns `DENY` with distinct failure codes for nonce problems:
+
+- `NONCE_USED`: the nonce was already consumed or cancelled.
+- `NONCE_RESERVED`: the nonce is reserved for an escalation digest.
+
+Public evaluation reports both as `DENY`. The internal evaluator mode (used during approved escalation execution) accepts only the exact reservation digest that matches the reserved nonce.
 
 ## Deadlines and rollback
 
