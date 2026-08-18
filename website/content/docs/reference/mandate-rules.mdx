@@ -87,8 +87,12 @@ The registry supports a maximum delegation depth of `2`. A child Mandate cannot 
 
 At the maximum delegation depth, `canDelegate` is forced off. `getEffectiveRules`, `getEffectivePreflightRules`, and `getEffectiveValidityWindow` require an active lineage, while `getLineage` can still be used to inspect a revoked lineage.
 
-## Testnet behaviour
+## Deployment-gated behaviour
 
-The current X Layer deployment predates SWAP, native-USD limits, nonce cancellation, and pausing. Deployments with a configured Chainlink feed support native-USD rules and Preflight floors; deployments without one reject nonzero native-USD thresholds. A production valuation provider and external condition modules are planned as separate work.
+Native-USD rules and Preflight floors require a Chainlink feed to be configured on the evaluator. Deployments with a feed support `minNativeUsd`, `maxNativeUsd`, `minNativeUsdBalance`, and `escalateNativeUsdBalance`; the evaluator reads the current price from the feed at evaluation time and fails closed when the answer is unavailable or invalid. Deployments without a feed reject nonzero native-USD thresholds at Mandate creation and update time.
+
+`SWAP` actions require a swap adapter to be configured on the Vault's executor. Deployments with an adapter validate pool registration, route topology, output floors, and deadline before executing. Deployments without one return `SWAP_UNSUPPORTED`.
+
+Nonce cancellation, per-Vault and per-Mandate pausing, and validity windows are fully enforced regardless of deployment configuration.
 
 See [Inspect a Mandate](/docs/guides/vault-and-mandate-setup) for read-only calls and [Mandates](/docs/concepts/mandates) for the stable product model.
