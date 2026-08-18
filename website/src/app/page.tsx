@@ -513,6 +513,8 @@ export default function Home() {
                 <li>Native amount limits and native-balance Preflight</li>
                 <li>Owner-approved escalation and re-evaluation</li>
                 <li>Delegation, revocation, and replay protection</li>
+                <li>Vault and Mandate pausing for temporary suspension</li>
+                <li>Validity windows and targeted nonce cancellation</li>
                 <li>Committed onchain execution evidence</li>
               </ul>
 
@@ -699,8 +701,8 @@ export default function Home() {
                   Would the projected Vault balance stay above its reserve?
                 </h3>
                 <p>
-                  The current MVP checks the projected native Vault balance
-                  against an inherited reserve boundary.
+                  The current MVP checks the projected native Vault balance and
+                  native-USD balance against inherited reserve boundaries.
                 </p>
               </article>
               <article>
@@ -742,7 +744,7 @@ export default function Home() {
                 <h3>Revocation preserves history and stops future use.</h3>
                 <p>
                   Revocation preserves the lineage while preventing an inactive
-                  Mandate or ancestor from authorising new execution.
+                  Mandate from authorising new execution.
                 </p>
               </article>
               <article>
@@ -818,15 +820,15 @@ export default function Home() {
                 <span className="label">Authority policy</span>
                 <h3>Validity and destination controls</h3>
                 <p>
-                  Pausing, validity windows, destination and capability
-                  policies, and shared authority budgets.
+                  Destination and capability policies, and shared authority
+                  budgets.
                 </p>
               </article>
               <article>
                 <span className="label">External conditions</span>
                 <h3>Guardians</h3>
                 <p>
-                  Planned conditions that can bring selected, attributable, and
+                  Conditions that can bring selected, attributable, and
                   time-bounded external context into authorisation.
                 </p>
               </article>
@@ -834,8 +836,8 @@ export default function Home() {
                 <span className="label">Integration</span>
                 <h3>SDK and API surfaces</h3>
                 <p>
-                  Client tools around the same underlying contract authority
-                  model.
+                  Client tools and sponsored relayer submission around the same
+                  underlying contract authority model.
                 </p>
               </article>
               <article>
