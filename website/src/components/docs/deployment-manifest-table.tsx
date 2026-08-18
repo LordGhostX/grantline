@@ -6,11 +6,16 @@ const deploymentManifests = {
 } as const;
 
 type DeploymentManifest = {
-  vault: { address: string };
-  mandateRegistry: { address: string };
-  mandateEvaluator: { address: string };
-  escalationManager: { address: string };
-  vaultExecutor: { address: string };
+  grantline: { proxy: string; protocolAdmin: string };
+  admin: { address: string };
+  modules: {
+    registry: { proxy: string };
+    evaluator: { proxy: string };
+    escalationManager: { proxy: string };
+    executor: { proxy: string };
+    vaultFactory: { proxy: string };
+  };
+  vaultImplementation: { address: string };
 };
 
 const deploymentsDirectory = path.join(process.cwd(), "data", "deployments");
@@ -31,11 +36,14 @@ function loadDeployments() {
 
 function getComponents(manifest: DeploymentManifest) {
   return [
-    ["Vault", manifest.vault.address],
-    ["MandateRegistry", manifest.mandateRegistry.address],
-    ["MandateEvaluator", manifest.mandateEvaluator.address],
-    ["EscalationManager", manifest.escalationManager.address],
-    ["VaultExecutor", manifest.vaultExecutor.address],
+    ["Grantline", manifest.grantline.proxy],
+    ["GrantlineAdmin", manifest.admin.address],
+    ["MandateRegistry", manifest.modules.registry.proxy],
+    ["MandateEvaluator", manifest.modules.evaluator.proxy],
+    ["EscalationManager", manifest.modules.escalationManager.proxy],
+    ["VaultExecutor", manifest.modules.executor.proxy],
+    ["VaultFactory", manifest.modules.vaultFactory.proxy],
+    ["Vault Implementation", manifest.vaultImplementation.address],
   ] as const;
 }
 
