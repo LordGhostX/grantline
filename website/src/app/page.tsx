@@ -515,7 +515,6 @@ export default function Home() {
                 <li>Delegation, revocation, and replay protection</li>
                 <li>Vault and Mandate pausing for temporary suspension</li>
                 <li>Validity windows and targeted nonce cancellation</li>
-                <li>Committed onchain execution evidence</li>
               </ul>
 
               <div className="proof-card reveal">
