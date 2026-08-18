@@ -145,7 +145,7 @@ contract Vault is
         emit ExecutionAttempted(msg.sender, target, value, keccak256(data), success, keccak256(result));
     }
 
-    function executeSwap(address swapAdapter, ActionTypes.SwapParameters calldata params)
+    function executeSwap(address swapAdapter, ActionTypes.SwapParameters calldata params, uint256 deadline)
         external
         onlyAuthority
         whenNotPaused
@@ -167,11 +167,11 @@ contract Vault is
         }
 
         if (params.tokenIn == address(0)) {
-            amountOut = ISwapAdapter(swapAdapter).executeSwap{value: params.amountIn}(params);
+            amountOut = ISwapAdapter(swapAdapter).executeSwap{value: params.amountIn}(params, deadline);
         } else {
             _requireTokenAndAmount(params.tokenIn, params.amountIn);
             IERC20(params.tokenIn).forceApprove(swapAdapter, params.amountIn);
-            amountOut = ISwapAdapter(swapAdapter).executeSwap(params);
+            amountOut = ISwapAdapter(swapAdapter).executeSwap(params, deadline);
             IERC20(params.tokenIn).forceApprove(swapAdapter, 0);
         }
     }

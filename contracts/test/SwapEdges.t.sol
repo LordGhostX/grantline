@@ -270,8 +270,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             66,
-            0,
-            _swapAction(address(tokenIn), 1 ether, address(tokenOut), 1.1 ether, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(tokenIn), 1 ether, address(tokenOut), 1.1 ether, hops)
         );
 
         fixture.hub.execute(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
@@ -307,8 +307,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             67,
-            0,
-            _swapAction(address(0), 1 ether, address(0), 1.1 ether, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(0), 1 ether, address(0), 1.1 ether, hops)
         );
 
         fixture.hub.execute(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
@@ -340,8 +340,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             71,
-            0,
-            _swapAction(address(0), 1 ether, address(tokenOut), 1.1 ether, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(0), 1 ether, address(tokenOut), 1.1 ether, hops)
         );
 
         fixtureVm.expectEmit(true, true, true, true);
@@ -393,8 +393,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             72 + (inputUsed == 1 ether ? 1 : 0),
-            0,
-            _swapAction(address(wrappedNative), 1 ether, address(0), minAmountOut, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(wrappedNative), 1 ether, address(0), minAmountOut, hops)
         );
 
         fixtureVm.expectEmit(true, true, true, true);
@@ -431,8 +431,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             68,
-            0,
-            _swapAction(address(tokenIn), 1 ether, address(tokenOut), 1.9 ether, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(tokenIn), 1 ether, address(tokenOut), 1.9 ether, hops)
         );
         bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
 
@@ -464,8 +464,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             69,
-            0,
-            _swapAction(address(tokenIn), 1 ether, address(tokenOut), 1.7 ether, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(tokenIn), 1 ether, address(tokenOut), 1.7 ether, hops)
         );
         bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
 
@@ -507,8 +507,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             70,
-            0,
-            _swapAction(address(tokenInAndOut), 1 ether, address(tokenInAndOut), 1.1 ether, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(tokenInAndOut), 1 ether, address(tokenInAndOut), 1.1 ether, hops)
         );
         bytes memory signature = _sign(fixture.hub, plan, FIXTURE_AGENT_KEY);
 
@@ -532,7 +532,7 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             60,
-            0,
+            block.timestamp + 100,
             ActionTypes.Action({
                 actionType: ActionTypes.ActionType.SWAP, version: ActionTypes.SWAP_VERSION, parameters: hex"01"
             })
@@ -545,6 +545,36 @@ contract SwapEdgesTest is TestFixture {
         assert(result.failedActionIndex == 0);
     }
 
+    function test_swapPlanRejectsZeroDeadline() public {
+        SwapTestToken tokenA = new SwapTestToken();
+        SwapTestToken tokenB = new SwapTestToken();
+        SwapTestWrappedNative wrappedNative = new SwapTestWrappedNative();
+        SwapTestFactory factory = new SwapTestFactory();
+        SwapTestRouter router = new SwapTestRouter(address(wrappedNative), address(factory));
+        SwapTestPool pool = new SwapTestPool(address(factory), address(tokenA), address(tokenB), 500);
+        factory.setPool(address(tokenA), address(tokenB), 500, address(pool));
+
+        Fixture memory swapFixture = _fixtureWithSwapAdapter(address(router), address(factory), address(wrappedNative));
+        tokenA.mint(swapFixture.vault, 1 ether);
+        tokenB.mint(address(router), 2 ether);
+
+        ActionTypes.SwapHop[] memory hops = new ActionTypes.SwapHop[](1);
+        hops[0] = ActionTypes.SwapHop({pool: address(pool), tokenIn: address(tokenA), tokenOut: address(tokenB)});
+        ActionTypes.ActionPlan memory plan = _singleActionPlan(
+            swapFixture.mandateId,
+            swapFixture.agent,
+            60,
+            0,
+            _swapAction(address(tokenA), 1 ether, address(tokenB), 1 ether, hops)
+        );
+
+        GrantlineTypes.EvaluationResult memory result =
+            swapFixture.hub.evaluate(plan, _sign(swapFixture.hub, plan, FIXTURE_AGENT_KEY));
+        assert(result.decision == uint8(MandateEvaluator.Decision.DENY));
+        assert(result.failureCode == uint8(MandateEvaluator.FailureCode.INVALID_SWAP_PARAMETERS));
+        assert(result.failedActionIndex == type(uint256).max);
+    }
+
     function test_swapDeadlineExpiresBeforeRouteValidation() public {
         Fixture memory fixture = _fixture();
         uint256 deadline = block.timestamp + 1;
@@ -554,15 +584,15 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             61,
-            0,
-            _swapAction(address(0xCAFE), 1 ether, address(0xBEEF), 1 ether, deadline, hops)
+            deadline,
+            _swapAction(address(0xCAFE), 1 ether, address(0xBEEF), 1 ether, hops)
         );
 
         GrantlineTypes.EvaluationResult memory result =
             fixture.hub.evaluate(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
         assert(result.decision == uint8(MandateEvaluator.Decision.DENY));
         assert(result.failureCode == uint8(MandateEvaluator.FailureCode.EXPIRED));
-        assert(result.failedActionIndex == 0);
+        assert(result.failedActionIndex == type(uint256).max);
     }
 
     function test_swapIsUnsupportedWhenDeploymentHasNoSwapAdapter() public {
@@ -573,8 +603,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             61,
-            0,
-            _swapAction(address(0xCAFE), 1 ether, address(0xBEEF), 1 ether, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(0xCAFE), 1 ether, address(0xBEEF), 1 ether, hops)
         );
 
         GrantlineTypes.EvaluationResult memory result =
@@ -609,8 +639,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             62,
-            0,
-            _swapAction(address(tokenA), 1 ether, address(tokenC), 1.9 ether, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(tokenA), 1 ether, address(tokenC), 1.9 ether, hops)
         );
 
         GrantlineTypes.EvaluationResult memory result =
@@ -644,8 +674,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             63,
-            0,
-            _swapAction(address(0), 1 ether, address(token), 1.9 ether, block.timestamp + 100, nativeInputHops)
+            block.timestamp + 100,
+            _swapAction(address(0), 1 ether, address(token), 1.9 ether, nativeInputHops)
         );
         fixture.hub.execute(nativeInputPlan, _sign(fixture.hub, nativeInputPlan, FIXTURE_AGENT_KEY));
         assert(address(fixture.vault).balance == 4 ether);
@@ -659,8 +689,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             64,
-            0,
-            _swapAction(address(token), 1 ether, address(0), 1.9 ether, block.timestamp + 100, nativeOutputHops)
+            block.timestamp + 100,
+            _swapAction(address(token), 1 ether, address(0), 1.9 ether, nativeOutputHops)
         );
         fixture.hub.execute(nativeOutputPlan, _sign(fixture.hub, nativeOutputPlan, FIXTURE_AGENT_KEY));
         assert(address(fixture.vault).balance == 6 ether);
@@ -686,8 +716,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             65,
-            0,
-            _swapAction(address(0), 1 ether, address(tokenOut), 1 ether, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(0), 1 ether, address(tokenOut), 1 ether, hops)
         );
 
         GrantlineTypes.EvaluationResult memory result =
@@ -719,8 +749,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             66,
-            0,
-            _swapAction(address(wrappedNative), 1 ether, address(tokenOut), 1 ether, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(wrappedNative), 1 ether, address(tokenOut), 1 ether, hops)
         );
 
         GrantlineTypes.EvaluationResult memory result =
@@ -747,8 +777,8 @@ contract SwapEdgesTest is TestFixture {
             fixture.mandateId,
             fixture.agent,
             65,
-            0,
-            _swapAction(address(tokenA), 1 ether, address(tokenB), 1 ether, block.timestamp + 100, hops)
+            block.timestamp + 100,
+            _swapAction(address(tokenA), 1 ether, address(tokenB), 1 ether, hops)
         );
         GrantlineTypes.EvaluationResult memory result =
             fixture.hub.evaluate(plan, _sign(fixture.hub, plan, FIXTURE_AGENT_KEY));
@@ -760,7 +790,6 @@ contract SwapEdgesTest is TestFixture {
         uint256 amountIn,
         address tokenOut,
         uint256 minAmountOut,
-        uint256 deadline,
         ActionTypes.SwapHop[] memory hops
     ) private pure returns (ActionTypes.Action memory) {
         return ActionTypes.Action({
@@ -773,7 +802,6 @@ contract SwapEdgesTest is TestFixture {
                     amountIn: amountIn,
                     tokenOut: tokenOut,
                     minAmountOut: minAmountOut,
-                    deadline: deadline,
                     hops: hops
                 })
             )

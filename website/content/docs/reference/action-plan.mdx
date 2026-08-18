@@ -47,7 +47,6 @@ library ActionTypes {
         uint256 amountIn;
         address tokenOut;
         uint256 minAmountOut;
-        uint256 deadline;
         SwapHop[] hops;
     }
 
@@ -117,7 +116,6 @@ A readable representation of a swap can look like this before ABI encoding:
         "amountIn": "1000000000000000000",
         "tokenOut": "0xTokenOut",
         "minAmountOut": "950000000000000000",
-        "deadline": "1700000000",
         "hops": [
           {
             "pool": "0xPoolAddress",
@@ -131,7 +129,7 @@ A readable representation of a swap can look like this before ABI encoding:
 }
 ```
 
-The JSON is explanatory only. `swapAdapterId` maps to the configured adapter through the Grantline facade. `deadline` must be non-zero for SWAP actions. `minAmountOut` sets the output floor; the executor reverts if the actual output is below it. Each hop describes one pool in the route, and hops chain together through consecutive `tokenOut`/`tokenIn` addresses.
+The JSON is explanatory only. `swapAdapterId` maps to the configured adapter through the Grantline facade. `deadline` on the `ActionPlan` must be non-zero for plans containing `SWAP` actions; the evaluator rejects a `SWAP` plan with `deadline: 0` as `INVALID_SWAP_PARAMETERS`. `minAmountOut` sets the output floor; the executor reverts if the actual output is below it. Each hop describes one pool in the route, and hops chain together through consecutive `tokenOut`/`tokenIn` addresses.
 
 The evaluator checks that the adapter is configured, calls `validateSwap` on the adapter, and accumulates the input amount for native-USD valuation. Route validation is adapter-specific: the Uniswap V3 adapter checks factory ownership, pool fees, token continuity, and deadline.
 

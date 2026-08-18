@@ -85,9 +85,15 @@ interface ISwapAdapter is IComponent {
 
     function grantline() external view returns (address);
 
-    function validateSwap(ActionTypes.SwapParameters calldata params, address vault) external view returns (bool);
+    function validateSwap(ActionTypes.SwapParameters calldata params, address vault, uint256 deadline)
+        external
+        view
+        returns (bool);
 
-    function executeSwap(ActionTypes.SwapParameters calldata params) external payable returns (uint256 amountOut);
+    function executeSwap(ActionTypes.SwapParameters calldata params, uint256 deadline)
+        external
+        payable
+        returns (uint256 amountOut);
 }
 
 interface IModule is IComponent {
@@ -264,7 +270,7 @@ interface IVault is IComponent {
         external
         returns (bool success, bytes memory result);
 
-    function executeSwap(address swapAdapter, ActionTypes.SwapParameters calldata params)
+    function executeSwap(address swapAdapter, ActionTypes.SwapParameters calldata params, uint256 deadline)
         external
         returns (uint256 amountOut);
 

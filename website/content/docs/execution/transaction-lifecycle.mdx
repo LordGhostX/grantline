@@ -23,7 +23,7 @@ Vault calls and ActionPlanExecuted
 
 `Grantline.execute` computes the digest and calls `VaultExecutor.execute`. The evaluator checks the complete signed plan. A result other than `ALLOW` becomes `EvaluationDenied`, so the executor does not call the Vault for a denied or escalatable normal plan. For an allowed plan, it confirms that the supplied Vault matches the Mandate, computes the digest, rejects a used or reserved nonce, and consumes the nonce through the registry before the first external Vault call.
 
-The executor then translates each supported action into a Vault call. Native transfers call the Vault with value and an empty payload. Token transfers call the token's `transfer` function through the Vault and accept the standard empty or `true` return conventions. SWAP actions call `vault.executeSwap(adapter, params)` after adapter route validation. Once every action succeeds, the executor emits `ActionPlanExecuted`.
+The executor then translates each supported action into a Vault call. Native transfers call the Vault with value and an empty payload. Token transfers call the token's `transfer` function through the Vault and accept the standard empty or `true` return conventions. `SWAP` actions call `vault.executeSwap(adapter, params)` after adapter route validation. Once every action succeeds, the executor emits `ActionPlanExecuted`.
 
 ## Escalated execution
 
@@ -49,7 +49,7 @@ The escalated entrypoint loads the complete plan and signature from `EscalationM
 
 A read-only evaluation can return `DENY` with a failure code and no state change. If a caller submits that plan to the normal executor, the transaction reverts with `EvaluationDenied` before the registry consumes a nonce or the Vault receives a call.
 
-An `ALLOW` result does not guarantee downstream success. A recipient can reject a native call, a token can return false or malformed data, a token target can fail validation, or a SWAP output can fall below `minAmountOut`. The executor reverts the complete plan when any action fails, so earlier actions do not remain completed and `ActionPlanExecuted` does not persist.
+An `ALLOW` result does not guarantee downstream success. A recipient can reject a native call, a token can return false or malformed data, a token target can fail validation, or a `SWAP` output can fall below `minAmountOut`. The executor reverts the complete plan when any action fails, so earlier actions do not remain completed and `ActionPlanExecuted` does not persist.
 
 The same atomicity applies to escalated execution. If the action loop or the final escalation status update fails, the nonce, Vault calls, execution event, and status change all roll back. An approved escalation can therefore remain `APPROVED` after a failed attempt.
 

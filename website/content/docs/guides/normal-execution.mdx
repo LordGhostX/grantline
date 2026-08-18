@@ -3,7 +3,7 @@ title: Normal execution
 description: Sign, evaluate, and execute a TRANSFER or SWAP Action Plan through the ALLOW path.
 ---
 
-This guide covers signing an Action Plan, evaluating it read-only, and executing it through the normal `ALLOW` path. It shows both TRANSFER and SWAP examples.
+This guide covers signing an Action Plan, evaluating it read-only, and executing it through the normal `ALLOW` path. It shows both `TRANSFER` and `SWAP` examples.
 
 ## Load the deployment values
 
@@ -168,7 +168,7 @@ The first field (`used`) should be `true`. The second field (`reservation`) shou
   "mandateId": "1",
   "agent": "0xAgent",
   "nonce": "2",
-  "deadline": "0",
+  "deadline": "1700000000",
   "actions": [
     {
       "actionType": "SWAP",
@@ -178,7 +178,6 @@ The first field (`used`) should be `true`. The second field (`reservation`) shou
       "amountIn": "1000000000000000000",
       "tokenOut": "0xTokenOut",
       "minAmountOut": "950000000000000000",
-      "deadline": "1700000000",
       "hops": [
         {
           "pool": "0xPoolAddress",
@@ -196,12 +195,11 @@ The first field (`used`) should be `true`. The second field (`reservation`) shou
 ```ts
 const swapParameters = encodeAbiParameters(
   [
-    { type: "uint8" },    // swapAdapterId
-    { type: "address" },  // tokenIn
-    { type: "uint256" },  // amountIn
-    { type: "address" },  // tokenOut
-    { type: "uint256" },  // minAmountOut
-    { type: "uint256" },  // deadline
+    { type: "uint8" }, // swapAdapterId
+    { type: "address" }, // tokenIn
+    { type: "uint256" }, // amountIn
+    { type: "address" }, // tokenOut
+    { type: "uint256" }, // minAmountOut
     {
       type: "tuple[]",
       components: [
@@ -217,7 +215,6 @@ const swapParameters = encodeAbiParameters(
     parseEther("1"),
     tokenOutAddress,
     parseEther("0.95"),
-    1700000000n,
     [{ pool: poolAddress, tokenIn: tokenInAddress, tokenOut: tokenOutAddress }],
   ],
 );
@@ -227,7 +224,7 @@ The plan uses `actionType: 1` (SWAP) and `version: 1`.
 
 ### Evaluate and execute
 
-The evaluate and execute calls follow the same pattern as TRANSFER. The evaluator validates the SWAP route through the configured adapter before returning `ALLOW`. If the adapter is not configured or the route is invalid, the evaluation returns `DENY` with `SWAP_UNSUPPORTED` or `INVALID_SWAP_ROUTE`.
+The evaluate and execute calls follow the same pattern as `TRANSFER`. The evaluator validates the `SWAP` route through the configured adapter before returning `ALLOW`. If the adapter is not configured or the route is invalid, the evaluation returns `DENY` with `SWAP_UNSUPPORTED` or `INVALID_SWAP_ROUTE`.
 
 ```sh
 cast send "$GRANTLINE" \
@@ -242,6 +239,6 @@ cast send "$GRANTLINE" \
 
 If evaluation returns `DENY`, the executor reverts before calling the Vault. A submitted transaction reverts with `EvaluationDenied` and leaves no committed events.
 
-If evaluation returns `ALLOW` but a downstream action fails (recipient rejects, token returns false, SWAP output below minimum), the complete transaction reverts. The nonce is not consumed. The receipt status is `0` with revert data.
+If evaluation returns `ALLOW` but a downstream action fails (recipient rejects, token returns false, `SWAP` output below minimum), the complete transaction reverts. The nonce is not consumed. The receipt status is `0` with revert data.
 
 See [Decisions and failures](/docs/reference/decisions-and-failures) for the full list of failure codes.

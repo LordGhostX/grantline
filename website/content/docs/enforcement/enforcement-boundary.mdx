@@ -19,7 +19,7 @@ Vault performs the transfer or swap
 
 `Grantline` is the only external entry point. It validates that the caller is configured, computes the action digest, and routes to the correct module. Direct calls to internal modules fail.
 
-`MandateEvaluator` is the decision boundary. It checks the [Mandate](/docs/concepts/mandates) and active lineage, the validity window, the agent binding, the signature, the deadline, the complete [Action Plan](/docs/concepts/action-plans), amount rules, SWAP route validation, and [Preflight](/docs/concepts/preflight) state. It returns `ALLOW`, `ESCALATE`, or `DENY` with the first relevant failure code; it never moves capital itself.
+`MandateEvaluator` is the decision boundary. It checks the [Mandate](/docs/concepts/mandates) and active lineage, the validity window, the agent binding, the signature, the deadline, the complete [Action Plan](/docs/concepts/action-plans), amount rules, `SWAP` route validation, and [Preflight](/docs/concepts/preflight) state. It returns `ALLOW`, `ESCALATE`, or `DENY` with the first relevant failure code; it never moves capital itself.
 
 `VaultExecutor` is the execution boundary above the Vault. Its normal entrypoint accepts only an `ALLOW` result. Its escalated entrypoint loads the complete plan stored by `EscalationManager`, confirms that the escalation is approved, recomputes the evaluation against current state, and rejects the plan only when the current result is `DENY`. An approved plan can therefore remain executable when current rules still return `ALLOW` or `ESCALATE`, but approval never skips re-evaluation.
 

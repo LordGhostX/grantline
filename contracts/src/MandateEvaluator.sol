@@ -252,20 +252,30 @@ contract MandateEvaluator is Initializable, GrantlineModuleAccess, UUPSUpgradeab
         returns (bool, Totals memory totals, FailureCode, uint256)
     {
         uint256 failedActionIndex = type(uint256).max;
+        bool hasSwap;
+        for (uint256 index; index < plan.actions.length; index++) {
+            if (plan.actions[index].actionType == ActionTypes.ActionType.SWAP) {
+                hasSwap = true;
+            }
+        }
+        if (hasSwap && plan.deadline == 0) {
+            return (false, totals, FailureCode.INVALID_SWAP_PARAMETERS, type(uint256).max);
+        }
         for (uint256 index; index < plan.actions.length; index++) {
             (bool actionValid, Totals memory updatedTotals, FailureCode actionFailure) =
-                _validateAction(plan.actions[index], totals, vault);
+                _validateAction(plan.actions[index], totals, vault, plan.deadline);
             totals = updatedTotals;
             if (!actionValid) return (false, totals, actionFailure, index);
         }
         return (true, totals, FailureCode.NONE, failedActionIndex);
     }
 
-    function _validateAction(ActionTypes.Action calldata action, Totals memory currentTotals, address vault)
-        private
-        view
-        returns (bool, Totals memory totals, FailureCode)
-    {
+    function _validateAction(
+        ActionTypes.Action calldata action,
+        Totals memory currentTotals,
+        address vault,
+        uint256 deadline
+    ) private view returns (bool, Totals memory totals, FailureCode) {
         totals = currentTotals;
         if (action.parameters.length == 0) return (false, totals, FailureCode.INVALID_ACTION);
 
@@ -293,14 +303,13 @@ contract MandateEvaluator is Initializable, GrantlineModuleAccess, UUPSUpgradeab
         }
 
         try this.decodeSwapParameters(action.parameters) returns (ActionTypes.SwapParameters memory swap) {
-            if (swap.amountIn == 0 || swap.minAmountOut == 0 || swap.deadline == 0 || swap.hops.length == 0) {
+            if (swap.amountIn == 0 || swap.minAmountOut == 0 || swap.hops.length == 0) {
                 return (false, totals, FailureCode.INVALID_SWAP_PARAMETERS);
             }
-            if (block.timestamp > swap.deadline) return (false, totals, FailureCode.EXPIRED);
 
             address swapAdapter = IGrantlineContext(_grantline).swapAdapterFor(swap.swapAdapterId);
             if (swapAdapter == address(0)) return (false, totals, FailureCode.SWAP_UNSUPPORTED);
-            try ISwapAdapter(swapAdapter).validateSwap(swap, vault) returns (bool valid) {
+            try ISwapAdapter(swapAdapter).validateSwap(swap, vault, deadline) returns (bool valid) {
                 if (!valid) return (false, totals, FailureCode.INVALID_SWAP_ROUTE);
             } catch {
                 return (false, totals, FailureCode.INVALID_SWAP_ROUTE);

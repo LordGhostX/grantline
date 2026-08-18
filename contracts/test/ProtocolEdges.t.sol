@@ -243,7 +243,7 @@ contract GrantlineMissingExecuteSwapVaultImplementation is GrantlineIncompleteSw
 }
 
 contract GrantlineMissingSwapNativeReceiverVaultImplementation is GrantlineIncompleteSwapVaultImplementation {
-    function executeSwap(address, ActionTypes.SwapParameters calldata) external pure returns (uint256) {
+    function executeSwap(address, ActionTypes.SwapParameters calldata, uint256) external pure returns (uint256) {
         return 0;
     }
 }

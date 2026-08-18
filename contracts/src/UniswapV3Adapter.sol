@@ -113,7 +113,7 @@ contract UniswapV3Adapter is ISwapAdapter, ReentrancyGuard {
         return 1;
     }
 
-    function validateSwap(ActionTypes.SwapParameters calldata params, address vault)
+    function validateSwap(ActionTypes.SwapParameters calldata params, address vault, uint256 deadline)
         external
         view
         override
@@ -124,12 +124,12 @@ contract UniswapV3Adapter is ISwapAdapter, ReentrancyGuard {
             return false;
         }
         if (params.swapAdapterId != ActionTypes.SwapAdapterId.UNISWAP_V3) return false;
-        if (params.amountIn == 0 || params.minAmountOut == 0 || params.deadline == 0) return false;
-        if (block.timestamp > params.deadline) return false;
+        if (params.amountIn == 0 || params.minAmountOut == 0 || deadline == 0) return false;
+        if (block.timestamp > deadline) return false;
         return _validRoute(params);
     }
 
-    function executeSwap(ActionTypes.SwapParameters calldata params)
+    function executeSwap(ActionTypes.SwapParameters calldata params, uint256 deadline)
         external
         payable
         override
@@ -143,7 +143,7 @@ contract UniswapV3Adapter is ISwapAdapter, ReentrancyGuard {
         }
         if (params.swapAdapterId != ActionTypes.SwapAdapterId.UNISWAP_V3) revert InvalidSwapAdapter();
         if (params.amountIn == 0 || params.minAmountOut == 0) revert InvalidTokenAmount();
-        if (params.deadline == 0 || block.timestamp > params.deadline) revert InvalidSwapDeadline();
+        if (deadline == 0 || block.timestamp > deadline) revert InvalidSwapDeadline();
         if (!_validRoute(params)) revert InvalidSwapRoute();
 
         if (params.tokenIn == address(0)) {
@@ -161,7 +161,7 @@ contract UniswapV3Adapter is ISwapAdapter, ReentrancyGuard {
             IUniswapV3RouterLike.ExactInputParams({
                 path: path,
                 recipient: recipient,
-                deadline: params.deadline,
+                deadline: deadline,
                 amountIn: params.amountIn,
                 amountOutMinimum: params.minAmountOut
             })

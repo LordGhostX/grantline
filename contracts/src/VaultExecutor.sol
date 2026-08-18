@@ -152,7 +152,7 @@ contract VaultExecutor is Initializable, GrantlineModuleAccess, ReentrancyGuard,
         }
 
         for (uint256 index; index < plan.actions.length; index++) {
-            _executeAction(vault, plan.actions[index], index);
+            _executeAction(vault, plan.actions[index], index, plan.deadline);
         }
 
         emit ActionPlanExecuted(
@@ -174,7 +174,9 @@ contract VaultExecutor is Initializable, GrantlineModuleAccess, ReentrancyGuard,
         if (reserved != bytes32(0)) revert EscalationNonceReserved(reserved);
     }
 
-    function _executeAction(IVault vault, ActionTypes.Action memory action, uint256 actionIndex) private {
+    function _executeAction(IVault vault, ActionTypes.Action memory action, uint256 actionIndex, uint256 deadline)
+        private
+    {
         if (action.actionType == ActionTypes.ActionType.SWAP) {
             if (action.version != ActionTypes.SWAP_VERSION) {
                 revert UnsupportedActionVersion(action.version);
@@ -182,7 +184,7 @@ contract VaultExecutor is Initializable, GrantlineModuleAccess, ReentrancyGuard,
             ActionTypes.SwapParameters memory swap = abi.decode(action.parameters, (ActionTypes.SwapParameters));
             address swapAdapter = IGrantlineContext(_grantline).swapAdapterFor(swap.swapAdapterId);
             if (swapAdapter == address(0)) revert UnsupportedSwapAdapter(swap.swapAdapterId);
-            uint256 amountOut = vault.executeSwap(swapAdapter, swap);
+            uint256 amountOut = vault.executeSwap(swapAdapter, swap, deadline);
             if (amountOut < swap.minAmountOut) revert InvalidSwapOutput(swap.minAmountOut, amountOut);
             return;
         }

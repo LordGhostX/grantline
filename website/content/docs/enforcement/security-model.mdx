@@ -80,6 +80,6 @@ A counter can measure how much authority has been used, but it does not stop cap
 
 ## Current limitations
 
-The current typed action surface supports `TRANSFER` version `1` and `SWAP` version `1`. TRANSFER does not yet enforce a destination allowlist; an authorised transfer can send capital to any non-zero address. SWAP validates routes through the configured adapter, but adapter support is immutable after one-time module configuration.
+The current typed action surface supports `TRANSFER` version `1` and `SWAP` version `1`. `TRANSFER` does not yet enforce a destination allowlist; an authorised transfer can send capital to any non-zero address. `SWAP` validates routes through the configured adapter, but adapter support is immutable after one-time module configuration.
 
 See [Vaults](/docs/concepts/vaults) for the custody model, [Action commitments, signatures and nonces](/docs/enforcement/action-commitments-signatures-and-nonces) for the canonical plan digest, and [Transaction lifecycle](/docs/execution/transaction-lifecycle) for the execution and receipt boundary.

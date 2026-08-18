@@ -46,7 +46,6 @@ library ActionTypes {
         uint256 amountIn;
         address tokenOut;
         uint256 minAmountOut;
-        uint256 deadline;
         SwapHop[] hops;
     }
 
