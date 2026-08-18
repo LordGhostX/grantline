@@ -17,13 +17,13 @@ MANIFEST="$DEPLOYMENT_MANIFEST_PATH"
 RPC="$XLAYER_TESTNET_RPC_URL"
 EXPLORER="$XLAYER_TESTNET_EXPLORER_URL"
 GRANTLINE="$(jq -r '.grantline.proxy' "$MANIFEST")"
-VAULT="$(jq -r '.grantline.proxy' "$MANIFEST")"
+VAULT="$VAULT_ADDRESS"
 REGISTRY="$(jq -r '.modules.registry.proxy' "$MANIFEST")"
 EXECUTOR="$(jq -r '.modules.executor.proxy' "$MANIFEST")"
 MANAGER="$(jq -r '.modules.escalationManager.proxy' "$MANIFEST")"
 ```
 
-Use the manifest values for every lookup.
+Use the manifest values for every lookup. Set `VAULT` to the actual Vault address from a `VaultCreated` event or your own records; the manifest does not track individual Vault addresses.
 
 ## Successful execution
 

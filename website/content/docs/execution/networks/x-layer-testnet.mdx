@@ -1,6 +1,6 @@
 ---
 title: X Layer testnet
-description: Current Grantline contract evidence on X Layer testnet, including network settings and testnet-specific boundaries.
+description: Current Grantline contract evidence on X Layer testnet, including network settings and deployment-specific limitations.
 ---
 
 The current contracts MVP is deployed and exercised on X Layer testnet. This page records the network and deployment-specific evidence; shared authorisation and execution mechanics belong in the enforcement and execution pages.
@@ -36,14 +36,20 @@ The X Layer testnet integration exercised:
 - escalation submission, controller approval, and execution;
 - delegated authority through a child and a grandchild Mandate;
 - inherited Preflight denial followed by controller-approved execution;
-- ancestor tightening and lineage revocation; and
-- failed execution receipts that moved no funds.
+- ancestor tightening and lineage revocation;
+- failed execution receipts that moved no funds;
+- Vault and Mandate pausing and unpausing;
+- validity window enforcement (validAfter and expired validUntil);
+- controller nonce cancellation;
+- minimum native amount enforcement;
+- a hook recipient receiving native transfer; and
+- Vault upgrade preserving pause state.
 
 This is evidence of the current contract flow on this network. Use [Inspecting evidence](/docs/guides/inspecting-evidence) for the reusable receipt, event, and explorer workflow.
 
-## Testnet-specific boundaries
+## Deployment-specific limitations
 
-The current deployment has no Chainlink USD feed configured. Native-USD rules and Preflight floors are not available on this deployment until a fresh deployment with a configured feed is performed.
+The current deployment has no Chainlink USD feed or `SWAP` adapter configured. Native-USD rules, Preflight floors, and `SWAP` actions are not available on this deployment until a fresh deployment with a configured feed and adapter is performed.
 
 Offchain indexing, sponsored submission, production USD resolution, and assembled Decision Receipts remain deferred. Those are product or integration capabilities, not properties of X Layer testnet itself.
 
