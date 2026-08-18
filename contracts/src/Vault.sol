@@ -31,6 +31,7 @@ contract Vault is
 
     event VaultInitialized(address indexed grantline, address indexed authority, address indexed upgradeAuthority);
     event AuthorityUpdated(address indexed previousAuthority, address indexed newAuthority);
+    event UpgradeAuthorityUpdated(address indexed previousAuthority, address indexed newAuthority);
     event ExecutionAttempted(
         address indexed authority,
         address indexed target,
@@ -130,6 +131,16 @@ contract Vault is
         address previousAuthority = authority;
         authority = newAuthority;
         emit AuthorityUpdated(previousAuthority, newAuthority);
+    }
+
+    function setUpgradeAuthority(address newUpgradeAuthority) external {
+        if (msg.sender != upgradeAuthority) revert NotAuthority(msg.sender);
+        if (newUpgradeAuthority == address(0) || newUpgradeAuthority.code.length == 0) {
+            revert InvalidAddress();
+        }
+        address previousAuthority = upgradeAuthority;
+        upgradeAuthority = newUpgradeAuthority;
+        emit UpgradeAuthorityUpdated(previousAuthority, newUpgradeAuthority);
     }
 
     function tokenBalance(address token) external view returns (uint256) {

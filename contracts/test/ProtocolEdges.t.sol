@@ -43,6 +43,18 @@ contract GrantlineSwapConfigMock {
     }
 }
 
+contract GrantlineNoopAdmin {
+    address public immutable grantline;
+
+    constructor(address grantlineAddress) {
+        grantline = grantlineAddress;
+    }
+
+    function acceptModules() external pure returns (bool) {
+        return true;
+    }
+}
+
 contract GrantlineProtocolVaultV2 is Vault {
     function marker() external pure returns (uint256) {
         return 2;
@@ -460,6 +472,56 @@ contract ProtocolEdgesTest is TestFixture {
         GrantlineAdmin wrongAdmin = new GrantlineAdmin(address(new Grantline()));
         fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.InvalidAdminController.selector));
         fixture.hub.setAdminController(address(wrongAdmin));
+    }
+
+    function test_adminControllerHandoverMigratesModulesAtomically() public {
+        Fixture memory fixture = _fixture();
+        GrantlineAdmin nextAdmin = new GrantlineAdmin(address(fixture.hub));
+        address[] memory vaults = new address[](1);
+        vaults[0] = fixture.vault;
+
+        fixture.hub.setAdminController(address(nextAdmin));
+
+        assert(fixture.hub.adminController() == address(nextAdmin));
+        assert(MandateRegistry(fixture.hub.registry()).owner() == address(nextAdmin));
+        assert(MandateEvaluator(fixture.hub.evaluator()).owner() == address(nextAdmin));
+        assert(EscalationManager(fixture.hub.escalationManager()).owner() == address(nextAdmin));
+        assert(VaultExecutor(fixture.hub.executor()).owner() == address(nextAdmin));
+        assert(VaultFactory(fixture.hub.vaultFactory()).owner() == address(nextAdmin));
+        assert(VaultFactory(fixture.hub.vaultFactory()).upgradeAuthority() == address(nextAdmin));
+        assert(Vault(payable(fixture.vault)).upgradeAuthority() == address(fixture.admin));
+
+        fixtureVm.expectRevert();
+        fixture.admin.validateWiring();
+
+        nextAdmin.validateWiring();
+        GrantlineProtocolRegistryV2 registryImplementation = new GrantlineProtocolRegistryV2();
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
+            key: fixture.hub.REGISTRY_MODULE(), implementation: address(registryImplementation), version: 1, data: ""
+        });
+        nextAdmin.upgradeModules(upgrades);
+        assert(GrantlineProtocolRegistryV2(fixture.hub.registry()).marker() == 2);
+
+        fixture.admin.migrateVaultUpgradeAuthorities(vaults, address(nextAdmin));
+        assert(Vault(payable(fixture.vault)).upgradeAuthority() == address(nextAdmin));
+
+        address futureVault = fixture.hub.createVault();
+        assert(Vault(payable(futureVault)).upgradeAuthority() == address(nextAdmin));
+    }
+
+    function test_adminControllerHandoverRollsBackWhenNewAdminCannotAccept() public {
+        Fixture memory fixture = _fixture();
+        GrantlineNoopAdmin nextAdmin = new GrantlineNoopAdmin(address(fixture.hub));
+
+        fixtureVm.expectRevert();
+        fixture.hub.setAdminController(address(nextAdmin));
+
+        assert(fixture.hub.adminController() == address(fixture.admin));
+        assert(MandateRegistry(fixture.hub.registry()).owner() == address(fixture.admin));
+        assert(MandateRegistry(fixture.hub.registry()).pendingOwner() == address(0));
+        assert(VaultFactory(fixture.hub.vaultFactory()).owner() == address(fixture.admin));
+        assert(VaultFactory(fixture.hub.vaultFactory()).upgradeAuthority() == address(fixture.admin));
     }
 
     function test_adminRejectsUnauthorizedUnknownAndUnregisteredOperations() public {

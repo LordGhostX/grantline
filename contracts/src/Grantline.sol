@@ -13,11 +13,13 @@ import {
     IComponent,
     IGrantlineAdmin,
     IGrantlineContext,
+    IGrantlineAdminTarget,
     IEscalationManager,
     IEvaluator,
     IExecutor,
     IModule,
     IRegistry,
+    IOwnable2Step,
     IVault,
     IVaultFactory
 } from "./Interfaces.sol";
@@ -128,7 +130,7 @@ contract Grantline is
         return owner();
     }
 
-    function setAdminController(address newController) external onlyOwner {
+    function setAdminController(address newController) external onlyOwner nonReentrant {
         if (newController == address(0) || newController.code.length == 0) revert InvalidAdminController();
         try IGrantlineAdmin(newController).grantline() returns (address controllerGrantline) {
             if (controllerGrantline != address(this)) revert InvalidAdminController();
@@ -136,6 +138,15 @@ contract Grantline is
             revert InvalidAdminController();
         }
         address previousController = adminController;
+        if (previousController != address(0) && previousController != newController) {
+            IGrantlineAdmin(previousController).migrateModules(newController);
+            try IGrantlineAdmin(newController).acceptModules() returns (bool accepted) {
+                if (!accepted) revert InvalidAdminController();
+            } catch {
+                revert InvalidAdminController();
+            }
+            _requireAdminHandoverComplete(newController);
+        }
         adminController = newController;
         emit AdminControllerUpdated(previousController, newController);
     }
@@ -540,6 +551,23 @@ contract Grantline is
         }
         if (actual != expected) {
             revert InvalidComponentType(component, expected, actual);
+        }
+    }
+
+    function _requireAdminHandoverComplete(address controller) private view {
+        IGrantlineAdminTarget hub = IGrantlineAdminTarget(address(this));
+        address factoryAddress = hub.vaultFactory();
+        _requireAdminModuleHandover(hub.registry(), controller);
+        _requireAdminModuleHandover(hub.evaluator(), controller);
+        _requireAdminModuleHandover(hub.escalationManager(), controller);
+        _requireAdminModuleHandover(hub.executor(), controller);
+        _requireAdminModuleHandover(factoryAddress, controller);
+        if (IVaultFactory(factoryAddress).upgradeAuthority() != controller) revert InvalidAdminController();
+    }
+
+    function _requireAdminModuleHandover(address module, address controller) private view {
+        if (IOwnable2Step(module).owner() != controller || IOwnable2Step(module).pendingOwner() != address(0)) {
+            revert InvalidAdminController();
         }
     }
 

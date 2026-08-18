@@ -11,6 +11,7 @@ import {Grantline} from "./Grantline.sol";
 import {
     IComponent,
     IChainlinkAggregatorV3,
+    IGrantlineAdmin,
     IGrantlineAdminTarget,
     IEscalationManager,
     IEvaluator,
@@ -41,6 +42,7 @@ contract GrantlineAdmin is ReentrancyGuard {
     error UnknownModule(bytes32 key);
     error VaultNotRegistered(address vault);
     error NotProtocolAdmin(address caller);
+    error NotGrantline(address caller);
     error InvalidSwapAdapter(ActionTypes.SwapAdapterId swapAdapterId, address swapAdapter);
     error DuplicateSwapAdapter(ActionTypes.SwapAdapterId swapAdapterId);
     error UnsupportedSwapAdapterId(ActionTypes.SwapAdapterId swapAdapterId);
@@ -84,6 +86,46 @@ contract GrantlineAdmin is ReentrancyGuard {
     function validateWiring() external onlyProtocolAdmin {
         _validateWiring();
         _validateFactoryTemplate();
+    }
+
+    function migrateModules(address nextAdmin) external {
+        _onlyGrantline();
+        _requireConfigured();
+        _requireAdminController(nextAdmin);
+
+        address registryAddress = Grantline(grantline).registry();
+        address evaluatorAddress = Grantline(grantline).evaluator();
+        address managerAddress = Grantline(grantline).escalationManager();
+        address executorAddress = Grantline(grantline).executor();
+        address factoryAddress = Grantline(grantline).vaultFactory();
+
+        _requireModuleOwnership(registryAddress, ComponentTypes.REGISTRY);
+        _requireModuleOwnership(evaluatorAddress, ComponentTypes.EVALUATOR);
+        _requireModuleOwnership(managerAddress, ComponentTypes.ESCALATION_MANAGER);
+        _requireModuleOwnership(executorAddress, ComponentTypes.EXECUTOR);
+        _requireModuleOwnership(factoryAddress, ComponentTypes.VAULT_FACTORY);
+
+        IVaultFactory(factoryAddress).setUpgradeAuthority(nextAdmin);
+        IOwnable2Step(registryAddress).transferOwnership(nextAdmin);
+        IOwnable2Step(evaluatorAddress).transferOwnership(nextAdmin);
+        IOwnable2Step(managerAddress).transferOwnership(nextAdmin);
+        IOwnable2Step(executorAddress).transferOwnership(nextAdmin);
+        IOwnable2Step(factoryAddress).transferOwnership(nextAdmin);
+    }
+
+    function acceptModules() external returns (bool accepted) {
+        _onlyGrantline();
+        _requireConfigured();
+
+        IOwnable2Step(Grantline(grantline).registry()).acceptOwnership();
+        IOwnable2Step(Grantline(grantline).evaluator()).acceptOwnership();
+        IOwnable2Step(Grantline(grantline).escalationManager()).acceptOwnership();
+        IOwnable2Step(Grantline(grantline).executor()).acceptOwnership();
+        IOwnable2Step(Grantline(grantline).vaultFactory()).acceptOwnership();
+
+        _validateWiring();
+        _validateFactoryTemplate();
+        accepted = true;
     }
 
     function _validateSwapAdapterConfigs(ActionTypes.SwapAdapterConfig[] calldata swapAdapters) private view {
@@ -186,6 +228,24 @@ contract GrantlineAdmin is ReentrancyGuard {
         _requireConfigured();
         if (newController == address(0)) revert InvalidController();
         Grantline(grantline).adminSetVaultController(vault, newController);
+    }
+
+    function migrateVaultUpgradeAuthorities(address[] calldata vaults, address nextAdmin)
+        external
+        onlyProtocolAdmin
+        nonReentrant
+    {
+        _requireConfigured();
+        _requireAdminController(nextAdmin);
+        IGrantlineAdminTarget hub = IGrantlineAdminTarget(grantline);
+        for (uint256 index; index < vaults.length; index++) {
+            address vault = vaults[index];
+            if (!hub.isRegisteredVault(vault)) revert VaultNotRegistered(vault);
+            if (IVault(vault).upgradeAuthority() != address(this)) {
+                revert InvalidModuleRelationship("vault.upgradeAuthority");
+            }
+            IVault(vault).setUpgradeAuthority(nextAdmin);
+        }
     }
 
     function _validateWiring() private view {
@@ -357,6 +417,15 @@ contract GrantlineAdmin is ReentrancyGuard {
         if (!IGrantlineAdminTarget(grantline).configured()) revert InvalidModule(bytes32(0), address(0));
     }
 
+    function _requireAdminController(address controller) private view {
+        if (controller == address(0) || controller.code.length == 0) revert InvalidAddress();
+        try IGrantlineAdmin(controller).grantline() returns (address controllerGrantline) {
+            if (controllerGrantline != grantline) revert InvalidAddress();
+        } catch {
+            revert InvalidAddress();
+        }
+    }
+
     function _moduleAddress(bytes32 key) private view returns (address module) {
         module = Grantline(grantline).moduleAddress(key);
         if (module == address(0)) revert UnknownModule(key);
@@ -375,5 +444,9 @@ contract GrantlineAdmin is ReentrancyGuard {
     modifier onlyProtocolAdmin() {
         if (msg.sender != Grantline(grantline).owner()) revert NotProtocolAdmin(msg.sender);
         _;
+    }
+
+    function _onlyGrantline() private view {
+        if (msg.sender != grantline) revert NotGrantline(msg.sender);
     }
 }

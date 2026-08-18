@@ -21,6 +21,7 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
     event VaultImplementationUpdated(
         address indexed previousImplementation, address indexed newImplementation, uint64 implementationVersion
     );
+    event UpgradeAuthorityUpdated(address indexed previousAuthority, address indexed newAuthority);
 
     address public grantline;
     address public executor;
@@ -96,6 +97,14 @@ contract VaultFactory is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUp
         vaultImplementation = implementation;
         vaultImplementationVersion = implementationVersion;
         emit VaultImplementationUpdated(previousImplementation, implementation, implementationVersion);
+    }
+
+    function setUpgradeAuthority(address newUpgradeAuthority) external override {
+        _checkOwner();
+        if (newUpgradeAuthority == address(0) || newUpgradeAuthority.code.length == 0) revert InvalidAddress();
+        address previousAuthority = upgradeAuthority;
+        upgradeAuthority = newUpgradeAuthority;
+        emit UpgradeAuthorityUpdated(previousAuthority, newUpgradeAuthority);
     }
 
     function vaultCount() external view override returns (uint256) {

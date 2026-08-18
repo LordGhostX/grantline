@@ -21,6 +21,10 @@ interface IOwnable2Step {
     function owner() external view returns (address);
 
     function pendingOwner() external view returns (address);
+
+    function transferOwnership(address newOwner) external;
+
+    function acceptOwnership() external;
 }
 
 interface IGrantlineContext is IComponent {
@@ -70,6 +74,10 @@ interface IGrantlineAdminTarget {
 
 interface IGrantlineAdmin {
     function grantline() external view returns (address);
+
+    function migrateModules(address nextAdmin) external;
+
+    function acceptModules() external returns (bool accepted);
 }
 
 interface ISwapAdapter is IComponent {
@@ -212,6 +220,8 @@ interface IVaultFactory is IModule {
 
     function upgradeAuthority() external view returns (address);
 
+    function setUpgradeAuthority(address newUpgradeAuthority) external;
+
     function createVault(address controller) external returns (address vault);
 
     function validateVaultImplementation(address implementation, uint64 implementationVersion) external;
@@ -245,6 +255,8 @@ interface IVault is IComponent {
     function authority() external view returns (address);
 
     function upgradeAuthority() external view returns (address);
+
+    function setUpgradeAuthority(address newUpgradeAuthority) external;
 
     function version() external pure returns (uint64);
 
