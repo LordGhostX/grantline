@@ -94,6 +94,10 @@ contract VaultV2 is Vault {
     }
 }
 
+contract HookRecipient {
+    receive() external payable { }
+}
+
 contract MandateRegistryV2 is MandateRegistry {
     function marker() external pure returns (uint256) {
         return 2;
@@ -121,8 +125,13 @@ contract TestnetIntegration is ScriptBase {
     uint256 internal constant ROOT_TOKEN_NONCE = 6;
     uint256 internal constant ROOT_REVOKED_ESCALATION_NONCE = 7;
     uint256 internal constant ROOT_CANCELLED_NONCE = 8;
+    uint256 internal constant ROOT_HOOK_NONCE = 9;
+    uint256 internal constant ROOT_MIN_AMOUNT_NONCE = 10;
+    uint256 internal constant ROOT_VALIDITY_NONCE = 11;
+    uint256 internal constant ROOT_RESERVATION_NONCE = 12;
     uint256 internal constant CHILD_ALLOW_NONCE = 1;
     uint256 internal constant CHILD_ESCALATION_NONCE = 2;
+    uint256 internal constant CHILD_CONTROLLER_CANCEL_NONCE = 3;
     uint256 internal constant GRANDCHILD_ALLOW_NONCE = 1;
     uint256 internal constant REENTRY_NONCE = 90;
     uint256 internal constant CHILD_TOKEN_EVALUATION_NONCE = 50;
@@ -135,6 +144,8 @@ contract TestnetIntegration is ScriptBase {
     address internal constant GRANDCHILD_RECIPIENT = address(0x1006);
     address internal constant PENDING_RECIPIENT = address(0x1007);
     address internal constant CANCELLED_RECIPIENT = address(0x1008);
+    address internal constant HOOK_RECIPIENT = address(0x1009);
+    address internal constant MIN_AMOUNT_RECIPIENT = address(0x100A);
 
     TestnetIntegrationVm private constant integrationVm =
         TestnetIntegrationVm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
@@ -192,6 +203,7 @@ contract TestnetIntegration is ScriptBase {
         address token;
         address rejectingRecipient;
         address reentrantRecipient;
+        address hookRecipient;
         address vaultV2;
         address registryV2;
         uint256 rootMandate;
@@ -211,7 +223,11 @@ contract TestnetIntegration is ScriptBase {
         _assertControllerIsolationAndBypasses(state);
         state = _runNativeExecutionAndEscalation(state);
         state = _runTokenExecution(state);
+        state = _runVaultAndMandatePausing(state);
         state = _runDelegationAndPreflight(state);
+        state = _runValidityWindows(state);
+        state = _runControllerCancellation(state);
+        state = _runMinAmount(state);
         state = _runUpgrades(state);
         _runRevocationAndReservationChecks(state);
         _cleanupVaults(state);
@@ -376,6 +392,7 @@ contract TestnetIntegration is ScriptBase {
         IntegrationToken(state.token).mint(state.owner, TOKEN_DEPOSIT);
         state.rejectingRecipient = address(new RejectingRecipient());
         state.reentrantRecipient = address(new ReentrantRecipient());
+        state.hookRecipient = address(new HookRecipient());
         state.vaultV2 = address(new VaultV2());
         state.registryV2 = address(new MandateRegistryV2());
         vm.stopBroadcast();
@@ -549,6 +566,17 @@ contract TestnetIntegration is ScriptBase {
             "nested execution consumed a nonce"
         );
 
+        ActionTypes.ActionPlan memory hookPlan =
+            _nativePlan(state.rootMandate, state.agent, ROOT_HOOK_NONCE, 0.0001 ether, HOOK_RECIPIENT, 0);
+        bytes memory hookSignature = _sign(state, hookPlan, state.agentKey);
+        evaluation = hub.evaluate(hookPlan, hookSignature);
+        _require(evaluation.decision == 0, "hook plan was not ALLOW");
+        uint256 hookBalance = HOOK_RECIPIENT.balance;
+        vm.startBroadcast(state.delegatedKey);
+        hub.execute(hookPlan, hookSignature);
+        vm.stopBroadcast();
+        _require(HOOK_RECIPIENT.balance == hookBalance + 0.0001 ether, "hook transfer mismatch");
+
         ActionTypes.ActionPlan memory escalationPlan = _nativePlan(
             state.rootMandate, state.agent, ROOT_ESCALATION_NONCE, ESCALATED_AMOUNT, ESCALATION_RECIPIENT, 0
         );
@@ -612,6 +640,41 @@ contract TestnetIntegration is ScriptBase {
         return state;
     }
 
+    function _runVaultAndMandatePausing(State memory state) private returns (State memory) {
+        Grantline hub = Grantline(state.hub);
+
+        vm.startBroadcast(state.ownerKey);
+        hub.pauseVault(state.vault);
+        vm.stopBroadcast();
+        _require(Vault(payable(state.vault)).paused(), "vault was not paused");
+
+        ActionTypes.ActionPlan memory pausedPlan =
+            _nativePlan(state.rootMandate, state.agent, 99, 0.0001 ether, SUCCESS_RECIPIENT, 0);
+        bytes memory pausedSignature = _sign(state, pausedPlan, state.agentKey);
+        GrantlineTypes.EvaluationResult memory evaluation = hub.evaluate(pausedPlan, pausedSignature);
+        _require(evaluation.decision == 2, "paused vault plan was not DENY");
+        integrationVm.prank(state.delegatedAgent);
+        integrationVm.expectRevert();
+        hub.execute(pausedPlan, pausedSignature);
+
+        vm.startBroadcast(state.ownerKey);
+        hub.unpauseVault(state.vault);
+        vm.stopBroadcast();
+        _require(!Vault(payable(state.vault)).paused(), "vault was not unpaused");
+
+        vm.startBroadcast(state.ownerKey);
+        hub.pauseMandate(state.rootMandate);
+        vm.stopBroadcast();
+        evaluation = hub.evaluate(pausedPlan, pausedSignature);
+        _require(evaluation.decision == 2, "paused mandate plan was not DENY");
+
+        vm.startBroadcast(state.ownerKey);
+        hub.unpauseMandate(state.rootMandate);
+        vm.stopBroadcast();
+
+        return state;
+    }
+
     function _runDelegationAndPreflight(State memory state) private returns (State memory) {
         Grantline hub = Grantline(state.hub);
         GrantlineTypes.MandateRules memory childRules = _rules(CHILD_TRANSACTION_LIMIT, true, true);
@@ -655,10 +718,11 @@ contract TestnetIntegration is ScriptBase {
         bytes memory grandchildSignature = _sign(state, grandchildPlan, state.agentKey);
         evaluation = hub.evaluate(grandchildPlan, grandchildSignature);
         _require(evaluation.decision == 0, "grandchild plan was not ALLOW");
+        uint256 grandchildBalance = GRANDCHILD_RECIPIENT.balance;
         vm.startBroadcast(state.agentKey);
         hub.execute(grandchildPlan, grandchildSignature);
         vm.stopBroadcast();
-        _require(GRANDCHILD_RECIPIENT.balance == GRANDCHILD_TRANSACTION_LIMIT, "grandchild transfer mismatch");
+        _require(GRANDCHILD_RECIPIENT.balance == grandchildBalance + GRANDCHILD_TRANSACTION_LIMIT, "grandchild transfer mismatch");
 
         integrationVm.prank(state.agent);
         integrationVm.expectRevert();
@@ -726,6 +790,114 @@ contract TestnetIntegration is ScriptBase {
         return state;
     }
 
+    function _runValidityWindows(State memory state) private returns (State memory) {
+        Grantline hub = Grantline(state.hub);
+
+        GrantlineTypes.MandateRules memory validRules = _rules(ROOT_TRANSACTION_LIMIT, false, false);
+        GrantlineTypes.PreflightRules memory validPreflight = _preflight(0, false);
+        vm.startBroadcast(state.ownerKey);
+        uint256 validityMandate = hub.createMandate(
+            state.vault, state.agent, validRules, validPreflight, uint64(block.timestamp + 1 hours), 0
+        );
+        vm.stopBroadcast();
+        (uint64 effectiveAfter,) = hub.getEffectiveValidityWindow(validityMandate);
+        _require(effectiveAfter == uint64(block.timestamp + 1 hours), "validAfter mismatch");
+
+        ActionTypes.ActionPlan memory futurePlan = _nativePlan(
+            validityMandate, state.agent, ROOT_VALIDITY_NONCE, 0.0001 ether, SUCCESS_RECIPIENT, 0
+        );
+        bytes memory futureSignature = _sign(state, futurePlan, state.agentKey);
+        GrantlineTypes.EvaluationResult memory evaluation = hub.evaluate(futurePlan, futureSignature);
+        _require(evaluation.decision == 2, "not-yet-valid mandate was not DENY");
+
+        vm.startBroadcast(state.ownerKey);
+        hub.revokeMandate(validityMandate);
+        vm.stopBroadcast();
+
+        vm.startBroadcast(state.ownerKey);
+        uint256 expiryMandate = hub.createMandate(
+            state.vault, state.agent, validRules, validPreflight, 0, uint64(block.timestamp - 1)
+        );
+        vm.stopBroadcast();
+        evaluation = hub.evaluate(futurePlan, futureSignature);
+        _require(evaluation.decision == 2, "expired mandate was not DENY");
+
+        vm.startBroadcast(state.ownerKey);
+        hub.revokeMandate(expiryMandate);
+        vm.stopBroadcast();
+        return state;
+    }
+
+    function _runControllerCancellation(State memory state) private returns (State memory) {
+        Grantline hub = Grantline(state.hub);
+
+        vm.startBroadcast(state.ownerKey);
+        hub.cancelNonce(state.childMandate, CHILD_CONTROLLER_CANCEL_NONCE);
+        vm.stopBroadcast();
+        (bool cancelled, bytes32 reservation) = hub.getNonceState(state.childMandate, CHILD_CONTROLLER_CANCEL_NONCE);
+        _require(cancelled, "controller cancelled nonce was not cancelled");
+        _require(reservation == bytes32(0), "controller cancelled nonce gained reservation");
+
+        ActionTypes.ActionPlan memory cancelledChildPlan = _nativePlan(
+            state.childMandate, state.delegatedAgent, CHILD_CONTROLLER_CANCEL_NONCE, 0.0001 ether, CHILD_RECIPIENT, 0
+        );
+        bytes memory cancelledChildSignature = _sign(state, cancelledChildPlan, state.delegatedKey);
+        integrationVm.prank(state.delegatedAgent);
+        integrationVm.expectRevert();
+        hub.execute(cancelledChildPlan, cancelledChildSignature);
+
+        ActionTypes.ActionPlan memory reservationPlan = _nativePlan(
+            state.rootMandate, state.agent, ROOT_RESERVATION_NONCE, 0.0001 ether, SUCCESS_RECIPIENT, 0
+        );
+        bytes memory reservationSignature = _sign(state, reservationPlan, state.agentKey);
+        GrantlineTypes.EvaluationResult memory evaluation = hub.evaluate(reservationPlan, reservationSignature);
+        _require(evaluation.decision == 1, "reservation plan was not ESCALATE");
+        vm.startBroadcast(state.agentKey);
+        bytes32 reservationDigest = hub.submitEscalation(reservationPlan, reservationSignature);
+        vm.stopBroadcast();
+        _require(hub.escalationStatus(reservationDigest) == 1, "reservation escalation was not pending");
+        (bool reserved, bytes32 reservedReservation) =
+            hub.getNonceState(state.rootMandate, ROOT_RESERVATION_NONCE);
+        _require(!reserved, "reserved nonce appears used");
+        _require(reservedReservation != bytes32(0), "reserved nonce has no reservation");
+        evaluation = hub.evaluate(reservationPlan, reservationSignature);
+        _require(evaluation.decision == 2, "reserved nonce plan was not DENY");
+        integrationVm.prank(state.delegatedAgent);
+        integrationVm.expectRevert();
+        hub.execute(reservationPlan, reservationSignature);
+        return state;
+    }
+
+    function _runMinAmount(State memory state) private returns (State memory) {
+        Grantline hub = Grantline(state.hub);
+
+        GrantlineTypes.MandateRules memory minRules = GrantlineTypes.MandateRules({
+            canDelegate: false,
+            minNativeAmount: 0.0002 ether,
+            maxNativeAmount: 0.001 ether,
+            escalateNativeAmount: false,
+            minNativeUsd: 0,
+            maxNativeUsd: 0,
+            escalateNativeUsd: false
+        });
+        GrantlineTypes.PreflightRules memory minPreflight = _preflight(0, false);
+        vm.startBroadcast(state.ownerKey);
+        uint256 minMandate = hub.createMandate(state.vault, state.agent, minRules, minPreflight, 0, 0);
+        vm.stopBroadcast();
+
+        ActionTypes.ActionPlan memory belowMinPlan = _nativePlan(
+            minMandate, state.agent, ROOT_MIN_AMOUNT_NONCE, 0.0001 ether, MIN_AMOUNT_RECIPIENT, 0
+        );
+        bytes memory belowMinSignature = _sign(state, belowMinPlan, state.agentKey);
+        GrantlineTypes.EvaluationResult memory evaluation = hub.evaluate(belowMinPlan, belowMinSignature);
+        _require(evaluation.decision == 2, "below-minimum plan was not DENY");
+
+        vm.startBroadcast(state.ownerKey);
+        hub.revokeMandate(minMandate);
+        vm.stopBroadcast();
+        return state;
+    }
+
     function _runUpgrades(State memory state) private returns (State memory) {
         Grantline hub = Grantline(state.hub);
         Grantline.VaultView memory firstBefore = hub.getVault(state.vault);
@@ -769,6 +941,19 @@ contract TestnetIntegration is ScriptBase {
             hub.getVault(state.secondVault).implementation == secondImplementation,
             "failed Vault upgrade changed metadata"
         );
+
+        vm.startBroadcast(state.delegatedKey);
+        hub.pauseVault(state.secondVault);
+        vm.stopBroadcast();
+        vm.startBroadcast(state.ownerKey);
+        GrantlineAdmin(state.admin).upgradeVault(state.secondVault, state.vaultV2, 1, bytes(""));
+        vm.stopBroadcast();
+        _require(Vault(payable(state.secondVault)).paused(), "vault upgrade lost pause state");
+        _require(VaultV2(payable(state.secondVault)).marker() == 2, "paused vault upgrade did not apply");
+        vm.startBroadcast(state.delegatedKey);
+        hub.unpauseVault(state.secondVault);
+        vm.stopBroadcast();
+        _require(!Vault(payable(state.secondVault)).paused(), "vault unpause after upgrade failed");
 
         GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
         upgrades[0] = GrantlineAdmin.ModuleUpgrade({
