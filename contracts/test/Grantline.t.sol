@@ -286,6 +286,7 @@ contract GrantlineTest {
         fixture.admin.upgradeVault(fixture.vault, address(implementation), 1, "");
         assert(VaultV2(payable(fixture.vault)).marker() == 2);
         assert(fixture.hub.getVault(fixture.vault).implementation == address(implementation));
+        assert(Vault(payable(fixture.vault)).grantline() == address(fixture.hub));
         assert(fixture.hub.getVault(secondVault).implementation != address(implementation));
         assert(fixture.hub.getVault(thirdVault).implementation == address(implementation));
     }
@@ -354,37 +355,31 @@ contract GrantlineTest {
         hub.setAdminController(address(admin));
         address registry = address(
             new ERC1967Proxy(
-                address(registryImplementation),
-                abi.encodeCall(MandateRegistry.initialize, (address(hub), address(admin)))
+                address(registryImplementation), abi.encodeCall(MandateRegistry.initialize, (address(hub)))
             )
         );
         address evaluator = address(
             new ERC1967Proxy(
                 address(evaluatorImplementation),
-                abi.encodeCall(
-                    MandateEvaluator.initialize, (address(hub), registry, address(0), 0, address(0), address(admin))
-                )
+                abi.encodeCall(MandateEvaluator.initialize, (address(hub), registry, address(0), 0, address(0)))
             )
         );
         address manager = address(
             new ERC1967Proxy(
                 address(managerImplementation),
-                abi.encodeCall(EscalationManager.initialize, (address(hub), evaluator, registry, address(admin)))
+                abi.encodeCall(EscalationManager.initialize, (address(hub), evaluator, registry))
             )
         );
         address executor = address(
             new ERC1967Proxy(
                 address(executorImplementation),
-                abi.encodeCall(VaultExecutor.initialize, (address(hub), evaluator, registry, manager, address(admin)))
+                abi.encodeCall(VaultExecutor.initialize, (address(hub), evaluator, registry, manager))
             )
         );
         address factory = address(
             new ERC1967Proxy(
                 address(new VaultFactory()),
-                abi.encodeCall(
-                    VaultFactory.initialize,
-                    (address(hub), address(vaultImplementation), 1, executor, address(admin), address(admin))
-                )
+                abi.encodeCall(VaultFactory.initialize, (address(hub), address(vaultImplementation), 1, executor))
             )
         );
         admin.configureModules(registry, evaluator, manager, executor, factory, new ActionTypes.SwapAdapterConfig[](0));

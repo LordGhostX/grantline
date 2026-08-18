@@ -333,12 +333,17 @@ contract NativeUsdTest is TestFixture {
         (Fixture memory fixture, NativeUsdFeedMock feed,) = _nativeUsdFixture(FEED_DECIMALS, FIFTY_USD, rules);
         feed.setDecimals(7);
 
+        NativeUsdEvaluatorV2 implementation = new NativeUsdEvaluatorV2();
+        GrantlineAdmin.ModuleUpgrade[] memory upgrades = new GrantlineAdmin.ModuleUpgrade[](1);
+        upgrades[0] = GrantlineAdmin.ModuleUpgrade({
+            key: fixture.hub.EVALUATOR_MODULE(), implementation: address(implementation), version: 1, data: ""
+        });
         fixtureVm.expectRevert(
             abi.encodeWithSelector(
-                GrantlineAdmin.InvalidModuleRelationship.selector, "evaluator.nativeUsd.feedDecimals"
+                GrantlineAdmin.InvalidModuleRelationship.selector, bytes32("evaluator.nativeUsd.feedDecimals")
             )
         );
-        fixture.admin.validateWiring();
+        fixture.admin.upgradeModules(upgrades);
     }
 
     function test_mixedPolicyViolationsRespectHardDenyPrecedence() public {

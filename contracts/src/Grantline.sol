@@ -13,13 +13,11 @@ import {
     IComponent,
     IGrantlineAdmin,
     IGrantlineContext,
-    IGrantlineAdminTarget,
     IEscalationManager,
     IEvaluator,
     IExecutor,
     IModule,
     IRegistry,
-    IOwnable2Step,
     IVault,
     IVaultFactory
 } from "./Interfaces.sol";
@@ -40,22 +38,16 @@ contract Grantline is
     bytes32 public constant VAULT_FACTORY_MODULE = ComponentTypes.VAULT_FACTORY;
 
     error InvalidAddress();
-    error InvalidComponentType(string component, bytes32 expected, bytes32 actual);
+    error InvalidComponentType(bytes32 component, bytes32 expected, bytes32 actual);
     error AlreadyConfigured();
     error NotConfigured();
     error UnknownModule(bytes32 key);
     error VaultNotRegistered(address vault);
     error NotController(address vault, address caller);
-    error NotParentAgent(uint256 mandateId, address caller);
-    error NotMandateAdministrator(uint256 mandateId, address caller);
-    error NotNonceCanceller(uint256 mandateId, address caller);
     error InvalidController();
     error VaultIsPaused(address vault);
     error InvalidAdminController();
     error NotAdminController(address caller);
-    error InvalidSwapAdapter(ActionTypes.SwapAdapterId swapAdapterId, address swapAdapter);
-    error DuplicateSwapAdapter(ActionTypes.SwapAdapterId swapAdapterId);
-    error UnsupportedSwapAdapterId(ActionTypes.SwapAdapterId swapAdapterId);
 
     event ModulesConfigured(
         address indexed registry,
@@ -113,7 +105,7 @@ contract Grantline is
     mapping(address => VaultRecord) private _vaultRecords;
     address[] private _vaults;
     bool public configured;
-    address public adminController;
+    address public override adminController;
 
     constructor() {
         _disableInitializers();
@@ -130,7 +122,7 @@ contract Grantline is
         return owner();
     }
 
-    function setAdminController(address newController) external onlyOwner nonReentrant {
+    function setAdminController(address newController) external onlyOwner {
         if (newController == address(0) || newController.code.length == 0) revert InvalidAdminController();
         try IGrantlineAdmin(newController).grantline() returns (address controllerGrantline) {
             if (controllerGrantline != address(this)) revert InvalidAdminController();
@@ -138,15 +130,6 @@ contract Grantline is
             revert InvalidAdminController();
         }
         address previousController = adminController;
-        if (previousController != address(0) && previousController != newController) {
-            IGrantlineAdmin(previousController).migrateModules(newController);
-            try IGrantlineAdmin(newController).acceptModules() returns (bool accepted) {
-                if (!accepted) revert InvalidAdminController();
-            } catch {
-                revert InvalidAdminController();
-            }
-            _requireAdminHandoverComplete(newController);
-        }
         adminController = newController;
         emit AdminControllerUpdated(previousController, newController);
     }
@@ -542,7 +525,7 @@ contract Grantline is
         if (!configured) revert NotConfigured();
     }
 
-    function _requireComponentType(address target, bytes32 expected, string memory component) private view {
+    function _requireComponentType(address target, bytes32 expected, bytes32 component) private view {
         bytes32 actual = bytes32(0);
         try IComponent(target).componentType() returns (bytes32 actualType) {
             actual = actualType;
@@ -554,28 +537,11 @@ contract Grantline is
         }
     }
 
-    function _requireAdminHandoverComplete(address controller) private view {
-        IGrantlineAdminTarget hub = IGrantlineAdminTarget(address(this));
-        address factoryAddress = hub.vaultFactory();
-        _requireAdminModuleHandover(hub.registry(), controller);
-        _requireAdminModuleHandover(hub.evaluator(), controller);
-        _requireAdminModuleHandover(hub.escalationManager(), controller);
-        _requireAdminModuleHandover(hub.executor(), controller);
-        _requireAdminModuleHandover(factoryAddress, controller);
-        if (IVaultFactory(factoryAddress).upgradeAuthority() != controller) revert InvalidAdminController();
-    }
-
-    function _requireAdminModuleHandover(address module, address controller) private view {
-        if (IOwnable2Step(module).owner() != controller || IOwnable2Step(module).pendingOwner() != address(0)) {
-            revert InvalidAdminController();
-        }
-    }
-
     function _onlyAdminController() private view {
         if (msg.sender != adminController) revert NotAdminController(msg.sender);
     }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
-        _requireComponentType(newImplementation, ComponentTypes.GRANTLINE, "grantline.implementation");
+        _requireComponentType(newImplementation, ComponentTypes.GRANTLINE, bytes32("grantline.implementation"));
     }
 }

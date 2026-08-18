@@ -7,9 +7,9 @@ import {ActionTypes} from "./ActionTypes.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
 import {IGrantlineContext, IEscalationManager, IEvaluator, IModule, IRegistry, IVault} from "./Interfaces.sol";
-import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
+import {GrantlineModuleAccess} from "./ProtocolAccess.sol";
 
-contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUpgradeable, IEscalationManager {
+contract EscalationManager is Initializable, GrantlineModuleAccess, UUPSUpgradeable, IEscalationManager {
     enum Status {
         NONE,
         PENDING,
@@ -58,7 +58,6 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         bytes32 indexed actionDigest, uint256 indexed mandateId, address indexed agent, uint256 nonce, uint64 executedAt
     );
 
-    address public grantline;
     address public override evaluator;
     address public override registry;
     mapping(bytes32 => GrantlineTypes.Escalation) private _escalations;
@@ -67,25 +66,20 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         _disableInitializers();
     }
 
-    function initialize(
-        address grantlineAddress,
-        address evaluatorAddress,
-        address registryAddress,
-        address moduleOwnerAddress
-    ) external initializer {
+    function initialize(address grantlineAddress, address evaluatorAddress, address registryAddress)
+        external
+        initializer
+    {
         if (grantlineAddress == address(0)) revert InvalidAddress();
-        if (moduleOwnerAddress == address(0) || moduleOwnerAddress.code.length == 0) revert InvalidAddress();
         if (evaluatorAddress == address(0) || evaluatorAddress.code.length == 0) {
             revert InvalidEvaluator();
         }
         if (registryAddress == address(0) || registryAddress.code.length == 0) {
             revert InvalidAddress();
         }
-        grantline = grantlineAddress;
+        _grantline = grantlineAddress;
         evaluator = evaluatorAddress;
         registry = registryAddress;
-        __Ownable_init(moduleOwnerAddress);
-        __Ownable2Step_init();
     }
 
     function version() external pure override returns (uint64) {
@@ -147,7 +141,7 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         GrantlineTypes.Mandate memory mandate = IRegistry(registry).getMandate(escalation.plan.mandateId);
         _requireMandateUsable(escalation.plan.mandateId, mandate);
         if (IVault(mandate.vault).paused()) revert VaultPaused(mandate.vault);
-        if (!IGrantlineContext(grantline).isController(mandate.vault, controller)) {
+        if (!IGrantlineContext(_grantline).isController(mandate.vault, controller)) {
             revert NotController(controller);
         }
         escalation.status = uint8(Status.APPROVED);
@@ -158,7 +152,7 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         _onlyGrantline();
         GrantlineTypes.Escalation storage escalation = _pending(digest);
         GrantlineTypes.Mandate memory mandate = IRegistry(registry).getMandate(escalation.plan.mandateId);
-        if (!IGrantlineContext(grantline).isController(mandate.vault, controller)) {
+        if (!IGrantlineContext(_grantline).isController(mandate.vault, controller)) {
             revert NotController(controller);
         }
         escalation.status = uint8(Status.DENIED);
@@ -198,14 +192,6 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
         }
     }
 
-    function statusOf(bytes32 digest) external view returns (Status) {
-        return Status(_escalations[digest].status);
-    }
-
-    function reservedDigest(uint256 mandateId, address agent, uint256 nonce) external view returns (bytes32) {
-        return IRegistry(registry).reservedDigest(mandateId, agent, nonce);
-    }
-
     function _pending(bytes32 digest) private view returns (GrantlineTypes.Escalation storage escalation) {
         escalation = _escalations[digest];
         if (escalation.status == uint8(Status.NONE)) {
@@ -231,14 +217,14 @@ contract EscalationManager is Initializable, GrantlineOwnable2StepUpgradeable, U
     }
 
     function _onlyGrantline() private view {
-        if (msg.sender != grantline) revert NotGrantline(msg.sender);
+        if (msg.sender != _grantline) revert NotGrantline(msg.sender);
     }
 
     function _onlyExecutor() private view {
-        if (msg.sender != IGrantlineContext(grantline).moduleAddress(EXECUTOR_MODULE)) {
+        if (msg.sender != IGrantlineContext(_grantline).moduleAddress(EXECUTOR_MODULE)) {
             revert NotExecutor(msg.sender);
         }
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override onlyAdminController {}
 }

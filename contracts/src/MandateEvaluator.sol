@@ -11,9 +11,9 @@ import {ActionTypes} from "./ActionTypes.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
 import {IChainlinkAggregatorV3, IGrantlineContext, IEvaluator, IRegistry, ISwapAdapter, IVault} from "./Interfaces.sol";
-import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
+import {GrantlineModuleAccess} from "./ProtocolAccess.sol";
 
-contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUpgradeable, IEvaluator {
+contract MandateEvaluator is Initializable, GrantlineModuleAccess, UUPSUpgradeable, IEvaluator {
     enum Decision {
         ALLOW,
         ESCALATE,
@@ -60,7 +60,6 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
     error InvalidNativeUsdConfiguration();
     error NotTrustedCaller(address caller);
 
-    address public grantline;
     address public override registry;
     address public override chainlinkNativeUsdFeed;
     uint8 public override chainlinkNativeUsdFeedDecimals;
@@ -75,24 +74,20 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         address registryAddress,
         address chainlinkNativeUsdFeedAddress,
         uint8 chainlinkNativeUsdFeedDecimals_,
-        address wrappedNativeAddress,
-        address moduleOwnerAddress
+        address wrappedNativeAddress
     ) external initializer {
         if (grantlineAddress == address(0)) revert InvalidAddress();
-        if (moduleOwnerAddress == address(0) || moduleOwnerAddress.code.length == 0) revert InvalidAddress();
         if (registryAddress == address(0) || registryAddress.code.length == 0) {
             revert InvalidRegistry();
         }
         _validateNativeUsdConfiguration(
             chainlinkNativeUsdFeedAddress, chainlinkNativeUsdFeedDecimals_, wrappedNativeAddress
         );
-        grantline = grantlineAddress;
+        _grantline = grantlineAddress;
         registry = registryAddress;
         chainlinkNativeUsdFeed = chainlinkNativeUsdFeedAddress;
         chainlinkNativeUsdFeedDecimals = chainlinkNativeUsdFeedDecimals_;
         wrappedNative = wrappedNativeAddress;
-        __Ownable_init(moduleOwnerAddress);
-        __Ownable2Step_init();
     }
 
     function nativeUsdValuationEnabled() public view override returns (bool) {
@@ -114,7 +109,7 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
         bool allowReservedNonce
     ) external view override returns (GrantlineTypes.EvaluationResult memory result) {
         _onlyTrustedCaller();
-        if (digest != IGrantlineContext(grantline).actionDigest(plan)) {
+        if (digest != IGrantlineContext(_grantline).actionDigest(plan)) {
             return _failure(FailureCode.INVALID_SIGNATURE, type(uint256).max, 0, 0, 0, 0);
         }
 
@@ -303,7 +298,7 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
             }
             if (block.timestamp > swap.deadline) return (false, totals, FailureCode.EXPIRED);
 
-            address swapAdapter = IGrantlineContext(grantline).swapAdapterFor(swap.swapAdapterId);
+            address swapAdapter = IGrantlineContext(_grantline).swapAdapterFor(swap.swapAdapterId);
             if (swapAdapter == address(0)) return (false, totals, FailureCode.SWAP_UNSUPPORTED);
             try ISwapAdapter(swapAdapter).validateSwap(swap, vault) returns (bool valid) {
                 if (!valid) return (false, totals, FailureCode.INVALID_SWAP_ROUTE);
@@ -518,10 +513,10 @@ contract MandateEvaluator is Initializable, GrantlineOwnable2StepUpgradeable, UU
 
     function _onlyTrustedCaller() private view {
         if (
-            msg.sender != grantline && msg.sender != IGrantlineContext(grantline).moduleAddress(EXECUTOR_MODULE)
-                && msg.sender != IGrantlineContext(grantline).moduleAddress(ESCALATION_MANAGER_MODULE)
+            msg.sender != _grantline && msg.sender != IGrantlineContext(_grantline).moduleAddress(EXECUTOR_MODULE)
+                && msg.sender != IGrantlineContext(_grantline).moduleAddress(ESCALATION_MANAGER_MODULE)
         ) revert NotTrustedCaller(msg.sender);
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override onlyAdminController {}
 }

@@ -4,7 +4,6 @@ pragma solidity ^0.8.28;
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {IERC1822Proxiable} from "@openzeppelin/contracts/interfaces/draft-IERC1822.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ActionTypes} from "./ActionTypes.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {Grantline} from "./Grantline.sol";
@@ -30,19 +29,16 @@ interface IUniswapV3SwapAdapterConfiguration {
 
 /// @notice Protocol-only coordinator for module and Vault administration.
 /// @dev This contract is intentionally not upgradeable. User and agent flows stay on Grantline.
-contract GrantlineAdmin is ReentrancyGuard {
+contract GrantlineAdmin {
     error InvalidAddress();
     error InvalidModule(bytes32 key, address module);
-    error InvalidComponentType(string component, bytes32 expected, bytes32 actual);
-    error InvalidModuleOwner(bytes32 key, address expected, address actual);
-    error InvalidModulePendingOwner(bytes32 key, address pendingOwner);
-    error InvalidModuleRelationship(string relationship);
+    error InvalidComponentType(bytes32 component, bytes32 expected, bytes32 actual);
+    error InvalidModuleRelationship(bytes32 relationship);
     error InvalidImplementation(address implementation);
     error InvalidController();
     error UnknownModule(bytes32 key);
     error VaultNotRegistered(address vault);
     error NotProtocolAdmin(address caller);
-    error NotGrantline(address caller);
     error InvalidSwapAdapter(ActionTypes.SwapAdapterId swapAdapterId, address swapAdapter);
     error DuplicateSwapAdapter(ActionTypes.SwapAdapterId swapAdapterId);
     error UnsupportedSwapAdapterId(ActionTypes.SwapAdapterId swapAdapterId);
@@ -81,51 +77,6 @@ contract GrantlineAdmin is ReentrancyGuard {
         _validateSwapAdapterConfigs(swapAdapters);
         _validateWiring();
         _validateFactoryTemplate();
-    }
-
-    function validateWiring() external onlyProtocolAdmin {
-        _validateWiring();
-        _validateFactoryTemplate();
-    }
-
-    function migrateModules(address nextAdmin) external {
-        _onlyGrantline();
-        _requireConfigured();
-        _requireAdminController(nextAdmin);
-
-        address registryAddress = Grantline(grantline).registry();
-        address evaluatorAddress = Grantline(grantline).evaluator();
-        address managerAddress = Grantline(grantline).escalationManager();
-        address executorAddress = Grantline(grantline).executor();
-        address factoryAddress = Grantline(grantline).vaultFactory();
-
-        _requireModuleOwnership(registryAddress, ComponentTypes.REGISTRY);
-        _requireModuleOwnership(evaluatorAddress, ComponentTypes.EVALUATOR);
-        _requireModuleOwnership(managerAddress, ComponentTypes.ESCALATION_MANAGER);
-        _requireModuleOwnership(executorAddress, ComponentTypes.EXECUTOR);
-        _requireModuleOwnership(factoryAddress, ComponentTypes.VAULT_FACTORY);
-
-        IVaultFactory(factoryAddress).setUpgradeAuthority(nextAdmin);
-        IOwnable2Step(registryAddress).transferOwnership(nextAdmin);
-        IOwnable2Step(evaluatorAddress).transferOwnership(nextAdmin);
-        IOwnable2Step(managerAddress).transferOwnership(nextAdmin);
-        IOwnable2Step(executorAddress).transferOwnership(nextAdmin);
-        IOwnable2Step(factoryAddress).transferOwnership(nextAdmin);
-    }
-
-    function acceptModules() external returns (bool accepted) {
-        _onlyGrantline();
-        _requireConfigured();
-
-        IOwnable2Step(Grantline(grantline).registry()).acceptOwnership();
-        IOwnable2Step(Grantline(grantline).evaluator()).acceptOwnership();
-        IOwnable2Step(Grantline(grantline).escalationManager()).acceptOwnership();
-        IOwnable2Step(Grantline(grantline).executor()).acceptOwnership();
-        IOwnable2Step(Grantline(grantline).vaultFactory()).acceptOwnership();
-
-        _validateWiring();
-        _validateFactoryTemplate();
-        accepted = true;
     }
 
     function _validateSwapAdapterConfigs(ActionTypes.SwapAdapterConfig[] calldata swapAdapters) private view {
@@ -174,7 +125,7 @@ contract GrantlineAdmin is ReentrancyGuard {
             _requireModuleImplementation(upgrade.implementation, upgrade.key, upgrade.version);
             IUUPS(module).upgradeToAndCall(upgrade.implementation, upgrade.data);
             if (IModule(module).version() != upgrade.version) {
-                revert InvalidModuleRelationship("module.version");
+                revert InvalidModuleRelationship(bytes32("module.version"));
             }
         }
         _validateWiring();
@@ -193,7 +144,6 @@ contract GrantlineAdmin is ReentrancyGuard {
     function upgradeVault(address vault, address implementation, uint64 implementationVersion, bytes calldata data)
         external
         onlyProtocolAdmin
-        nonReentrant
     {
         _requireConfigured();
         IGrantlineAdminTarget hub = IGrantlineAdminTarget(grantline);
@@ -206,21 +156,22 @@ contract GrantlineAdmin is ReentrancyGuard {
         IUUPS(vault).upgradeToAndCall(implementation, data);
 
         if (IVault(vault).componentType() != ComponentTypes.VAULT) {
-            revert InvalidComponentType("vault", ComponentTypes.VAULT, IVault(vault).componentType());
+            revert InvalidComponentType(bytes32("vault"), ComponentTypes.VAULT, IVault(vault).componentType());
         }
         if (IVault(vault).version() != implementationVersion) {
-            revert InvalidModuleRelationship("vault.version");
+            revert InvalidModuleRelationship(bytes32("vault.version"));
         }
-        if (IVault(vault).owner() != grantline) revert InvalidModuleRelationship("vault.owner");
+        if (IVault(vault).grantline() != grantline) {
+            revert InvalidModuleRelationship(bytes32("vault.grantline"));
+        }
+        if (IVault(vault).owner() != grantline) revert InvalidModuleRelationship(bytes32("vault.owner"));
         if (IOwnable2Step(vault).pendingOwner() != address(0)) {
-            revert InvalidModuleRelationship("vault.pendingOwner");
+            revert InvalidModuleRelationship(bytes32("vault.pendingOwner"));
         }
-        if (IVault(vault).paused() != wasPaused) revert InvalidModuleRelationship("vault.paused");
-        if (IVault(vault).authority() != hub.executor()) revert InvalidModuleRelationship("vault.authority");
-        if (IVault(vault).upgradeAuthority() != address(this)) {
-            revert InvalidModuleRelationship("vault.upgradeAuthority");
+        if (IVault(vault).paused() != wasPaused) revert InvalidModuleRelationship(bytes32("vault.paused"));
+        if (IVault(vault).authority() != hub.executor()) {
+            revert InvalidModuleRelationship(bytes32("vault.authority"));
         }
-
         Grantline(grantline).adminRecordVaultUpgrade(vault, implementation, implementationVersion);
     }
 
@@ -228,24 +179,6 @@ contract GrantlineAdmin is ReentrancyGuard {
         _requireConfigured();
         if (newController == address(0)) revert InvalidController();
         Grantline(grantline).adminSetVaultController(vault, newController);
-    }
-
-    function migrateVaultUpgradeAuthorities(address[] calldata vaults, address nextAdmin)
-        external
-        onlyProtocolAdmin
-        nonReentrant
-    {
-        _requireConfigured();
-        _requireAdminController(nextAdmin);
-        IGrantlineAdminTarget hub = IGrantlineAdminTarget(grantline);
-        for (uint256 index; index < vaults.length; index++) {
-            address vault = vaults[index];
-            if (!hub.isRegisteredVault(vault)) revert VaultNotRegistered(vault);
-            if (IVault(vault).upgradeAuthority() != address(this)) {
-                revert InvalidModuleRelationship("vault.upgradeAuthority");
-            }
-            IVault(vault).setUpgradeAuthority(nextAdmin);
-        }
     }
 
     function _validateWiring() private view {
@@ -260,42 +193,33 @@ contract GrantlineAdmin is ReentrancyGuard {
                 || executorAddress == address(0) || factoryAddress == address(0)
         ) revert InvalidModule(bytes32(0), address(0));
 
-        _requireModule(registryAddress, ComponentTypes.REGISTRY, "registry");
-        _requireModule(evaluatorAddress, ComponentTypes.EVALUATOR, "evaluator");
-        _requireModule(managerAddress, ComponentTypes.ESCALATION_MANAGER, "escalationManager");
-        _requireModule(executorAddress, ComponentTypes.EXECUTOR, "executor");
-        _requireModule(factoryAddress, ComponentTypes.VAULT_FACTORY, "vaultFactory");
-
-        _requireModuleOwnership(registryAddress, ComponentTypes.REGISTRY);
-        _requireModuleOwnership(evaluatorAddress, ComponentTypes.EVALUATOR);
-        _requireModuleOwnership(managerAddress, ComponentTypes.ESCALATION_MANAGER);
-        _requireModuleOwnership(executorAddress, ComponentTypes.EXECUTOR);
-        _requireModuleOwnership(factoryAddress, ComponentTypes.VAULT_FACTORY);
+        _requireModule(registryAddress, ComponentTypes.REGISTRY, bytes32("registry"));
+        _requireModule(evaluatorAddress, ComponentTypes.EVALUATOR, bytes32("evaluator"));
+        _requireModule(managerAddress, ComponentTypes.ESCALATION_MANAGER, bytes32("escalationManager"));
+        _requireModule(executorAddress, ComponentTypes.EXECUTOR, bytes32("executor"));
+        _requireModule(factoryAddress, ComponentTypes.VAULT_FACTORY, bytes32("vaultFactory"));
 
         if (IEvaluator(evaluatorAddress).registry() != registryAddress) {
-            revert InvalidModuleRelationship("evaluator.registry");
+            revert InvalidModuleRelationship(bytes32("evaluator.registry"));
         }
         _validateNativeUsdValuation(IEvaluator(evaluatorAddress));
         if (IEscalationManager(managerAddress).evaluator() != evaluatorAddress) {
-            revert InvalidModuleRelationship("manager.evaluator");
+            revert InvalidModuleRelationship(bytes32("manager.evaluator"));
         }
         if (IEscalationManager(managerAddress).registry() != registryAddress) {
-            revert InvalidModuleRelationship("manager.registry");
+            revert InvalidModuleRelationship(bytes32("manager.registry"));
         }
         if (IExecutor(executorAddress).evaluator() != evaluatorAddress) {
-            revert InvalidModuleRelationship("executor.evaluator");
+            revert InvalidModuleRelationship(bytes32("executor.evaluator"));
         }
         if (IExecutor(executorAddress).escalationManager() != managerAddress) {
-            revert InvalidModuleRelationship("executor.manager");
+            revert InvalidModuleRelationship(bytes32("executor.manager"));
         }
         if (IExecutor(executorAddress).registry() != registryAddress) {
-            revert InvalidModuleRelationship("executor.registry");
+            revert InvalidModuleRelationship(bytes32("executor.registry"));
         }
         if (IVaultFactory(factoryAddress).executor() != executorAddress) {
-            revert InvalidModuleRelationship("factory.executor");
-        }
-        if (IVaultFactory(factoryAddress).upgradeAuthority() != address(this)) {
-            revert InvalidModuleRelationship("factory.upgradeAuthority");
+            revert InvalidModuleRelationship(bytes32("factory.executor"));
         }
         _validateSwapAdapters(hub);
     }
@@ -304,21 +228,21 @@ contract GrantlineAdmin is ReentrancyGuard {
         address swapAdapter = hub.swapAdapterFor(ActionTypes.SwapAdapterId.UNISWAP_V3);
         if (swapAdapter == address(0)) return;
         if (swapAdapter.code.length == 0) revert InvalidModule(ComponentTypes.SWAP_ADAPTER, swapAdapter);
-        _requireComponentType(swapAdapter, ComponentTypes.SWAP_ADAPTER, "uniswapV3.swapAdapter");
+        _requireComponentType(swapAdapter, ComponentTypes.SWAP_ADAPTER, bytes32("uniswapV3.swapAdapter"));
         if (ISwapAdapter(swapAdapter).swapAdapterId() != ActionTypes.SwapAdapterId.UNISWAP_V3) {
-            revert InvalidModuleRelationship("swapAdapter.id");
+            revert InvalidModuleRelationship(bytes32("swapAdapter.id"));
         }
         if (ISwapAdapter(swapAdapter).grantline() != grantline) {
-            revert InvalidModuleRelationship("swapAdapter.grantline");
+            revert InvalidModuleRelationship(bytes32("swapAdapter.grantline"));
         }
         if (ISwapAdapter(swapAdapter).version() != 1) {
-            revert InvalidModuleRelationship("swapAdapter.version");
+            revert InvalidModuleRelationship(bytes32("swapAdapter.version"));
         }
         if (
             IUniswapV3SwapAdapterConfiguration(swapAdapter).wrappedNative()
                 != IEvaluator(hub.evaluator()).wrappedNative()
         ) {
-            revert InvalidModuleRelationship("swapAdapter.wrappedNative");
+            revert InvalidModuleRelationship(bytes32("swapAdapter.wrappedNative"));
         }
     }
 
@@ -329,32 +253,32 @@ contract GrantlineAdmin is ReentrancyGuard {
 
         if (feed == address(0)) {
             if (feedDecimals != 0 || evaluatorContract.nativeUsdValuationEnabled()) {
-                revert InvalidModuleRelationship("evaluator.nativeUsd.disabled");
+                revert InvalidModuleRelationship(bytes32("evaluator.nativeUsd.disabled"));
             }
         } else {
             if (
                 feed.code.length == 0 || feedDecimals > 18 || !evaluatorContract.nativeUsdValuationEnabled()
                     || wrappedNativeAddress == address(0)
-            ) revert InvalidModuleRelationship("evaluator.nativeUsd.enabled");
+            ) revert InvalidModuleRelationship(bytes32("evaluator.nativeUsd.enabled"));
             try IChainlinkAggregatorV3(feed).decimals() returns (uint8 actualDecimals) {
                 if (actualDecimals != feedDecimals) {
-                    revert InvalidModuleRelationship("evaluator.nativeUsd.feedDecimals");
+                    revert InvalidModuleRelationship(bytes32("evaluator.nativeUsd.feedDecimals"));
                 }
             } catch {
-                revert InvalidModuleRelationship("evaluator.nativeUsd.feed");
+                revert InvalidModuleRelationship(bytes32("evaluator.nativeUsd.feed"));
             }
         }
 
         if (wrappedNativeAddress != address(0)) {
             if (wrappedNativeAddress.code.length == 0) {
-                revert InvalidModuleRelationship("evaluator.wrappedNative");
+                revert InvalidModuleRelationship(bytes32("evaluator.wrappedNative"));
             }
             try IERC20Metadata(wrappedNativeAddress).decimals() returns (uint8 actualDecimals) {
                 if (actualDecimals != 18) {
-                    revert InvalidModuleRelationship("evaluator.wrappedNativeDecimals");
+                    revert InvalidModuleRelationship(bytes32("evaluator.wrappedNativeDecimals"));
                 }
             } catch {
-                revert InvalidModuleRelationship("evaluator.wrappedNative");
+                revert InvalidModuleRelationship(bytes32("evaluator.wrappedNative"));
             }
         }
     }
@@ -368,29 +292,11 @@ contract GrantlineAdmin is ReentrancyGuard {
             );
     }
 
-    function _requireModule(address module, bytes32 expectedType, string memory component) private view {
-        if (module.code.length == 0 || IModule(module).grantline() != grantline) {
+    function _requireModule(address module, bytes32 expectedType, bytes32 component) private view {
+        if (module.code.length == 0 || IGrantlineAdmin(module).grantline() != grantline) {
             revert InvalidModule(expectedType, module);
         }
         _requireComponentType(module, expectedType, component);
-    }
-
-    function _requireModuleOwnership(address module, bytes32 key) private view {
-        address actualOwner = address(0);
-        try IOwnable2Step(module).owner() returns (address ownerAddress) {
-            actualOwner = ownerAddress;
-        } catch {
-            revert InvalidModuleOwner(key, address(this), address(0));
-        }
-        if (actualOwner != address(this)) revert InvalidModuleOwner(key, address(this), actualOwner);
-
-        address pendingOwner = address(0);
-        try IOwnable2Step(module).pendingOwner() returns (address pendingOwnerAddress) {
-            pendingOwner = pendingOwnerAddress;
-        } catch {
-            revert InvalidModulePendingOwner(key, address(0));
-        }
-        if (pendingOwner != address(0)) revert InvalidModulePendingOwner(key, pendingOwner);
     }
 
     function _requireModuleImplementation(address implementation, bytes32 expectedType, uint64 expectedVersion)
@@ -405,7 +311,7 @@ contract GrantlineAdmin is ReentrancyGuard {
         } catch {
             revert InvalidImplementation(implementation);
         }
-        _requireComponentType(implementation, expectedType, "module.implementation");
+        _requireComponentType(implementation, expectedType, bytes32("module.implementation"));
         try IModule(implementation).version() returns (uint64 actualVersion) {
             if (actualVersion != expectedVersion) revert InvalidImplementation(implementation);
         } catch {
@@ -417,21 +323,12 @@ contract GrantlineAdmin is ReentrancyGuard {
         if (!IGrantlineAdminTarget(grantline).configured()) revert InvalidModule(bytes32(0), address(0));
     }
 
-    function _requireAdminController(address controller) private view {
-        if (controller == address(0) || controller.code.length == 0) revert InvalidAddress();
-        try IGrantlineAdmin(controller).grantline() returns (address controllerGrantline) {
-            if (controllerGrantline != grantline) revert InvalidAddress();
-        } catch {
-            revert InvalidAddress();
-        }
-    }
-
     function _moduleAddress(bytes32 key) private view returns (address module) {
         module = Grantline(grantline).moduleAddress(key);
         if (module == address(0)) revert UnknownModule(key);
     }
 
-    function _requireComponentType(address target, bytes32 expected, string memory component) private view {
+    function _requireComponentType(address target, bytes32 expected, bytes32 component) private view {
         bytes32 actual = bytes32(0);
         try IComponent(target).componentType() returns (bytes32 actualType) {
             actual = actualType;
@@ -444,9 +341,5 @@ contract GrantlineAdmin is ReentrancyGuard {
     modifier onlyProtocolAdmin() {
         if (msg.sender != Grantline(grantline).owner()) revert NotProtocolAdmin(msg.sender);
         _;
-    }
-
-    function _onlyGrantline() private view {
-        if (msg.sender != grantline) revert NotGrantline(msg.sender);
     }
 }

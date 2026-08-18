@@ -128,7 +128,6 @@ contract ExecutionEdgesTest is TestFixture {
 
         assert(nativeRecipient.balance == 1 ether);
         assert(token.balanceOf(tokenRecipient) == 40 ether);
-        assert(VaultExecutor(fixture.hub.executor()).nonceUsed(fixture.mandateId, fixture.agent, 31));
         assert(token.balanceOf(fixture.vault) == 60 ether);
         assert(MandateRegistry(fixture.hub.registry()).nonceUsed(fixture.mandateId, fixture.agent, 31));
         assert(address(fixture.vault).balance == 4 ether);

@@ -331,18 +331,6 @@ contract TestnetIntegration is ScriptBase {
             VaultFactory(state.vaultFactory).componentType() == ComponentTypes.VAULT_FACTORY,
             "factory component type mismatch"
         );
-        _require(MandateRegistry(state.registry).owner() == state.admin, "registry owner mismatch");
-        _require(MandateRegistry(state.registry).pendingOwner() == address(0), "registry pending owner mismatch");
-        _require(MandateEvaluator(state.evaluator).owner() == state.admin, "evaluator owner mismatch");
-        _require(MandateEvaluator(state.evaluator).pendingOwner() == address(0), "evaluator pending owner mismatch");
-        _require(EscalationManager(state.escalationManager).owner() == state.admin, "manager owner mismatch");
-        _require(
-            EscalationManager(state.escalationManager).pendingOwner() == address(0), "manager pending owner mismatch"
-        );
-        _require(VaultExecutor(state.executor).owner() == state.admin, "executor owner mismatch");
-        _require(VaultExecutor(state.executor).pendingOwner() == address(0), "executor pending owner mismatch");
-        _require(VaultFactory(state.vaultFactory).owner() == state.admin, "factory owner mismatch");
-        _require(VaultFactory(state.vaultFactory).pendingOwner() == address(0), "factory pending owner mismatch");
         _require(MandateEvaluator(state.evaluator).registry() == state.registry, "evaluator registry mismatch");
         _require(EscalationManager(state.escalationManager).registry() == state.registry, "manager registry mismatch");
         _require(VaultExecutor(state.executor).registry() == state.registry, "executor registry mismatch");
@@ -354,9 +342,6 @@ contract TestnetIntegration is ScriptBase {
             VaultExecutor(state.executor).escalationManager() == state.escalationManager, "executor manager mismatch"
         );
         _require(VaultFactory(state.vaultFactory).executor() == state.executor, "factory executor mismatch");
-        _require(
-            VaultFactory(state.vaultFactory).upgradeAuthority() == state.admin, "factory upgrade authority mismatch"
-        );
         _require(VaultFactory(state.vaultFactory).vaultCount() == 0, "factory is not fresh");
     }
 
@@ -374,17 +359,12 @@ contract TestnetIntegration is ScriptBase {
             Grantline(state.hub).controllerOf(state.secondVault) == state.delegatedAgent,
             "second Vault controller mismatch"
         );
+        _require(Vault(payable(state.vault)).grantline() == state.hub, "first Vault Grantline mismatch");
+        _require(Vault(payable(state.secondVault)).grantline() == state.hub, "second Vault Grantline mismatch");
         _require(Vault(payable(state.vault)).owner() == state.hub, "first Vault owner bypass is possible");
         _require(Vault(payable(state.secondVault)).owner() == state.hub, "second Vault owner mismatch");
         _require(Vault(payable(state.vault)).authority() == state.executor, "first Vault authority mismatch");
         _require(Vault(payable(state.secondVault)).authority() == state.executor, "second Vault authority mismatch");
-        _require(
-            Vault(payable(state.vault)).upgradeAuthority() == state.admin, "first Vault upgrade authority mismatch"
-        );
-        _require(
-            Vault(payable(state.secondVault)).upgradeAuthority() == state.admin,
-            "second Vault upgrade authority mismatch"
-        );
         _require(!Vault(payable(state.vault)).paused(), "first Vault is unexpectedly paused");
         _require(!Vault(payable(state.secondVault)).paused(), "second Vault is unexpectedly paused");
         return state;

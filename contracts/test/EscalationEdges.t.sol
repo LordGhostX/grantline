@@ -44,10 +44,9 @@ contract EscalationEdgesTest is TestFixture {
         assert(escalation.plan.mandateId == plan.mandateId);
         assert(escalation.plan.actions.length == 1);
         assert(escalation.signature.length == signature.length);
-        assert(EscalationManager(fixture.hub.escalationManager()).statusOf(digest) == EscalationManager.Status.PENDING);
         assert(
-            EscalationManager(fixture.hub.escalationManager()).reservedDigest(fixture.mandateId, fixture.agent, 51)
-                == digest
+            EscalationManager(fixture.hub.escalationManager()).getEscalation(digest).status
+                == uint8(EscalationManager.Status.PENDING)
         );
         assert(MandateRegistry(fixture.hub.registry()).reservedDigest(fixture.mandateId, fixture.agent, 51) == digest);
     }

@@ -98,7 +98,6 @@ library DeploymentManifest {
         address implementation = factory.vaultImplementation();
         json = string.concat('{"address":"', _address(implementation), '"');
         json = string.concat(json, ',"codeHash":"', _bytes32(implementation.codehash), '"');
-        json = string.concat(json, ',"upgradeAuthority":"', _address(factory.upgradeAuthority()), '"');
         json = string.concat(json, ',"version":', uint256(factory.vaultImplementationVersion()).toString(), "}");
     }
 

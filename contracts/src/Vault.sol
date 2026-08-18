@@ -29,9 +29,8 @@ contract Vault is
     error InvalidTokenTarget(address token);
     error InvalidSwapAdapter(address swapAdapter);
 
-    event VaultInitialized(address indexed grantline, address indexed authority, address indexed upgradeAuthority);
+    event VaultInitialized(address indexed grantline, address indexed authority);
     event AuthorityUpdated(address indexed previousAuthority, address indexed newAuthority);
-    event UpgradeAuthorityUpdated(address indexed previousAuthority, address indexed newAuthority);
     event ExecutionAttempted(
         address indexed authority,
         address indexed target,
@@ -47,30 +46,21 @@ contract Vault is
 
     address public grantline;
     address public authority;
-    address public upgradeAuthority;
 
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(address grantlineAddress, address authorityAddress, address upgradeAuthorityAddress)
-        external
-        virtual
-        initializer
-    {
-        if (
-            grantlineAddress == address(0) || authorityAddress == address(0) || authorityAddress.code.length == 0
-                || upgradeAuthorityAddress == address(0) || upgradeAuthorityAddress.code.length == 0
-        ) {
+    function initialize(address grantlineAddress, address authorityAddress) external virtual initializer {
+        if (grantlineAddress == address(0) || authorityAddress == address(0) || authorityAddress.code.length == 0) {
             revert InvalidAddress();
         }
         grantline = grantlineAddress;
         authority = authorityAddress;
-        upgradeAuthority = upgradeAuthorityAddress;
         __Ownable_init(grantlineAddress);
         __Ownable2Step_init();
         __Pausable_init();
-        emit VaultInitialized(grantlineAddress, authorityAddress, upgradeAuthorityAddress);
+        emit VaultInitialized(grantlineAddress, authorityAddress);
     }
 
     function version() external pure returns (uint64) {
@@ -131,16 +121,6 @@ contract Vault is
         address previousAuthority = authority;
         authority = newAuthority;
         emit AuthorityUpdated(previousAuthority, newAuthority);
-    }
-
-    function setUpgradeAuthority(address newUpgradeAuthority) external {
-        if (msg.sender != upgradeAuthority) revert NotAuthority(msg.sender);
-        if (newUpgradeAuthority == address(0) || newUpgradeAuthority.code.length == 0) {
-            revert InvalidAddress();
-        }
-        address previousAuthority = upgradeAuthority;
-        upgradeAuthority = newUpgradeAuthority;
-        emit UpgradeAuthorityUpdated(previousAuthority, newUpgradeAuthority);
     }
 
     function tokenBalance(address token) external view returns (uint256) {
@@ -217,7 +197,7 @@ contract Vault is
     }
 
     function _authorizeUpgrade(address) internal view override {
-        if (msg.sender != upgradeAuthority) revert NotAuthority(msg.sender);
+        if (msg.sender != IGrantlineContext(grantline).adminController()) revert NotAuthority(msg.sender);
     }
 
     modifier onlyAuthority() {

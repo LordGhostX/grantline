@@ -81,7 +81,7 @@ contract NonceCancellationTest is TestFixture {
         fixture.admin.setVaultController(fixture.vault, nextController);
 
         fixtureVm.expectRevert(
-            abi.encodeWithSelector(Grantline.NotNonceCanceller.selector, fixture.mandateId, address(this))
+            abi.encodeWithSelector(MandateRegistry.NotNonceCanceller.selector, fixture.mandateId, address(this))
         );
         fixture.hub.cancelNonce(fixture.mandateId, 102);
 
@@ -101,11 +101,15 @@ contract NonceCancellationTest is TestFixture {
             );
 
         fixtureVm.prank(address(0xD00D));
-        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.NotNonceCanceller.selector, childId, address(0xD00D)));
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(MandateRegistry.NotNonceCanceller.selector, childId, address(0xD00D))
+        );
         fixture.hub.cancelNonce(childId, 103);
 
         fixtureVm.prank(fixture.agent);
-        fixtureVm.expectRevert(abi.encodeWithSelector(Grantline.NotNonceCanceller.selector, childId, fixture.agent));
+        fixtureVm.expectRevert(
+            abi.encodeWithSelector(MandateRegistry.NotNonceCanceller.selector, childId, fixture.agent)
+        );
         fixture.hub.cancelNonce(childId, 103);
 
         fixtureVm.prank(childAgent);

@@ -8,13 +8,13 @@ import {ActionTypes} from "./ActionTypes.sol";
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
 import {IGrantlineContext, IEscalationManager, IEvaluator, IExecutor, IRegistry, IVault} from "./Interfaces.sol";
-import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
+import {GrantlineModuleAccess} from "./ProtocolAccess.sol";
 
 interface IERC20Transfer {
     function transfer(address recipient, uint256 amount) external returns (bool);
 }
 
-contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, ReentrancyGuard, UUPSUpgradeable, IExecutor {
+contract VaultExecutor is Initializable, GrantlineModuleAccess, ReentrancyGuard, UUPSUpgradeable, IExecutor {
     enum Decision {
         ALLOW,
         ESCALATE,
@@ -60,7 +60,6 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
         uint256 nativeBalanceUsdValue
     );
 
-    address public grantline;
     address public override evaluator;
     address public override escalationManager;
     address public override registry;
@@ -73,11 +72,9 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
         address grantlineAddress,
         address evaluatorAddress,
         address registryAddress,
-        address escalationManagerAddress,
-        address moduleOwnerAddress
+        address escalationManagerAddress
     ) external initializer {
         if (grantlineAddress == address(0)) revert InvalidAddress();
-        if (moduleOwnerAddress == address(0) || moduleOwnerAddress.code.length == 0) revert InvalidAddress();
         if (evaluatorAddress == address(0) || evaluatorAddress.code.length == 0) {
             revert InvalidEvaluator();
         }
@@ -87,12 +84,10 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
         if (escalationManagerAddress == address(0) || escalationManagerAddress.code.length == 0) {
             revert InvalidEscalationManager();
         }
-        grantline = grantlineAddress;
+        _grantline = grantlineAddress;
         evaluator = evaluatorAddress;
         registry = registryAddress;
         escalationManager = escalationManagerAddress;
-        __Ownable_init(moduleOwnerAddress);
-        __Ownable2Step_init();
     }
 
     function version() external pure override returns (uint64) {
@@ -125,7 +120,7 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
         if (escalation.status != uint8(EscalationStatus.APPROVED)) {
             revert EscalationNotApproved(digest, escalation.status);
         }
-        bytes32 actualDigest = IGrantlineContext(grantline).actionDigest(escalation.plan);
+        bytes32 actualDigest = IGrantlineContext(_grantline).actionDigest(escalation.plan);
         if (actualDigest != digest) {
             revert ActionDigestMismatch(digest, actualDigest);
         }
@@ -138,10 +133,6 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
         GrantlineTypes.Mandate memory mandate = IRegistry(registry).getMandate(escalation.plan.mandateId);
         _executePlan(IVault(payable(mandate.vault)), escalation.plan, evaluation, digest, true);
         IEscalationManager(escalationManager).markExecuted(digest);
-    }
-
-    function nonceUsed(uint256 mandateId, address agent, uint256 nonce) external view returns (bool) {
-        return IRegistry(registry).nonceUsed(mandateId, agent, nonce);
     }
 
     function _executePlan(
@@ -189,7 +180,7 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
                 revert UnsupportedActionVersion(action.version);
             }
             ActionTypes.SwapParameters memory swap = abi.decode(action.parameters, (ActionTypes.SwapParameters));
-            address swapAdapter = IGrantlineContext(grantline).swapAdapterFor(swap.swapAdapterId);
+            address swapAdapter = IGrantlineContext(_grantline).swapAdapterFor(swap.swapAdapterId);
             if (swapAdapter == address(0)) revert UnsupportedSwapAdapter(swap.swapAdapterId);
             uint256 amountOut = vault.executeSwap(swapAdapter, swap);
             if (amountOut < swap.minAmountOut) revert InvalidSwapOutput(swap.minAmountOut, amountOut);
@@ -228,8 +219,8 @@ contract VaultExecutor is Initializable, GrantlineOwnable2StepUpgradeable, Reent
     }
 
     function _onlyGrantline() private view {
-        if (msg.sender != grantline) revert NotGrantline(msg.sender);
+        if (msg.sender != _grantline) revert NotGrantline(msg.sender);
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override onlyAdminController {}
 }

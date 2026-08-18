@@ -28,6 +28,8 @@ interface IOwnable2Step {
 }
 
 interface IGrantlineContext is IComponent {
+    function adminController() external view returns (address);
+
     function moduleAddress(bytes32 key) external view returns (address);
 
     function swapAdapterFor(ActionTypes.SwapAdapterId swapAdapterId) external view returns (address);
@@ -74,10 +76,6 @@ interface IGrantlineAdminTarget {
 
 interface IGrantlineAdmin {
     function grantline() external view returns (address);
-
-    function migrateModules(address nextAdmin) external;
-
-    function acceptModules() external returns (bool accepted);
 }
 
 interface ISwapAdapter is IComponent {
@@ -93,8 +91,6 @@ interface ISwapAdapter is IComponent {
 }
 
 interface IModule is IComponent {
-    function grantline() external view returns (address);
-
     function version() external pure returns (uint64);
 }
 
@@ -218,10 +214,6 @@ interface IExecutor is IModule {
 interface IVaultFactory is IModule {
     function executor() external view returns (address);
 
-    function upgradeAuthority() external view returns (address);
-
-    function setUpgradeAuthority(address newUpgradeAuthority) external;
-
     function createVault(address controller) external returns (address vault);
 
     function validateVaultImplementation(address implementation, uint64 implementationVersion) external;
@@ -240,7 +232,9 @@ interface IVaultFactory is IModule {
 }
 
 interface IVault is IComponent {
-    function initialize(address grantline, address authorityAddress, address upgradeAuthorityAddress) external;
+    function initialize(address grantline, address authorityAddress) external;
+
+    function grantline() external view returns (address);
 
     function pause() external;
 
@@ -253,10 +247,6 @@ interface IVault is IComponent {
     function owner() external view returns (address);
 
     function authority() external view returns (address);
-
-    function upgradeAuthority() external view returns (address);
-
-    function setUpgradeAuthority(address newUpgradeAuthority) external;
 
     function version() external pure returns (uint64);
 

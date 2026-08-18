@@ -170,38 +170,31 @@ abstract contract TestFixture {
         hub.setAdminController(address(admin));
         address registry = address(
             new ERC1967Proxy(
-                address(registryImplementation),
-                abi.encodeCall(MandateRegistry.initialize, (address(hub), address(admin)))
+                address(registryImplementation), abi.encodeCall(MandateRegistry.initialize, (address(hub)))
             )
         );
         address evaluator = address(
             new ERC1967Proxy(
                 address(evaluatorImplementation),
-                abi.encodeCall(
-                    MandateEvaluator.initialize,
-                    (address(hub), registry, feed, feedDecimals, wrappedNative, address(admin))
-                )
+                abi.encodeCall(MandateEvaluator.initialize, (address(hub), registry, feed, feedDecimals, wrappedNative))
             )
         );
         address manager = address(
             new ERC1967Proxy(
                 address(managerImplementation),
-                abi.encodeCall(EscalationManager.initialize, (address(hub), evaluator, registry, address(admin)))
+                abi.encodeCall(EscalationManager.initialize, (address(hub), evaluator, registry))
             )
         );
         address executor = address(
             new ERC1967Proxy(
                 address(executorImplementation),
-                abi.encodeCall(VaultExecutor.initialize, (address(hub), evaluator, registry, manager, address(admin)))
+                abi.encodeCall(VaultExecutor.initialize, (address(hub), evaluator, registry, manager))
             )
         );
         address factory = address(
             new ERC1967Proxy(
                 address(factoryImplementation),
-                abi.encodeCall(
-                    VaultFactory.initialize,
-                    (address(hub), address(vaultImplementation), 1, executor, address(admin), address(admin))
-                )
+                abi.encodeCall(VaultFactory.initialize, (address(hub), address(vaultImplementation), 1, executor))
             )
         );
 

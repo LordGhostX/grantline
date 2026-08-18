@@ -92,7 +92,7 @@ contract RegistryEdgesTest is TestFixture {
 
         fixtureVm.prank(address(0xCAFE));
         fixtureVm.expectRevert(
-            abi.encodeWithSelector(Grantline.NotParentAgent.selector, fixture.mandateId, address(0xCAFE))
+            abi.encodeWithSelector(MandateRegistry.NotParentAgent.selector, fixture.mandateId, address(0xCAFE))
         );
         fixture.hub.createChildMandate(fixture.mandateId, childAgent, childRules, _preflight(0, false, 0, false), 0, 0);
 
@@ -127,14 +127,15 @@ contract RegistryEdgesTest is TestFixture {
 
         fixture.hub.pauseMandate(fixture.mandateId);
         assert(fixture.hub.getMandate(fixture.mandateId).status == GrantlineTypes.MandateStatus.PAUSED);
-        assert(!MandateRegistry(fixture.hub.registry()).isActive(fixture.mandateId));
-        assert(!MandateRegistry(fixture.hub.registry()).isActive(0));
+        assert(fixture.hub.getMandate(fixture.mandateId).status != GrantlineTypes.MandateStatus.ACTIVE);
+        fixtureVm.expectRevert(abi.encodeWithSelector(MandateRegistry.MandateNotFound.selector, 0));
+        fixture.hub.getMandate(0);
         assert(fixture.hub.getMandate(childId).status == GrantlineTypes.MandateStatus.ACTIVE);
         assert(MandateRegistry(fixture.hub.registry()).isLineagePaused(childId));
         assert(!MandateRegistry(fixture.hub.registry()).isLineageActive(childId));
 
         fixture.hub.unpauseMandate(fixture.mandateId);
-        assert(MandateRegistry(fixture.hub.registry()).isActive(fixture.mandateId));
+        assert(fixture.hub.getMandate(fixture.mandateId).status == GrantlineTypes.MandateStatus.ACTIVE);
         assert(MandateRegistry(fixture.hub.registry()).isLineageActive(childId));
 
         fixtureVm.prank(fixture.agent);

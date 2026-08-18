@@ -6,7 +6,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {ComponentTypes} from "./ComponentTypes.sol";
 import {GrantlineTypes} from "./GrantlineTypes.sol";
 import {IGrantlineContext, IEvaluator, IRegistry} from "./Interfaces.sol";
-import {GrantlineOwnable2StepUpgradeable} from "./ProtocolAccess.sol";
+import {GrantlineModuleAccess} from "./ProtocolAccess.sol";
 
 interface IVaultIdentity {
     function owner() external view returns (address);
@@ -14,12 +14,15 @@ interface IVaultIdentity {
     function authority() external view returns (address);
 }
 
-contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUPSUpgradeable, IRegistry {
+contract MandateRegistry is Initializable, GrantlineModuleAccess, UUPSUpgradeable, IRegistry {
     bytes32 public constant EXECUTOR_MODULE = keccak256("EXECUTOR");
     bytes32 public constant ESCALATION_MANAGER_MODULE = keccak256("ESCALATION_MANAGER");
     bytes32 public constant EVALUATOR_MODULE = keccak256("EVALUATOR");
 
     uint8 public constant MAX_DELEGATION_DEPTH = 2;
+    uint8 private constant LINEAGE_INACTIVE = 1;
+    uint8 private constant LINEAGE_PAUSED = 2;
+    uint8 private constant LINEAGE_REVOKED = 4;
 
     error InvalidAddress();
     error InvalidVault();
@@ -86,7 +89,6 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         uint256 indexed mandateId, address indexed agent, uint256 indexed nonce, bytes32 digest
     );
 
-    address public grantline;
     mapping(address => bool) public isRegisteredVault;
     mapping(uint256 => GrantlineTypes.Mandate) private _mandates;
     mapping(uint256 => mapping(address => mapping(uint256 => bool))) public override nonceUsed;
@@ -97,12 +99,9 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         _disableInitializers();
     }
 
-    function initialize(address grantlineAddress, address moduleOwnerAddress) external initializer {
+    function initialize(address grantlineAddress) external initializer {
         if (grantlineAddress == address(0)) revert InvalidAddress();
-        if (moduleOwnerAddress == address(0) || moduleOwnerAddress.code.length == 0) revert InvalidAddress();
-        grantline = grantlineAddress;
-        __Ownable_init(moduleOwnerAddress);
-        __Ownable2Step_init();
+        _grantline = grantlineAddress;
     }
 
     function version() external pure override returns (uint64) {
@@ -118,9 +117,9 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         if (vault == address(0) || vault.code.length == 0) {
             revert InvalidVault();
         }
-        address expectedAuthority = IGrantlineContext(grantline).moduleAddress(EXECUTOR_MODULE);
+        address expectedAuthority = IGrantlineContext(_grantline).moduleAddress(EXECUTOR_MODULE);
         try IVaultIdentity(vault).owner() returns (address vaultOwner) {
-            if (vaultOwner != grantline) revert InvalidVault();
+            if (vaultOwner != _grantline) revert InvalidVault();
         } catch {
             revert InvalidVault();
         }
@@ -420,40 +419,33 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         return _effectiveValidityWindow(mandateId);
     }
 
-    function isActive(uint256 mandateId) external view returns (bool) {
-        if (mandateId == 0 || mandateId > mandateCount) return false;
-        return _mandates[mandateId].status == GrantlineTypes.MandateStatus.ACTIVE;
-    }
-
     function isLineageActive(uint256 mandateId) external view override returns (bool) {
-        if (mandateId == 0 || mandateId > mandateCount) return false;
-        uint256 currentMandateId = mandateId;
-        while (currentMandateId != 0) {
-            if (_mandates[currentMandateId].status != GrantlineTypes.MandateStatus.ACTIVE) return false;
-            currentMandateId = _mandates[currentMandateId].parentMandateId;
-        }
+        uint8 flags = _lineageFlags(mandateId);
+        if (flags & LINEAGE_INACTIVE != 0) return false;
         (uint64 validAfter, uint64 validUntil) = _effectiveValidityWindow(mandateId);
         return _isWithinValidityWindow(validAfter, validUntil);
     }
 
     function isLineagePaused(uint256 mandateId) external view override returns (bool) {
-        if (mandateId == 0 || mandateId > mandateCount) return false;
-        uint256 currentMandateId = mandateId;
-        while (currentMandateId != 0) {
-            if (_mandates[currentMandateId].status == GrantlineTypes.MandateStatus.PAUSED) return true;
-            currentMandateId = _mandates[currentMandateId].parentMandateId;
-        }
-        return false;
+        return _lineageFlags(mandateId) & LINEAGE_PAUSED != 0;
     }
 
     function isLineageRevoked(uint256 mandateId) external view override returns (bool) {
-        if (mandateId == 0 || mandateId > mandateCount) return false;
+        return _lineageFlags(mandateId) & LINEAGE_REVOKED != 0;
+    }
+
+    function _lineageFlags(uint256 mandateId) private view returns (uint8 flags) {
+        if (mandateId == 0 || mandateId > mandateCount) return LINEAGE_INACTIVE;
         uint256 currentMandateId = mandateId;
         while (currentMandateId != 0) {
-            if (_mandates[currentMandateId].status == GrantlineTypes.MandateStatus.REVOKED) return true;
+            GrantlineTypes.MandateStatus status = _mandates[currentMandateId].status;
+            if (status != GrantlineTypes.MandateStatus.ACTIVE) {
+                flags |= LINEAGE_INACTIVE;
+                if (status == GrantlineTypes.MandateStatus.PAUSED) flags |= LINEAGE_PAUSED;
+                if (status == GrantlineTypes.MandateStatus.REVOKED) flags |= LINEAGE_REVOKED;
+            }
             currentMandateId = _mandates[currentMandateId].parentMandateId;
         }
-        return false;
     }
 
     function _activeMandate(uint256 mandateId) private view returns (GrantlineTypes.Mandate storage mandate) {
@@ -586,7 +578,7 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
 
     function _requireController(address vault, address actor) private view {
         if (!isRegisteredVault[vault]) revert VaultNotRegistered(vault);
-        if (!IGrantlineContext(grantline).isController(vault, actor)) {
+        if (!IGrantlineContext(_grantline).isController(vault, actor)) {
             revert NotController(0, actor);
         }
     }
@@ -595,7 +587,7 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         private
         view
     {
-        if (isRegisteredVault[mandate.vault] && IGrantlineContext(grantline).isController(mandate.vault, actor)) {
+        if (isRegisteredVault[mandate.vault] && IGrantlineContext(_grantline).isController(mandate.vault, actor)) {
             return;
         }
         if (mandate.parentMandateId != 0) {
@@ -613,7 +605,7 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
         view
     {
         if (mandate.agent == actor) return;
-        if (isRegisteredVault[mandate.vault] && IGrantlineContext(grantline).isController(mandate.vault, actor)) {
+        if (isRegisteredVault[mandate.vault] && IGrantlineContext(_grantline).isController(mandate.vault, actor)) {
             return;
         }
         revert NotNonceCanceller(mandateId, actor);
@@ -688,7 +680,7 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
     function _validateNativeUsdThreshold(uint256 threshold) private view {
         if (threshold == 0) return;
 
-        address evaluatorAddress = IGrantlineContext(grantline).moduleAddress(EVALUATOR_MODULE);
+        address evaluatorAddress = IGrantlineContext(_grantline).moduleAddress(EVALUATOR_MODULE);
         if (evaluatorAddress == address(0) || !IEvaluator(evaluatorAddress).nativeUsdValuationEnabled()) {
             revert NativeUsdValuationUnsupported();
         }
@@ -705,18 +697,18 @@ contract MandateRegistry is Initializable, GrantlineOwnable2StepUpgradeable, UUP
     }
 
     function _onlyGrantline() private view {
-        if (msg.sender != grantline) revert NotGrantline(msg.sender);
+        if (msg.sender != _grantline) revert NotGrantline(msg.sender);
     }
 
     function _onlyExecutor() private view {
-        if (msg.sender != IGrantlineContext(grantline).moduleAddress(EXECUTOR_MODULE)) revert NotExecutor(msg.sender);
+        if (msg.sender != IGrantlineContext(_grantline).moduleAddress(EXECUTOR_MODULE)) revert NotExecutor(msg.sender);
     }
 
     function _onlyEscalationManager() private view {
-        if (msg.sender != IGrantlineContext(grantline).moduleAddress(ESCALATION_MANAGER_MODULE)) {
+        if (msg.sender != IGrantlineContext(_grantline).moduleAddress(ESCALATION_MANAGER_MODULE)) {
             revert NotEscalationManager(msg.sender);
         }
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override onlyAdminController {}
 }

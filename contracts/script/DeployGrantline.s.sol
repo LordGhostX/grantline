@@ -60,8 +60,7 @@ contract DeployGrantline is ScriptBase {
         Vault vaultImplementation = new Vault();
 
         ERC1967Proxy registryProxy = new ERC1967Proxy(
-            address(registryImplementation),
-            abi.encodeCall(MandateRegistry.initialize, (address(grantline), address(admin)))
+            address(registryImplementation), abi.encodeCall(MandateRegistry.initialize, (address(grantline)))
         );
         ERC1967Proxy evaluatorProxy = new ERC1967Proxy(
             address(evaluatorImplementation),
@@ -72,44 +71,28 @@ contract DeployGrantline is ScriptBase {
                     address(registryProxy),
                     chainlinkNativeUsdFeed,
                     chainlinkNativeUsdFeedDecimals,
-                    wrappedNative,
-                    address(admin)
+                    wrappedNative
                 )
             )
         );
         ERC1967Proxy managerProxy = new ERC1967Proxy(
             address(managerImplementation),
             abi.encodeCall(
-                EscalationManager.initialize,
-                (address(grantline), address(evaluatorProxy), address(registryProxy), address(admin))
+                EscalationManager.initialize, (address(grantline), address(evaluatorProxy), address(registryProxy))
             )
         );
         ERC1967Proxy executorProxy = new ERC1967Proxy(
             address(executorImplementation),
             abi.encodeCall(
                 VaultExecutor.initialize,
-                (
-                    address(grantline),
-                    address(evaluatorProxy),
-                    address(registryProxy),
-                    address(managerProxy),
-                    address(admin)
-                )
+                (address(grantline), address(evaluatorProxy), address(registryProxy), address(managerProxy))
             )
         );
         VaultFactory factoryImplementation = new VaultFactory();
         ERC1967Proxy factoryProxy = new ERC1967Proxy(
             address(factoryImplementation),
             abi.encodeCall(
-                VaultFactory.initialize,
-                (
-                    address(grantline),
-                    address(vaultImplementation),
-                    1,
-                    address(executorProxy),
-                    address(admin),
-                    address(admin)
-                )
+                VaultFactory.initialize, (address(grantline), address(vaultImplementation), 1, address(executorProxy))
             )
         );
 

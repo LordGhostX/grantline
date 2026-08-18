@@ -44,6 +44,22 @@ contract GrantlineDeploymentVaultFactoryProbe is VaultFactory {
     }
 }
 
+contract GrantlineDeploymentWrongBindingVaultImplementation is Vault {
+    function initialize(address grantlineAddress, address authorityAddress) external override initializer {
+        grantline = address(0xBEEF);
+        authority = authorityAddress;
+        __Ownable_init(grantlineAddress);
+        __Ownable2Step_init();
+        __Pausable_init();
+    }
+}
+
+contract GrantlineDeploymentMutableBindingVaultV2 is Vault {
+    function setGrantlineForTest(address newGrantline) external {
+        grantline = newGrantline;
+    }
+}
+
 contract GrantlineDeploymentNativeUsdEvaluatorProbe is MandateEvaluator {
     function clearWrappedNativeForTest() external {
         wrappedNative = address(0);
@@ -57,14 +73,11 @@ abstract contract GrantlineDeploymentMissingSwapBase is
     UUPSUpgradeable
 {
     address public authority;
-    address public upgradeAuthority;
+    address public grantline;
 
-    function initialize(address grantlineAddress, address authorityAddress, address upgradeAuthorityAddress)
-        external
-        initializer
-    {
+    function initialize(address grantlineAddress, address authorityAddress) external initializer {
+        grantline = grantlineAddress;
         authority = authorityAddress;
-        upgradeAuthority = upgradeAuthorityAddress;
         __Ownable_init(grantlineAddress);
         __Ownable2Step_init();
         __Pausable_init();
@@ -91,7 +104,7 @@ abstract contract GrantlineDeploymentMissingSwapBase is
     }
 
     function _authorizeUpgrade(address) internal view override {
-        if (msg.sender != upgradeAuthority) revert();
+        if (msg.sender != Grantline(grantline).adminController()) revert();
     }
 }
 
@@ -370,21 +383,6 @@ contract DeploymentTest {
         assert(!success);
     }
 
-    function test_grantlineDeploymentManifestRejectsExternalModuleOwner() public {
-        Stack memory stack = _deploy();
-        address externalOwner = address(0xBEEF);
-
-        deploymentVm.prank(address(stack.admin));
-        GrantlineDeploymentOwnership(stack.registry).transferOwnership(externalOwner);
-        deploymentVm.prank(externalOwner);
-        GrantlineDeploymentOwnership(stack.registry).acceptOwnership();
-
-        string memory manifest = _writeManifest(stack, address(stack.grantline).codehash);
-        VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
-        (bool success,) = address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
-        assert(!success);
-    }
-
     function test_grantlineDeploymentManifestRejectsPendingVaultOwner() public {
         Stack memory stack = _deploy();
         address pendingOwner = address(0xCAFE);
@@ -448,6 +446,42 @@ contract DeploymentTest {
         assert(!success);
     }
 
+    function test_grantlineDeploymentManifestRejectsVaultTemplateGrantlineMismatch() public {
+        Stack memory stack = _deploy();
+        GrantlineDeploymentWrongBindingVaultImplementation implementation =
+            new GrantlineDeploymentWrongBindingVaultImplementation();
+        GrantlineDeploymentVaultFactoryProbe factoryImplementation = new GrantlineDeploymentVaultFactoryProbe();
+
+        deploymentVm.prank(address(stack.admin));
+        IUUPS(stack.vaultFactory).upgradeToAndCall(address(factoryImplementation), "");
+        stack.vaultFactoryImplementation = address(factoryImplementation);
+        GrantlineDeploymentVaultFactoryProbe(stack.vaultFactory).setVaultImplementationForTest(address(implementation));
+
+        string memory manifest = _writeManifest(stack, address(stack.grantline).codehash);
+        VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
+        (bool success,) = address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
+        assert(!success);
+    }
+
+    function test_grantlineDeploymentManifestRejectsLiveVaultGrantlineMismatch() public {
+        Stack memory stack = _deploy();
+        GrantlineDeploymentMutableBindingVaultV2 implementation = new GrantlineDeploymentMutableBindingVaultV2();
+
+        deploymentVm.prank(address(stack.admin));
+        IUUPS(stack.vault)
+            .upgradeToAndCall(
+                address(implementation),
+                abi.encodeCall(GrantlineDeploymentMutableBindingVaultV2.setGrantlineForTest, (address(0xBEEF)))
+            );
+        deploymentVm.prank(address(stack.admin));
+        stack.grantline.adminRecordVaultUpgrade(address(stack.vault), address(implementation), 1);
+
+        string memory manifest = _writeManifest(stack, address(stack.grantline).codehash);
+        VerifyGrantlineDeployment verifier = new VerifyGrantlineDeployment();
+        (bool success,) = address(verifier).call(abi.encodeCall(VerifyGrantlineDeployment.runWithManifest, (manifest)));
+        assert(!success);
+    }
+
     function test_grantlineDeploymentManifestRejectsLiveVaultMissingSwapEntrypoint() public {
         Stack memory stack = _deploy();
         stack.grantline.createVault();
@@ -499,8 +533,7 @@ contract DeploymentTest {
         stack.grantline.setAdminController(address(stack.admin));
         stack.registry = address(
             new ERC1967Proxy(
-                stack.registryImplementation,
-                abi.encodeCall(MandateRegistry.initialize, (address(stack.grantline), address(stack.admin)))
+                stack.registryImplementation, abi.encodeCall(MandateRegistry.initialize, (address(stack.grantline)))
             )
         );
         stack.evaluator = address(
@@ -508,7 +541,7 @@ contract DeploymentTest {
                 stack.evaluatorImplementation,
                 abi.encodeCall(
                     MandateEvaluator.initialize,
-                    (address(stack.grantline), stack.registry, feed, feedDecimals, wrappedNative, address(stack.admin))
+                    (address(stack.grantline), stack.registry, feed, feedDecimals, wrappedNative)
                 )
             )
         );
@@ -516,8 +549,7 @@ contract DeploymentTest {
             new ERC1967Proxy(
                 stack.escalationManagerImplementation,
                 abi.encodeCall(
-                    EscalationManager.initialize,
-                    (address(stack.grantline), stack.evaluator, stack.registry, address(stack.admin))
+                    EscalationManager.initialize, (address(stack.grantline), stack.evaluator, stack.registry)
                 )
             )
         );
@@ -526,13 +558,7 @@ contract DeploymentTest {
                 stack.executorImplementation,
                 abi.encodeCall(
                     VaultExecutor.initialize,
-                    (
-                        address(stack.grantline),
-                        stack.evaluator,
-                        stack.registry,
-                        stack.escalationManager,
-                        address(stack.admin)
-                    )
+                    (address(stack.grantline), stack.evaluator, stack.registry, stack.escalationManager)
                 )
             )
         );
@@ -540,15 +566,7 @@ contract DeploymentTest {
             new ERC1967Proxy(
                 stack.vaultFactoryImplementation,
                 abi.encodeCall(
-                    VaultFactory.initialize,
-                    (
-                        address(stack.grantline),
-                        stack.vaultImplementation,
-                        1,
-                        stack.executor,
-                        address(stack.admin),
-                        address(stack.admin)
-                    )
+                    VaultFactory.initialize, (address(stack.grantline), stack.vaultImplementation, 1, stack.executor)
                 )
             )
         );
