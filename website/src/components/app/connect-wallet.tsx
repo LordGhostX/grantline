@@ -1,38 +1,98 @@
 "use client";
 
-import { useConnect, useAccount, useDisconnect } from "wagmi";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useConnect, useConnection, useConnectors, useDisconnect } from "wagmi";
 
 export function ConnectWallet() {
-  const { address, isConnected } = useAccount();
-  const { connect, connectors, isPending, error } = useConnect();
-  const { disconnect } = useDisconnect();
+  const { address, isConnected } = useConnection();
+
+  const connect = useConnect();
+  const connectors = useConnectors();
+  const disconnect = useDisconnect();
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [menuOpen]);
+
+  const handleDisconnect = useCallback(() => {
+    setMenuOpen(false);
+    disconnect.mutate();
+  }, [disconnect]);
 
   if (isConnected && address) {
     return (
-      <button
-        type="button"
-        className="app-connect connected"
-        onClick={() => disconnect()}
-      >
-        <span className="app-connect-dot" />
-        {address.slice(0, 6)}…{address.slice(-4)}
-      </button>
+      <div className="app-connect-wrap" ref={menuRef}>
+        <button
+          type="button"
+          className="app-connect connected"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <span className="app-connect-dot" />
+          {address.slice(0, 6)}…{address.slice(-4)}
+        </button>
+
+        {menuOpen && (
+          <div className="app-connect-popover">
+            <span className="app-connect-address">{address}</span>
+
+            <button
+              type="button"
+              className="app-connect-disconnect"
+              onClick={handleDisconnect}
+            >
+              Disconnect
+            </button>
+          </div>
+        )}
+      </div>
     );
   }
+
+  const connector = connectors[0];
 
   return (
     <div className="app-connect-wrap">
       <button
         type="button"
         className="app-connect"
-        disabled={isPending}
-        onClick={() => connect({ connector: connectors[0] })}
+        disabled={connect.isPending || !connector}
+        onClick={() => {
+          if (connector) {
+            connect.mutate({ connector });
+          }
+        }}
       >
-        {isPending ? "Connecting…" : "Connect wallet"}
+        {connect.isPending ? "Connecting…" : "Connect wallet"}
       </button>
-      {error && (
+
+      {connect.error && (
         <span className="app-connect-error">
-          {"shortMessage" in error ? error.shortMessage : error.message}
+          {"shortMessage" in connect.error
+            ? String(connect.error.shortMessage)
+            : connect.error.message}
         </span>
       )}
     </div>
