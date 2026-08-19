@@ -4,7 +4,7 @@
 
 - **Website:** grantline.xyz
 - **X:** @usegrantline
-- **GitHub:** usegrantline
+- **GitHub:** lordghostx/grantline
 - **Telegram:** @usegrantline
 
 ---

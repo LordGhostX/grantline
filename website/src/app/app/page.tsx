@@ -1,9 +1,11 @@
 "use client";
 
-import { useAccount } from "wagmi";
+import { useConnection } from "wagmi";
+import { useProtocolStats } from "@/lib/use-protocol-stats";
 
 export default function AppDashboard() {
-  const { isConnected } = useAccount();
+  const { isConnected } = useConnection();
+  const stats = useProtocolStats();
 
   return (
     <>
@@ -16,8 +18,13 @@ export default function AppDashboard() {
       </div>
 
       {!isConnected && (
-        <div className="app-card" style={{ marginBottom: 24, textAlign: "center", padding: 48 }}>
-          <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>Connect your wallet</h3>
+        <div
+          className="app-card"
+          style={{ marginBottom: 24, textAlign: "center", padding: 48 }}
+        >
+          <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>
+            Connect your wallet
+          </h3>
           <p style={{ margin: 0, color: "#9a9896", fontSize: 14 }}>
             Connect a wallet to start exploring Grantline.
           </p>
@@ -27,19 +34,11 @@ export default function AppDashboard() {
       <div className="app-stats">
         <div className="app-stat">
           <div className="app-stat-label">Vaults</div>
-          <div className="app-stat-value">0</div>
+          <div className="app-stat-value">{stats.isLoading ? "---" : stats.vaults}</div>
         </div>
         <div className="app-stat">
           <div className="app-stat-label">Mandates</div>
-          <div className="app-stat-value">0</div>
-        </div>
-        <div className="app-stat">
-          <div className="app-stat-label">Escalations</div>
-          <div className="app-stat-value">0</div>
-        </div>
-        <div className="app-stat">
-          <div className="app-stat-label">Executions</div>
-          <div className="app-stat-value">0</div>
+          <div className="app-stat-value">{stats.isLoading ? "---" : stats.mandates}</div>
         </div>
       </div>
 
