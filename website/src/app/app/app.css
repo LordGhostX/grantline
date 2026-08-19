@@ -156,6 +156,7 @@
     height: 8px;
     border-radius: 50%;
     background: var(--allow, #72b98b);
+    animation: pulse 2s ease-in-out infinite;
 }
 
 /* ── Connect wallet ────────────────────────────── */
@@ -190,6 +191,17 @@
     height: 8px;
     border-radius: 50%;
     background: var(--allow, #72b98b);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.4;
+    }
 }
 
 .app-connect:disabled {
@@ -218,6 +230,7 @@
     top: calc(100% + 8px);
     right: 0;
     width: max-content;
+    min-width: 280px;
     max-width: 320px;
     background: var(--surface, #151916);
     border: 1px solid var(--border, #1e2320);
@@ -298,7 +311,7 @@
 
 .app-card-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 16px;
 }
 
@@ -544,6 +557,36 @@
 .app-tab.active {
     background: rgba(208, 180, 108, 0.08);
     color: var(--brand, #d0b46c);
+}
+
+/* ── Modals ────────────────────────────────────── */
+
+.app-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 24px;
+}
+
+.app-modal {
+    background: var(--surface, #151916);
+    border: 1px solid var(--border, #1e2320);
+    border-radius: var(--radius, 6px);
+    padding: 24px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.app-modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 24px;
 }
 
 /* ── Responsive ────────────────────────────────── */

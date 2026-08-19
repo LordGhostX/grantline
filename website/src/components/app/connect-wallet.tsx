@@ -1,17 +1,36 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useConnect, useConnection, useConnectors, useDisconnect } from "wagmi";
+import {
+  useConnect,
+  useConnection,
+  useConnectors,
+  useDisconnect,
+  useSwitchChain,
+} from "wagmi";
+import { chainId } from "@/lib/contracts";
 
 export function ConnectWallet() {
-  const { address, isConnected } = useConnection();
+  const { address, isConnected, chain } = useConnection();
 
   const connect = useConnect();
   const connectors = useConnectors();
   const disconnect = useDisconnect();
+  const { switchChain } = useSwitchChain();
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const wrongChain = isConnected && chain && chain.id !== chainId;
+
+  const switchToXLayer = useCallback(() => {
+    switchChain({ chainId });
+  }, [switchChain]);
+
+  useEffect(() => {
+    if (wrongChain) switchToXLayer();
+  }, [wrongChain, switchToXLayer]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -42,6 +61,13 @@ export function ConnectWallet() {
     disconnect.mutate();
   }, [disconnect]);
 
+  const handleCopy = useCallback(() => {
+    if (!address) return;
+    navigator.clipboard.writeText(address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [address]);
+
   if (isConnected && address) {
     return (
       <div className="app-connect-wrap" ref={menuRef}>
@@ -56,8 +82,22 @@ export function ConnectWallet() {
 
         {menuOpen && (
           <div className="app-connect-popover">
-            <span className="app-connect-address">{address}</span>
-
+            <span
+              className="app-connect-address"
+              style={{ cursor: "pointer" }}
+              onClick={handleCopy}
+            >
+              {copied ? "Copied!" : address}
+            </span>
+            {wrongChain && (
+              <button
+                type="button"
+                className="app-connect-disconnect"
+                onClick={switchToXLayer}
+              >
+                Switch to X Layer Testnet
+              </button>
+            )}
             <button
               type="button"
               className="app-connect-disconnect"

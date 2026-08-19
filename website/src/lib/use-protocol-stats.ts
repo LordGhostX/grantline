@@ -1,24 +1,35 @@
 "use client";
 
-import { useReadContract } from "wagmi";
-import { addresses, vaultFactoryAbi, mandateRegistryAbi } from "./contracts";
+import { useReadContracts } from "wagmi";
+import { addresses, grantlineAbi } from "./contracts";
 
 export function useProtocolStats() {
-  const { data: vaultCount, isLoading: vaultsLoading } = useReadContract({
-    address: addresses.vaultFactory,
-    abi: vaultFactoryAbi,
-    functionName: "vaultCount",
-  });
-
-  const { data: mandateCount, isLoading: mandatesLoading } = useReadContract({
-    address: addresses.mandateRegistry,
-    abi: mandateRegistryAbi,
-    functionName: "mandateCount",
+  const { data, isLoading } = useReadContracts({
+    contracts: [
+      {
+        address: addresses.grantline,
+        abi: grantlineAbi,
+        functionName: "vaultCount",
+      },
+      {
+        address: addresses.mandateRegistry,
+        abi: [
+          {
+            name: "mandateCount",
+            type: "function",
+            stateMutability: "view",
+            inputs: [],
+            outputs: [{ type: "uint256" }],
+          },
+        ] as const,
+        functionName: "mandateCount",
+      },
+    ],
   });
 
   return {
-    vaults: Number(vaultCount ?? BigInt(0)),
-    mandates: Number(mandateCount ?? BigInt(0)),
-    isLoading: vaultsLoading || mandatesLoading,
+    vaults: Number((data?.[0]?.result as bigint) ?? BigInt(0)),
+    mandates: Number((data?.[1]?.result as bigint) ?? BigInt(0)),
+    isLoading,
   };
 }

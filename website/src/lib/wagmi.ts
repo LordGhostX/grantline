@@ -1,9 +1,10 @@
 import { createConfig, cookieStorage, createStorage } from "wagmi";
 import { http, fallback } from "viem";
 import { injected } from "wagmi/connectors";
+import { chainId } from "./contracts";
 
 export const xLayerTestnet = {
-  id: 1952,
+  id: chainId,
   name: "X Layer Testnet",
   nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
   rpcUrls: {
