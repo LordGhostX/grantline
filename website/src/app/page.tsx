@@ -231,13 +231,9 @@ export default function Home() {
             <a href={repositoryUrl} target="_blank" rel="noreferrer nofollow">
               GitHub <span aria-hidden="true">↗</span>
             </a>
-            <button
-              type="button"
-              className="btn btn-primary coming-soon"
-              disabled
-            >
-              Demo coming soon
-            </button>
+            <Link href="/app" className="btn btn-primary">
+              Try the demo
+            </Link>
           </div>
 
           <button
@@ -272,9 +268,9 @@ export default function Home() {
             <a href={repositoryUrl} target="_blank" rel="noreferrer nofollow">
               GitHub <span aria-hidden="true">↗</span>
             </a>
-            <button type="button" className="mobile-demo" disabled>
-              Demo coming soon
-            </button>
+            <Link href="/app" className="mobile-demo">
+              Try the demo
+            </Link>
           </div>
         </div>
       </div>
@@ -560,17 +556,13 @@ export default function Home() {
                       ↗
                     </span>
                   </Link>
-                  <button
-                    type="button"
-                    className="proof-link-disabled coming-soon"
-                    disabled
-                  >
+                  <Link href="/app" className="proof-link">
                     <strong>Try the demo</strong>
-                    <span>Demo coming soon.</span>
+                    <span>Try it now on X Layer testnet.</span>
                     <span className="link-arrow" aria-hidden="true">
                       ↗
                     </span>
-                  </button>
+                  </Link>
                 </div>
                 <p className="proof-note">
                   Committed authority changes, approvals, custody changes, and
@@ -863,13 +855,9 @@ export default function Home() {
               signing keys into unrestricted control over capital.
             </p>
             <div className="cta-actions">
-              <button
-                type="button"
-                className="btn btn-primary coming-soon"
-                disabled
-              >
-                Demo coming soon
-              </button>
+              <Link href="/app" className="btn btn-primary">
+                Try the demo
+              </Link>
               <Link className="btn btn-quiet" href="/docs">
                 Read the documentation
               </Link>
