@@ -42,6 +42,7 @@
     text-decoration: none;
     font-weight: 700;
     font-size: 15px;
+    outline: none;
 }
 
 .app-brand-mark {
@@ -451,6 +452,15 @@
     align-items: flex-start;
     gap: 12px;
     font-size: 14px;
+}
+
+.app-step-link {
+    color: var(--text, #e8e6e3);
+    text-decoration: none;
+}
+
+.app-step-link:hover {
+    color: var(--brand, #d0b46c);
 }
 
 .app-step-num {

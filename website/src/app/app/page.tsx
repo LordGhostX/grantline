@@ -1,10 +1,13 @@
 "use client";
 
-import { useConnection } from "wagmi";
+import Link from "next/link";
+import { useConnection, useConnect, useConnectors } from "wagmi";
 import { useProtocolStats } from "@/lib/use-protocol-stats";
 
 export default function AppDashboard() {
   const { isConnected } = useConnection();
+  const connect = useConnect();
+  const connectors = useConnectors();
   const stats = useProtocolStats();
 
   return (
@@ -34,11 +37,15 @@ export default function AppDashboard() {
       <div className="app-stats">
         <div className="app-stat">
           <div className="app-stat-label">Vaults</div>
-          <div className="app-stat-value">{stats.isLoading ? "---" : stats.vaults}</div>
+          <div className="app-stat-value">
+            {stats.isLoading ? "---" : stats.vaults}
+          </div>
         </div>
         <div className="app-stat">
           <div className="app-stat-label">Mandates</div>
-          <div className="app-stat-value">{stats.isLoading ? "---" : stats.mandates}</div>
+          <div className="app-stat-value">
+            {stats.isLoading ? "---" : stats.mandates}
+          </div>
         </div>
       </div>
 
@@ -47,23 +54,56 @@ export default function AppDashboard() {
         <ol className="app-steps">
           <li className="app-step">
             <span className="app-step-num">1</span>
-            <span>Connect your wallet to X Layer testnet</span>
+            {isConnected ? (
+              <span>Connect your wallet to X Layer testnet</span>
+            ) : (
+              <button
+                type="button"
+                className="app-step-link"
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor:
+                    connect.isPending || !connectors[0] ? "default" : "pointer",
+                  opacity: connect.isPending || !connectors[0] ? 0.5 : 1,
+                  font: "inherit",
+                  textAlign: "left",
+                }}
+                disabled={connect.isPending || !connectors[0]}
+                onClick={() => {
+                  if (connectors[0]) {
+                    connect.mutate({ connector: connectors[0] });
+                  }
+                }}
+              >
+                {connect.isPending
+                  ? "Connecting…"
+                  : "Connect your wallet to X Layer testnet"}
+              </button>
+            )}
           </li>
           <li className="app-step">
             <span className="app-step-num">2</span>
-            <span>Create a Vault and fund it with OKB</span>
+            <Link href="/app/vaults" className="app-step-link">
+              Create a Vault and fund it with OKB
+            </Link>
           </li>
           <li className="app-step">
             <span className="app-step-num">3</span>
-            <span>Create a Mandate to define agent authority</span>
+            <Link href="/app/mandates" className="app-step-link">
+              Create a Mandate and assign an agent
+            </Link>
           </li>
           <li className="app-step">
             <span className="app-step-num">4</span>
-            <span>Attach a demo agent to the Mandate</span>
+            <Link href="/app/execute" className="app-step-link">
+              Sign and execute an Action Plan
+            </Link>
           </li>
           <li className="app-step">
             <span className="app-step-num">5</span>
-            <span>Execute a transfer and observe the authority check</span>
+            <span>Observe the authority check</span>
           </li>
         </ol>
       </div>
