@@ -1,5 +1,8 @@
 export const chainId = 1952;
 
+export const demoAgent =
+  "0x648ac3f9297d59089b02a6091da6dd76902a785b" as `0x${string}`;
+
 export const addresses = {
   grantline: "0x47595f11570e97acf96fe9f7f9a02dd91488a4a0" as `0x${string}`,
   mandateRegistry:
@@ -88,6 +91,104 @@ export const grantlineAbi = [
       { name: "implementation", type: "address", indexed: false },
       { name: "version", type: "uint64", indexed: false },
     ],
+  },
+  {
+    name: "createMandate",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "vault", type: "address" },
+      { name: "agent", type: "address" },
+      {
+        name: "rules",
+        type: "tuple",
+        components: [
+          { name: "canDelegate", type: "bool" },
+          { name: "minNativeAmount", type: "uint256" },
+          { name: "maxNativeAmount", type: "uint256" },
+          { name: "escalateNativeAmount", type: "bool" },
+          { name: "minNativeUsd", type: "uint256" },
+          { name: "maxNativeUsd", type: "uint256" },
+          { name: "escalateNativeUsd", type: "bool" },
+        ],
+      },
+      {
+        name: "preflightRules",
+        type: "tuple",
+        components: [
+          { name: "minNativeBalance", type: "uint256" },
+          { name: "escalateNativeBalance", type: "bool" },
+          { name: "minNativeUsdBalance", type: "uint256" },
+          { name: "escalateNativeUsdBalance", type: "bool" },
+        ],
+      },
+      { name: "validAfter", type: "uint64" },
+      { name: "validUntil", type: "uint64" },
+    ],
+    outputs: [{ name: "mandateId", type: "uint256" }],
+  },
+  {
+    name: "getMandate",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "mandateId", type: "uint256" }],
+    outputs: [
+      { name: "id", type: "uint256" },
+      { name: "controller", type: "address" },
+      { name: "vault", type: "address" },
+      { name: "agent", type: "address" },
+      { name: "parentMandateId", type: "uint256" },
+      { name: "delegationDepth", type: "uint8" },
+      { name: "status", type: "uint8" },
+      {
+        name: "rules",
+        type: "tuple",
+        components: [
+          { name: "canDelegate", type: "bool" },
+          { name: "minNativeAmount", type: "uint256" },
+          { name: "maxNativeAmount", type: "uint256" },
+          { name: "escalateNativeAmount", type: "bool" },
+          { name: "minNativeUsd", type: "uint256" },
+          { name: "maxNativeUsd", type: "uint256" },
+          { name: "escalateNativeUsd", type: "bool" },
+        ],
+      },
+      {
+        name: "preflightRules",
+        type: "tuple",
+        components: [
+          { name: "minNativeBalance", type: "uint256" },
+          { name: "escalateNativeBalance", type: "bool" },
+          { name: "minNativeUsdBalance", type: "uint256" },
+          { name: "escalateNativeUsdBalance", type: "bool" },
+        ],
+      },
+      { name: "validAfter", type: "uint64" },
+      { name: "validUntil", type: "uint64" },
+      { name: "createdAt", type: "uint64" },
+      { name: "revokedAt", type: "uint64" },
+    ],
+  },
+  {
+    name: "pauseMandate",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "mandateId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "unpauseMandate",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "mandateId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "revokeMandate",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "mandateId", type: "uint256" }],
+    outputs: [],
   },
 ] as const;
 

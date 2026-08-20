@@ -524,6 +524,16 @@
     color: #5a5856;
 }
 
+select.app-form-input {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 8l3-3.5' fill='none' stroke='%239a9896' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+    cursor: pointer;
+}
+
 /* ── Tabs ──────────────────────────────────────── */
 
 .app-tabs {
@@ -579,6 +589,8 @@
     padding: 24px;
     width: 100%;
     max-width: 400px;
+    max-height: 90dvh;
+    overflow-y: auto;
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 
@@ -587,6 +599,30 @@
     gap: 8px;
     justify-content: flex-end;
     margin-top: 24px;
+}
+
+.app-modal-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius, 6px);
+    border: none;
+    background: rgba(255, 255, 255, 0.06);
+    color: #9a9896;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+        background 0.15s,
+        color 0.15s;
+    flex-shrink: 0;
+}
+
+.app-modal-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text, #e8e6e3);
 }
 
 /* ── Responsive ────────────────────────────────── */

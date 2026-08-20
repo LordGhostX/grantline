@@ -341,16 +341,18 @@ export default function AppVaults() {
 
       {isConnected && !isLoading && vaults.length > 0 && (
         <div className="app-card-grid">
-          {vaults.map((v) => (
-            <VaultCard
-              key={v.address}
-              vault={v}
-              onFund={setFundTarget}
-              onWithdraw={setWithdrawTarget}
-              onRefetch={refetch}
-              switchChain={switchChain}
-            />
-          ))}
+          {[...vaults]
+            .sort((a, b) => b.index - a.index)
+            .map((v) => (
+              <VaultCard
+                key={v.address}
+                vault={v}
+                onFund={setFundTarget}
+                onWithdraw={setWithdrawTarget}
+                onRefetch={refetch}
+                switchChain={switchChain}
+              />
+            ))}
         </div>
       )}
 
@@ -361,7 +363,23 @@ export default function AppVaults() {
           onClick={() => setShowCreate(false)}
         >
           <div className="app-modal" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>Create Vault</h3>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                marginBottom: 8,
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: 16 }}>Create Vault</h3>
+              <button
+                type="button"
+                className="app-modal-close"
+                onClick={() => setShowCreate(false)}
+              >
+                &times;
+              </button>
+            </div>
             <p style={{ margin: 0, fontSize: 14, color: "#9a9896" }}>
               This will deploy a new Vault contract under your control.
             </p>
@@ -406,9 +424,28 @@ export default function AppVaults() {
           }}
         >
           <div className="app-modal" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>
-              Fund Vault #{fundTarget.index}
-            </h3>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                marginBottom: 8,
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: 16 }}>
+                Fund Vault #{fundTarget.index}
+              </h3>
+              <button
+                type="button"
+                className="app-modal-close"
+                onClick={() => {
+                  setFundTarget(null);
+                  setFundAmount("");
+                }}
+              >
+                &times;
+              </button>
+            </div>
             <p
               style={{
                 margin: 0,
@@ -489,9 +526,28 @@ export default function AppVaults() {
           }}
         >
           <div className="app-modal" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>
-              Withdraw from Vault #{withdrawTarget.index}
-            </h3>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                marginBottom: 8,
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: 16 }}>
+                Withdraw from Vault #{withdrawTarget.index}
+              </h3>
+              <button
+                type="button"
+                className="app-modal-close"
+                onClick={() => {
+                  setWithdrawTarget(null);
+                  setWithdrawAmount("");
+                }}
+              >
+                &times;
+              </button>
+            </div>
             <p
               style={{
                 margin: 0,

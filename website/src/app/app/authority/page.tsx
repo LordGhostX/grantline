@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { demoAgent } from "@/lib/contracts";
 
 export default function AppAuthority() {
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState<string>(demoAgent);
 
   return (
     <>
@@ -36,6 +37,10 @@ export default function AppAuthority() {
               Look up
             </button>
           </div>
+          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#5a5856" }}>
+            Demo agent pre-filled. Look up its authority after creating a
+            mandate for it.
+          </p>
         </div>
       </div>
 
@@ -52,9 +57,7 @@ export default function AppAuthority() {
       </div>
 
       <div className="app-card" style={{ marginBottom: 24 }}>
-        <h3 style={{ margin: "0 0 16px", fontSize: 16 }}>
-          Delegation tree
-        </h3>
+        <h3 style={{ margin: "0 0 16px", fontSize: 16 }}>Delegation tree</h3>
         <div className="app-empty" style={{ padding: 32 }}>
           <p style={{ margin: 0, fontSize: 14 }}>
             Shows the parent-to-child mandate lineage and how authority narrows
@@ -64,9 +67,7 @@ export default function AppAuthority() {
       </div>
 
       <div className="app-card">
-        <h3 style={{ margin: "0 0 16px", fontSize: 16 }}>
-          Preflight rules
-        </h3>
+        <h3 style={{ margin: "0 0 16px", fontSize: 16 }}>Preflight rules</h3>
         <div className="app-empty" style={{ padding: 32 }}>
           <p style={{ margin: 0, fontSize: 14 }}>
             Displays balance checks, native-USD reserve floors, and other
