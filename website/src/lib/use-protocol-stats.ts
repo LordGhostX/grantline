@@ -1,28 +1,27 @@
 "use client";
 
 import { useReadContracts } from "wagmi";
-import { addresses, grantlineAbi } from "./contracts";
+import {
+  addresses,
+  chainId,
+  grantlineAbi,
+  mandateRegistryAbi,
+} from "./contracts";
 
 export function useProtocolStats() {
-  const { data, isLoading } = useReadContracts({
+  const { data, isLoading, isError } = useReadContracts({
     contracts: [
       {
         address: addresses.grantline,
         abi: grantlineAbi,
         functionName: "vaultCount",
+        chainId,
       },
       {
         address: addresses.mandateRegistry,
-        abi: [
-          {
-            name: "mandateCount",
-            type: "function",
-            stateMutability: "view",
-            inputs: [],
-            outputs: [{ type: "uint256" }],
-          },
-        ] as const,
+        abi: mandateRegistryAbi,
         functionName: "mandateCount",
+        chainId,
       },
     ],
   });
@@ -31,5 +30,8 @@ export function useProtocolStats() {
     vaults: Number((data?.[0]?.result as bigint) ?? BigInt(0)),
     mandates: Number((data?.[1]?.result as bigint) ?? BigInt(0)),
     isLoading,
+    error: isError
+      ? "Could not load protocol totals from X Layer Testnet."
+      : null,
   };
 }

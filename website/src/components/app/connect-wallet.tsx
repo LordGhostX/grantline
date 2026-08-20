@@ -9,28 +9,34 @@ import {
   useSwitchChain,
 } from "wagmi";
 import { chainId } from "@/lib/contracts";
+import { formatError, truncateAddress } from "@/lib/app-utils";
 
 export function ConnectWallet() {
-  const { address, isConnected, chain } = useConnection();
+  const { address, isConnected, chainId: connectedChainId } = useConnection();
 
   const connect = useConnect();
   const connectors = useConnectors();
   const disconnect = useDisconnect();
-  const { switchChain } = useSwitchChain();
+  const {
+    mutateAsync: switchChainAsync,
+    isPending: isSwitching,
+    error: switchError,
+  } = useSwitchChain();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const wrongChain = isConnected && chain && chain.id !== chainId;
+  const wrongChain = isConnected && connectedChainId !== chainId;
 
-  const switchToXLayer = useCallback(() => {
-    switchChain({ chainId });
-  }, [switchChain]);
-
-  useEffect(() => {
-    if (wrongChain) switchToXLayer();
-  }, [wrongChain, switchToXLayer]);
+  const switchToXLayer = useCallback(async () => {
+    try {
+      await switchChainAsync({ chainId });
+    } catch {
+      // The mutation error is rendered below, so a rejected wallet request
+      // does not create an unhandled promise rejection.
+    }
+  }, [switchChainAsync]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -63,9 +69,13 @@ export function ConnectWallet() {
 
   const handleCopy = useCallback(() => {
     if (!address) return;
-    navigator.clipboard.writeText(address);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    void navigator.clipboard
+      .writeText(address)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => setCopied(false));
   }, [address]);
 
   if (isConnected && address) {
@@ -75,28 +85,38 @@ export function ConnectWallet() {
           type="button"
           className="app-connect connected"
           onClick={() => setMenuOpen((open) => !open)}
+          aria-expanded={menuOpen}
+          aria-haspopup="dialog"
         >
-          <span className="app-connect-dot" />
-          {address.slice(0, 6)}…{address.slice(-4)}
+          {truncateAddress(address)}
         </button>
 
         {menuOpen && (
           <div className="app-connect-popover">
-            <span
+            <button
+              type="button"
               className="app-connect-address"
-              style={{ cursor: "pointer" }}
               onClick={handleCopy}
+              title="Copy wallet address"
             >
               {copied ? "Copied!" : address}
-            </span>
+            </button>
             {wrongChain && (
               <button
                 type="button"
                 className="app-connect-disconnect"
-                onClick={switchToXLayer}
+                onClick={() => void switchToXLayer()}
+                disabled={isSwitching}
               >
-                Switch to X Layer Testnet
+                {isSwitching
+                  ? "Switching network…"
+                  : "Switch to X Layer Testnet"}
               </button>
+            )}
+            {switchError && (
+              <span className="app-connect-error">
+                {formatError(switchError)}
+              </span>
             )}
             <button
               type="button"
@@ -129,11 +149,7 @@ export function ConnectWallet() {
       </button>
 
       {connect.error && (
-        <span className="app-connect-error">
-          {"shortMessage" in connect.error
-            ? String(connect.error.shortMessage)
-            : connect.error.message}
-        </span>
+        <span className="app-connect-error">{formatError(connect.error)}</span>
       )}
     </div>
   );

@@ -1,244 +1,184 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
+import { useConnection } from "wagmi";
+import type { Address } from "viem";
+import { AppModal } from "@/components/app/app-modal";
+import { CopyAddress } from "@/components/app/copy-address";
+import GrantlineMark from "@/components/grantline-mark";
+import { TransactionStatus } from "@/components/app/transaction-status";
+import { addresses, demoAgent, grantlineAbi } from "@/lib/contracts";
 import {
-  useAccount,
-  useWriteContract,
-  useWaitForTransactionReceipt,
-  useSwitchChain,
-} from "wagmi";
-import { parseEther } from "viem";
-import type { Hex } from "viem";
-import { addresses, grantlineAbi, chainId, demoAgent } from "@/lib/contracts";
+  formatDate,
+  formatError,
+  formatNative,
+  parseAddress,
+  parseDateInput,
+  parseOptionalNativeAmount,
+} from "@/lib/app-utils";
+import { useAppTransaction } from "@/lib/use-app-transaction";
 import {
-  type MandateData,
-  formatOkb,
   getMandateStatusLabel,
-  truncateHex,
+  type MandateData,
   useMandates,
 } from "@/lib/use-mandates";
 import { useVaults } from "@/lib/use-vaults";
 
-function formatError(err: unknown): string {
-  if (!err) return "";
-  if (typeof err === "object" && err !== null && "shortMessage" in err) {
-    return String((err as { shortMessage: string }).shortMessage);
-  }
-  if (err instanceof Error) return err.message;
-  return String(err);
+function statusClass(status: number): string {
+  if (status === 0) return "app-tag-active";
+  if (status === 1) return "app-tag-paused";
+  return "app-tag-revoked";
+}
+
+function limitLabel(value: bigint, suffix = " OKB"): string {
+  return value > 0n ? `${formatNative(value)}${suffix}` : "None";
 }
 
 function MandateCard({
   mandate,
   onRefetch,
   onRevoke,
-  switchChain,
 }: {
   mandate: MandateData;
-  onRefetch: () => void;
-  onRevoke: (m: MandateData) => void;
-  switchChain: ReturnType<typeof useSwitchChain>["switchChain"];
+  onRefetch: () => Promise<unknown>;
+  onRevoke: (mandate: MandateData) => void;
 }) {
-  const { writeContract, data: txHash, isPending } = useWriteContract();
-  const { isLoading: txLoading } = useWaitForTransactionReceipt({
-    hash: txHash,
-  });
-  const [pauseError, setPauseError] = useState<string | null>(null);
-
-  const [vaultCopied, setVaultCopied] = useState(false);
-  const [agentCopied, setAgentCopied] = useState(false);
-
-  function copyToClipboard(text: string, which: "vault" | "agent") {
-    navigator.clipboard.writeText(text);
-    if (which === "vault") {
-      setVaultCopied(true);
-      setTimeout(() => setVaultCopied(false), 1500);
-    } else {
-      setAgentCopied(true);
-      setTimeout(() => setAgentCopied(false), 1500);
-    }
-  }
+  const transaction = useAppTransaction();
+  const [actionError, setActionError] = useState<string | null>(null);
+  const hasActions = mandate.status !== 2;
 
   const handlePauseToggle = useCallback(async () => {
-    setPauseError(null);
+    setActionError(null);
+
     try {
-      await switchChain({ chainId });
-      const fn = mandate.status === 0 ? "pauseMandate" : "unpauseMandate";
-      writeContract(
-        {
-          address: addresses.grantline,
-          abi: grantlineAbi,
-          functionName: fn,
-          args: [mandate.id],
-          chainId,
-        },
-        {
-          onSuccess: () => {
-            setTimeout(() => onRefetch(), 1500);
-          },
-          onError: (err) => {
-            setPauseError(formatError(err));
-          },
-        },
-      );
-    } catch (err) {
-      setPauseError(formatError(err));
+      await transaction.submit({
+        address: addresses.grantline,
+        abi: grantlineAbi,
+        functionName: mandate.status === 0 ? "pauseMandate" : "unpauseMandate",
+        args: [mandate.id],
+      });
+      await onRefetch();
+    } catch (error) {
+      setActionError(formatError(error));
     }
-  }, [mandate.id, mandate.status, writeContract, onRefetch, switchChain]);
+  }, [mandate.id, mandate.status, onRefetch, transaction]);
 
   return (
-    <div className="app-card">
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: 16,
-        }}
-      >
+    <article className="app-card app-mandate-card">
+      <div className="app-card-heading">
         <div>
-          <div style={{ fontSize: 13, color: "#9a9896", marginBottom: 4 }}>
-            Mandate #{mandate.id.toString()}
-          </div>
-          <div
-            className="app-code"
-            style={{ cursor: "pointer" }}
-            title={mandate.vault}
-            onClick={() => copyToClipboard(mandate.vault, "vault")}
-          >
-            {vaultCopied ? "Copied!" : truncateHex(mandate.vault)}
-          </div>
+          <span className="app-eyebrow">Mandate #{mandate.id.toString()}</span>
+          <CopyAddress address={mandate.vault} label="Vault address" />
         </div>
-        <span
-          className={
-            mandate.status === 0
-              ? "app-tag app-tag-active"
-              : mandate.status === 1
-                ? "app-tag app-tag-paused"
-                : "app-tag app-tag-revoked"
-          }
-        >
+        <span className={`app-tag ${statusClass(mandate.status)}`}>
           {getMandateStatusLabel(mandate.status)}
         </span>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 13, color: "#9a9896", marginBottom: 4 }}>
-          Agent
-        </div>
-        <div
-          className="app-code"
-          style={{ cursor: "pointer", width: "fit-content" }}
-          title={mandate.agent}
-          onClick={() => copyToClipboard(mandate.agent, "agent")}
-        >
-          {agentCopied ? "Copied!" : truncateHex(mandate.agent)}
-        </div>
+      <div className="app-address-row">
+        <span className="app-detail-label">Agent</span>
+        <CopyAddress address={mandate.agent} label="Agent address" />
       </div>
+
+      <dl className="app-detail-grid">
+        <div>
+          <dt>Native amount floor</dt>
+          <dd>{limitLabel(mandate.rules.minNativeAmount)}</dd>
+        </div>
+        <div>
+          <dt>Native amount cap</dt>
+          <dd>{limitLabel(mandate.rules.maxNativeAmount)}</dd>
+        </div>
+        <div>
+          <dt>Vault reserve floor</dt>
+          <dd>{limitLabel(mandate.preflightRules.minNativeBalance)}</dd>
+        </div>
+        <div>
+          <dt>Delegation</dt>
+          <dd>{mandate.rules.canDelegate ? "Allowed" : "Disabled"}</dd>
+        </div>
+      </dl>
 
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 12,
-          marginBottom: 16,
-        }}
+        className={`app-mandate-validity${
+          hasActions ? "" : " app-mandate-validity-compact"
+        }`}
       >
-        <div>
-          <div style={{ fontSize: 13, color: "#9a9896", marginBottom: 2 }}>
-            Max native
-          </div>
-          <div style={{ fontSize: 14 }}>
-            {mandate.rules.maxNativeAmount > 0n
-              ? `${formatOkb(mandate.rules.maxNativeAmount)} OKB`
-              : "No cap"}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: 13, color: "#9a9896", marginBottom: 2 }}>
-            Delegate
-          </div>
-          <div style={{ fontSize: 14 }}>
-            {mandate.rules.canDelegate ? "Allowed" : "Denied"}
-          </div>
-        </div>
+        <span className="app-detail-label">Validity</span>
+        <span>
+          {mandate.validAfter === 0n && mandate.validUntil === 0n
+            ? "Any time"
+            : `${formatDate(mandate.validAfter)} – ${formatDate(mandate.validUntil)}`}
+        </span>
       </div>
 
-      {(mandate.validAfter > 0n || mandate.validUntil > 0n) && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 13, color: "#9a9896", marginBottom: 2 }}>
-            Valid
-          </div>
-          <div style={{ fontSize: 14 }}>
-            {mandate.validAfter > 0n
-              ? new Date(Number(mandate.validAfter) * 1000).toLocaleDateString()
-              : "Any"}
-            {" \u2013 "}
-            {mandate.validUntil > 0n
-              ? new Date(Number(mandate.validUntil) * 1000).toLocaleDateString()
-              : "Any"}
-          </div>
-        </div>
-      )}
-
-      {pauseError && (
-        <div
-          style={{
-            marginBottom: 8,
-            fontSize: 12,
-            color: "var(--deny, #d97878)",
-          }}
-        >
-          {pauseError}
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: 8 }}>
-        {(mandate.status === 0 || mandate.status === 1) && (
+      {hasActions && (
+        <div className="app-card-actions">
+          {(mandate.status === 0 || mandate.status === 1) && (
+            <button
+              type="button"
+              className="app-btn app-btn-quiet"
+              onClick={handlePauseToggle}
+              disabled={transaction.isPending}
+            >
+              {transaction.isPending
+                ? "Confirming…"
+                : mandate.status === 0
+                  ? "Pause"
+                  : "Unpause"}
+            </button>
+          )}
           <button
             type="button"
-            className="app-btn app-btn-quiet"
-            style={{ flex: 1 }}
-            disabled={isPending || txLoading}
-            onClick={handlePauseToggle}
-          >
-            {isPending || txLoading
-              ? "Waiting\u2026"
-              : mandate.status === 0
-                ? "Pause"
-                : "Unpause"}
-          </button>
-        )}
-        {mandate.status !== 2 && (
-          <button
-            type="button"
-            className="app-btn app-btn-quiet"
-            style={{
-              flex: 1,
-              color: "var(--deny, #d97878)",
-              borderColor: "rgba(217, 119, 87, 0.3)",
-            }}
+            className="app-btn app-btn-danger"
             onClick={() => onRevoke(mandate)}
+            disabled={transaction.isPending}
           >
             Revoke
           </button>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+
+      <TransactionStatus
+        error={actionError ?? transaction.error}
+        isPending={transaction.isPending}
+        message="Confirm the Mandate change in your wallet."
+      />
+    </article>
   );
 }
 
+function emptyRules() {
+  return {
+    canDelegate: false,
+    minNativeAmount: 0n,
+    maxNativeAmount: 0n,
+    escalateNativeAmount: false,
+    minNativeUsd: 0n,
+    maxNativeUsd: 0n,
+    escalateNativeUsd: false,
+  };
+}
+
+function emptyPreflightRules() {
+  return {
+    minNativeBalance: 0n,
+    escalateNativeBalance: false,
+    minNativeUsdBalance: 0n,
+    escalateNativeUsdBalance: false,
+  };
+}
+
 export default function MandatesPage() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected } = useConnection();
   const { mandates, isLoading, error, refetch } = useMandates();
-  const { vaults } = useVaults();
-  const { writeContract } = useWriteContract();
-  const { switchChain } = useSwitchChain();
+  const { vaults, error: vaultError } = useVaults();
+  const createTransaction = useAppTransaction();
+  const revokeTransaction = useAppTransaction();
 
   const [showCreate, setShowCreate] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<MandateData | null>(null);
-
-  const [createVault, setCreateVault] = useState<Hex>("0x");
+  const [createVault, setCreateVault] = useState<Address | "">("");
   const [createAgent, setCreateAgent] = useState<string>(demoAgent);
   const [createMinNative, setCreateMinNative] = useState("");
   const [createMaxNative, setCreateMaxNative] = useState("");
@@ -249,227 +189,233 @@ export default function MandatesPage() {
   const [createValidAfter, setCreateValidAfter] = useState("");
   const [createValidUntil, setCreateValidUntil] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
-
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const connectedVaults = vaults
     .filter(
-      (v) => v.controller.toLowerCase() === address?.toLowerCase() && !v.paused,
+      (vault) =>
+        vault.controller.toLowerCase() === address?.toLowerCase() &&
+        !vault.paused,
     )
     .sort((a, b) => b.index - a.index);
+  const selectedCreateVault = createVault || connectedVaults[0]?.address || "";
 
-  const selectedCreateVault =
-    createVault !== "0x"
-      ? createVault
-      : connectedVaults.length > 0
-        ? connectedVaults[0].address
-        : "0x";
+  const resetCreateForm = useCallback(() => {
+    setCreateVault("");
+    setCreateAgent(demoAgent);
+    setCreateMinNative("");
+    setCreateMaxNative("");
+    setCreateEscalateNative(false);
+    setCreateCanDelegate(false);
+    setCreateMinBalance("");
+    setCreateEscalateBalance(false);
+    setCreateValidAfter("");
+    setCreateValidUntil("");
+    setCreateError(null);
+  }, []);
+
+  const closeCreate = useCallback(() => {
+    if (createTransaction.isPending) return;
+    setShowCreate(false);
+    resetCreateForm();
+  }, [createTransaction.isPending, resetCreateForm]);
+
+  const closeRevoke = useCallback(() => {
+    if (revokeTransaction.isPending) return;
+    setRevokeTarget(null);
+    setRevokeError(null);
+  }, [revokeTransaction.isPending]);
 
   async function handleCreate() {
-    if (!createAgent || selectedCreateVault === "0x") return;
     setCreateError(null);
-    try {
-      await switchChain({ chainId });
-      const minNative = createMinNative ? parseEther(createMinNative) : 0n;
-      const maxNative = createMaxNative ? parseEther(createMaxNative) : 0n;
-      const minBal = createMinBalance ? parseEther(createMinBalance) : 0n;
-      const after = createValidAfter
-        ? BigInt(Math.floor(new Date(createValidAfter).getTime() / 1000))
-        : 0n;
-      const until = createValidUntil
-        ? BigInt(Math.floor(new Date(createValidUntil).getTime() / 1000))
-        : 0n;
 
-      writeContract(
-        {
-          address: addresses.grantline,
-          abi: grantlineAbi,
-          functionName: "createMandate",
-          args: [
-            selectedCreateVault,
-            createAgent as Hex,
-            {
-              canDelegate: createCanDelegate,
-              minNativeAmount: minNative,
-              maxNativeAmount: maxNative,
-              escalateNativeAmount: createEscalateNative,
-              minNativeUsd: 0n,
-              maxNativeUsd: 0n,
-              escalateNativeUsd: false,
-            },
-            {
-              minNativeBalance: minBal,
-              escalateNativeBalance: createEscalateBalance,
-              minNativeUsdBalance: 0n,
-              escalateNativeUsdBalance: false,
-            },
-            after,
-            until,
-          ],
-          chainId,
-        },
-        {
-          onSuccess: () => {
-            setShowCreate(false);
-            setCreateAgent(demoAgent);
-            setCreateMinNative("");
-            setCreateMaxNative("");
-            setCreateEscalateNative(false);
-            setCreateCanDelegate(false);
-            setCreateMinBalance("");
-            setCreateEscalateBalance(false);
-            setCreateValidAfter("");
-            setCreateValidUntil("");
-            setTimeout(() => refetch(), 1500);
+    try {
+      if (!selectedCreateVault)
+        throw new Error("Select an active Vault first.");
+      const agent = parseAddress(createAgent, "Agent address");
+      const minNativeAmount = parseOptionalNativeAmount(createMinNative);
+      const maxNativeAmount = parseOptionalNativeAmount(createMaxNative);
+      const minNativeBalance = parseOptionalNativeAmount(createMinBalance);
+      const validAfter = parseDateInput(createValidAfter, "Valid after");
+      const validUntil = parseDateInput(createValidUntil, "Valid until");
+
+      if (
+        minNativeAmount > 0n &&
+        maxNativeAmount > 0n &&
+        minNativeAmount > maxNativeAmount
+      ) {
+        throw new Error("The native amount floor cannot exceed the cap.");
+      }
+      if (validAfter > 0n && validUntil > 0n && validUntil < validAfter) {
+        throw new Error("Valid until must be after valid after.");
+      }
+
+      await createTransaction.submit({
+        address: addresses.grantline,
+        abi: grantlineAbi,
+        functionName: "createMandate",
+        args: [
+          selectedCreateVault as Address,
+          agent,
+          {
+            ...emptyRules(),
+            canDelegate: createCanDelegate,
+            minNativeAmount,
+            maxNativeAmount,
+            escalateNativeAmount: createEscalateNative,
           },
-          onError: (err) => {
-            setCreateError(formatError(err));
+          {
+            ...emptyPreflightRules(),
+            minNativeBalance,
+            escalateNativeBalance: createEscalateBalance,
           },
-        },
-      );
-    } catch (err) {
-      setCreateError(formatError(err));
+          validAfter,
+          validUntil,
+        ],
+      });
+      setShowCreate(false);
+      resetCreateForm();
+      await refetch();
+    } catch (error) {
+      setCreateError(formatError(error));
     }
   }
 
   const handleRevoke = useCallback(async () => {
     if (!revokeTarget) return;
     setRevokeError(null);
+
     try {
-      await switchChain({ chainId });
-      writeContract(
-        {
-          address: addresses.grantline,
-          abi: grantlineAbi,
-          functionName: "revokeMandate",
-          args: [revokeTarget.id],
-          chainId,
-        },
-        {
-          onSuccess: () => {
-            setRevokeTarget(null);
-            setTimeout(() => refetch(), 1500);
-          },
-          onError: (err) => {
-            setRevokeError(formatError(err));
-          },
-        },
-      );
-    } catch (err) {
-      setRevokeError(formatError(err));
+      await revokeTransaction.submit({
+        address: addresses.grantline,
+        abi: grantlineAbi,
+        functionName: "revokeMandate",
+        args: [revokeTarget.id],
+      });
+      closeRevoke();
+      await refetch();
+    } catch (error) {
+      setRevokeError(formatError(error));
     }
-  }, [revokeTarget, writeContract, refetch, switchChain]);
+  }, [closeRevoke, refetch, revokeTarget, revokeTransaction]);
 
   if (!isConnected) {
     return (
-      <div className="app-empty">
-        <div className="app-empty-icon">&#9878;</div>
-        <h3>Connect your wallet</h3>
-        <p>Connect your wallet to manage mandates.</p>
-      </div>
+      <>
+        <div className="app-page-header">
+          <h1>Mandates</h1>
+          <p>
+            Create and manage Mandates that give agents bounded authority over
+            your Vaults.
+          </p>
+        </div>
+        <div className="app-empty app-card">
+          <GrantlineMark className="app-empty-icon" />
+          <h2>Connect your wallet</h2>
+          <p>Connect your wallet to manage Mandates for your Vaults.</p>
+        </div>
+      </>
     );
   }
 
   return (
     <>
-      <div className="app-page-header">
-        <h1>Mandates</h1>
-        <p>
-          {mandates.length} mandate{mandates.length !== 1 ? "s" : ""} assigned
-          to you
-        </p>
-      </div>
-
-      <div style={{ marginBottom: 24 }}>
+      <div className="app-page-header app-page-header-row">
+        <div>
+          <h1>Mandates</h1>
+          <p>
+            {mandates.length} Mandate{mandates.length === 1 ? "" : "s"} managed
+            by your wallet.
+          </p>
+        </div>
         <button
           type="button"
           className="app-btn app-btn-primary"
-          onClick={() => setShowCreate(true)}
-          disabled={connectedVaults.length === 0}
+          onClick={() => {
+            setCreateError(null);
+            setShowCreate(true);
+          }}
+          disabled={connectedVaults.length === 0 || createTransaction.isPending}
         >
           Create Mandate
         </button>
       </div>
 
       {error && (
-        <div
-          style={{
-            padding: "12px 16px",
-            marginBottom: 16,
-            borderRadius: "var(--radius, 6px)",
-            background: "rgba(217, 119, 87, 0.1)",
-            border: "1px solid rgba(217, 119, 87, 0.2)",
-            fontSize: 14,
-            color: "var(--deny, #d97757)",
-          }}
-        >
+        <div className="app-alert app-alert-error" role="alert">
           {error}
+        </div>
+      )}
+      {!error && vaultError && (
+        <div className="app-alert app-alert-error" role="alert">
+          {vaultError}
         </div>
       )}
 
       {isLoading && (
-        <div className="app-empty">
-          <h3>Loading mandates&#8230;</h3>
+        <div className="app-empty app-card">
+          <h2>Loading Mandates…</h2>
+          <p>Reading your Mandates from X Layer Testnet.</p>
         </div>
       )}
 
-      {!isLoading && mandates.length === 0 && !error && (
-        <div className="app-empty">
-          <div className="app-empty-icon">&#9878;</div>
-          <h3>No mandates assigned</h3>
-          <p>No mandates have been assigned to your wallet yet.</p>
-          {connectedVaults.length === 0 && (
-            <p style={{ marginTop: 8, fontSize: 13, color: "#5a5856" }}>
-              You need at least one active vault to create a mandate.
+      {!isLoading && !error && mandates.length === 0 && (
+        <div className="app-empty app-card">
+          <GrantlineMark className="app-empty-icon" />
+          <h2>No Mandates yet</h2>
+          <p>
+            Create a Mandate to give an agent bounded authority over one of your
+            Vaults.
+          </p>
+          {connectedVaults.length === 0 ? (
+            <p className="app-form-hint">
+              Create and fund an active Vault before creating a Mandate.
             </p>
+          ) : (
+            <button
+              type="button"
+              className="app-btn app-btn-primary"
+              onClick={() => setShowCreate(true)}
+            >
+              Create your first Mandate
+            </button>
           )}
         </div>
       )}
 
-      {!isLoading && mandates.length > 0 && (
+      {!isLoading && !error && mandates.length > 0 && (
         <div className="app-card-grid">
           {[...mandates]
-            .sort((a, b) => Number(b.id) - Number(a.id))
-            .map((m) => (
+            .sort((a, b) => Number(b.id - a.id))
+            .map((mandate) => (
               <MandateCard
-                key={m.id.toString()}
-                mandate={m}
+                key={mandate.id.toString()}
+                mandate={mandate}
                 onRefetch={refetch}
-                onRevoke={setRevokeTarget}
-                switchChain={switchChain}
+                onRevoke={(target) => {
+                  setRevokeError(null);
+                  setRevokeTarget(target);
+                }}
               />
             ))}
         </div>
       )}
 
       {showCreate && (
-        <div
-          className="app-modal-backdrop"
-          onClick={() => setShowCreate(false)}
+        <AppModal
+          title="Create Mandate"
+          description="Authorise an agent to act within a bounded Vault policy."
+          onClose={closeCreate}
+          closeDisabled={createTransaction.isPending}
         >
-          <div className="app-modal" onClick={(e) => e.stopPropagation()}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                marginBottom: 8,
-              }}
-            >
-              <h3 style={{ margin: 0, fontSize: 16 }}>Create Mandate</h3>
-              <button
-                type="button"
-                className="app-modal-close"
-                onClick={() => setShowCreate(false)}
-              >
-                &times;
-              </button>
-            </div>
-            <p style={{ margin: 0, fontSize: 14, color: "#9a9896" }}>
-              Authorise an agent to act under the chosen vault.
-            </p>
-
-            <div className="app-form-group" style={{ marginTop: 20 }}>
+          <form
+            className="app-modal-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleCreate();
+            }}
+          >
+            <div className="app-form-group">
               <label className="app-form-label" htmlFor="mandate-vault">
                 Vault
               </label>
@@ -477,12 +423,14 @@ export default function MandatesPage() {
                 id="mandate-vault"
                 className="app-form-input"
                 value={selectedCreateVault}
-                onChange={(e) => setCreateVault(e.target.value as Hex)}
+                onChange={(event) =>
+                  setCreateVault(event.target.value as Address)
+                }
               >
-                {connectedVaults.map((v) => (
-                  <option key={v.address} value={v.address}>
-                    #{v.index} &#8211; {truncateHex(v.address)} (
-                    {formatOkb(v.nativeBalance)} OKB)
+                {connectedVaults.map((vault) => (
+                  <option key={vault.address} value={vault.address}>
+                    Vault #{vault.index} · {formatNative(vault.nativeBalance)}{" "}
+                    OKB
                   </option>
                 ))}
               </select>
@@ -496,221 +444,185 @@ export default function MandatesPage() {
                 id="mandate-agent"
                 className="app-form-input"
                 type="text"
-                placeholder="0x..."
+                inputMode="text"
+                autoComplete="off"
+                placeholder="0x…"
                 value={createAgent}
-                onChange={(e) => setCreateAgent(e.target.value)}
+                onChange={(event) => setCreateAgent(event.target.value)}
               />
-              <p style={{ margin: "4px 0 0", fontSize: 12, color: "#5a5856" }}>
-                Demo agent pre-filled. Create a mandate for it, then head to
-                Execute to test a full action plan.
+              <p className="app-form-hint">
+                The demo agent is pre-filled for the testnet walkthrough, but
+                you can replace it with any agent address you control.
               </p>
             </div>
 
-            <div className="app-form-group">
-              <label className="app-form-label" style={{ cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={createCanDelegate}
-                  onChange={(e) => setCreateCanDelegate(e.target.checked)}
-                  style={{ marginRight: 8 }}
-                />
-                Allow agent to delegate
-              </label>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 12,
-              }}
-            >
+            <div className="app-form-grid">
               <div className="app-form-group">
                 <label className="app-form-label" htmlFor="mandate-min-native">
-                  Min native amount (OKB)
+                  Native amount floor (OKB)
                 </label>
                 <input
                   id="mandate-min-native"
                   className="app-form-input"
-                  type="number"
-                  step="0.01"
-                  placeholder="0 = no floor"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="No floor"
                   value={createMinNative}
-                  onChange={(e) => setCreateMinNative(e.target.value)}
+                  onChange={(event) => setCreateMinNative(event.target.value)}
                 />
               </div>
               <div className="app-form-group">
                 <label className="app-form-label" htmlFor="mandate-max-native">
-                  Max native amount (OKB)
+                  Native amount cap (OKB)
                 </label>
                 <input
                   id="mandate-max-native"
                   className="app-form-input"
-                  type="number"
-                  step="0.01"
-                  placeholder="0 = no cap"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="No cap"
                   value={createMaxNative}
-                  onChange={(e) => setCreateMaxNative(e.target.value)}
+                  onChange={(event) => setCreateMaxNative(event.target.value)}
                 />
               </div>
             </div>
 
-            <div className="app-form-group">
-              <label className="app-form-label" style={{ cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={createEscalateNative}
-                  onChange={(e) => setCreateEscalateNative(e.target.checked)}
-                  style={{ marginRight: 8 }}
-                />
-                Escalate on native amount overrun
-              </label>
-            </div>
+            <label className="app-checkbox">
+              <input
+                type="checkbox"
+                checked={createEscalateNative}
+                onChange={(event) =>
+                  setCreateEscalateNative(event.target.checked)
+                }
+              />
+              Escalate native amount overruns when supported.
+            </label>
+
+            <label className="app-checkbox">
+              <input
+                type="checkbox"
+                checked={createCanDelegate}
+                onChange={(event) => setCreateCanDelegate(event.target.checked)}
+              />
+              Allow the agent to delegate narrower authority.
+            </label>
 
             <div className="app-form-group">
               <label className="app-form-label" htmlFor="mandate-min-balance">
-                Min vault balance reserve (OKB)
+                Minimum Vault reserve (OKB)
               </label>
               <input
                 id="mandate-min-balance"
                 className="app-form-input"
-                type="number"
-                step="0.01"
-                placeholder="0 = no floor"
+                type="text"
+                inputMode="decimal"
+                placeholder="No reserve floor"
                 value={createMinBalance}
-                onChange={(e) => setCreateMinBalance(e.target.value)}
+                onChange={(event) => setCreateMinBalance(event.target.value)}
               />
             </div>
 
-            <div className="app-form-group">
-              <label className="app-form-label" style={{ cursor: "pointer" }}>
+            <label className="app-checkbox">
+              <input
+                type="checkbox"
+                checked={createEscalateBalance}
+                onChange={(event) =>
+                  setCreateEscalateBalance(event.target.checked)
+                }
+              />
+              Escalate reserve breaches when supported.
+            </label>
+
+            <div className="app-form-grid">
+              <div className="app-form-group">
+                <label className="app-form-label" htmlFor="mandate-valid-after">
+                  Valid after
+                </label>
                 <input
-                  type="checkbox"
-                  checked={createEscalateBalance}
-                  onChange={(e) => setCreateEscalateBalance(e.target.checked)}
-                  style={{ marginRight: 8 }}
+                  id="mandate-valid-after"
+                  className="app-form-input"
+                  type="datetime-local"
+                  value={createValidAfter}
+                  onChange={(event) => setCreateValidAfter(event.target.value)}
                 />
-                Escalate on balance reserve breach
-              </label>
-            </div>
-
-            <div className="app-form-group">
-              <label className="app-form-label" htmlFor="mandate-valid-after">
-                Valid after (optional)
-              </label>
-              <input
-                id="mandate-valid-after"
-                className="app-form-input"
-                type="datetime-local"
-                value={createValidAfter}
-                onChange={(e) => setCreateValidAfter(e.target.value)}
-              />
-            </div>
-            <div className="app-form-group">
-              <label className="app-form-label" htmlFor="mandate-valid-until">
-                Valid until (optional)
-              </label>
-              <input
-                id="mandate-valid-until"
-                className="app-form-input"
-                type="datetime-local"
-                value={createValidUntil}
-                onChange={(e) => setCreateValidUntil(e.target.value)}
-              />
-            </div>
-
-            {createError && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--deny, #d97878)",
-                  marginBottom: 12,
-                }}
-              >
-                {createError}
               </div>
-            )}
+              <div className="app-form-group">
+                <label className="app-form-label" htmlFor="mandate-valid-until">
+                  Valid until
+                </label>
+                <input
+                  id="mandate-valid-until"
+                  className="app-form-input"
+                  type="datetime-local"
+                  value={createValidUntil}
+                  onChange={(event) => setCreateValidUntil(event.target.value)}
+                />
+              </div>
+            </div>
 
+            <TransactionStatus
+              error={createError ?? createTransaction.error}
+              isPending={createTransaction.isPending}
+              message="Confirm the Mandate creation in your wallet."
+            />
             <div className="app-modal-actions">
               <button
                 type="button"
                 className="app-btn app-btn-quiet"
-                onClick={() => setShowCreate(false)}
+                onClick={closeCreate}
+                disabled={createTransaction.isPending}
               >
                 Cancel
               </button>
               <button
-                type="button"
+                type="submit"
                 className="app-btn app-btn-primary"
-                onClick={handleCreate}
-                disabled={!createAgent || selectedCreateVault === "0x"}
+                disabled={createTransaction.isPending || !selectedCreateVault}
               >
-                Create Mandate
+                {createTransaction.isPending ? "Confirming…" : "Create Mandate"}
               </button>
             </div>
-          </div>
-        </div>
+          </form>
+        </AppModal>
       )}
 
       {revokeTarget && (
-        <div
-          className="app-modal-backdrop"
-          onClick={() => setRevokeTarget(null)}
+        <AppModal
+          title={`Revoke Mandate #${revokeTarget.id.toString()}`}
+          description="This permanently removes the Mandate’s authority and affects its delegated lineage."
+          onClose={closeRevoke}
+          closeDisabled={revokeTransaction.isPending}
         >
-          <div className="app-modal" onClick={(e) => e.stopPropagation()}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                marginBottom: 8,
-              }}
-            >
-              <h3 style={{ margin: 0, fontSize: 16 }}>
-                Revoke Mandate #{revokeTarget.id.toString()}
-              </h3>
-              <button
-                type="button"
-                className="app-modal-close"
-                onClick={() => setRevokeTarget(null)}
-              >
-                &times;
-              </button>
-            </div>
-            <p style={{ margin: 0, fontSize: 14, color: "#9a9896" }}>
-              This action is permanent. The agent will lose all authority under
-              this mandate and any delegated child mandates will be revoked.
+          <div className="app-modal-form app-revoke-form">
+            <p className="app-revoke-warning">
+              The agent will no longer be able to use this Mandate, and future
+              actions under its lineage will fail.
             </p>
-            {revokeError && (
-              <div
-                style={{
-                  marginTop: 12,
-                  fontSize: 12,
-                  color: "var(--deny, #d97878)",
-                }}
-              >
-                {revokeError}
-              </div>
-            )}
+            <TransactionStatus
+              error={revokeError ?? revokeTransaction.error}
+              isPending={revokeTransaction.isPending}
+              message="Confirm the revocation in your wallet."
+            />
             <div className="app-modal-actions">
               <button
                 type="button"
                 className="app-btn app-btn-quiet"
-                onClick={() => setRevokeTarget(null)}
+                onClick={closeRevoke}
+                disabled={revokeTransaction.isPending}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="app-btn app-btn-primary"
-                style={{ background: "var(--deny, #d97757)" }}
-                onClick={handleRevoke}
+                className="app-btn app-btn-danger"
+                onClick={() => void handleRevoke()}
+                disabled={revokeTransaction.isPending}
               >
-                Revoke Mandate
+                {revokeTransaction.isPending ? "Confirming…" : "Revoke Mandate"}
               </button>
             </div>
           </div>
-        </div>
+        </AppModal>
       )}
     </>
   );

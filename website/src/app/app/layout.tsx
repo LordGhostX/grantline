@@ -8,7 +8,8 @@ import { Sidebar } from "@/components/app/sidebar";
 import "./app.css";
 
 export const viewport: Viewport = {
-  maximumScale: 1,
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default async function AppLayout({ children }: { children: ReactNode }) {

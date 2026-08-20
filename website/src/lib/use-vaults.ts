@@ -1,8 +1,8 @@
 "use client";
 
-import { useAccount, usePublicClient } from "wagmi";
+import { useConnection, usePublicClient } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
-import { addresses, grantlineAbi } from "./contracts";
+import { addresses, chainId, grantlineAbi } from "./contracts";
 
 export type VaultInfo = {
   address: `0x${string}`;
@@ -17,15 +17,16 @@ export type VaultInfo = {
 };
 
 export function useVaults() {
-  const { address: connectedAddress } = useAccount();
-  const publicClient = usePublicClient();
+  const { address: connectedAddress } = useConnection();
+  const publicClient = usePublicClient({ chainId });
 
   const {
     data: vaults,
     isLoading,
+    error,
     refetch,
   } = useQuery({
-    queryKey: ["vaults", connectedAddress],
+    queryKey: ["vaults", chainId, connectedAddress],
     queryFn: async (): Promise<VaultInfo[]> => {
       if (!publicClient || !connectedAddress) return [];
 
@@ -82,6 +83,7 @@ export function useVaults() {
   return {
     vaults: vaults ?? [],
     isLoading,
+    error: error ? "Failed to load Vaults from X Layer Testnet." : null,
     refetch,
   };
 }

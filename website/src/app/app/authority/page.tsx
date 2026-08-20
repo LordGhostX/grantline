@@ -11,8 +11,8 @@ export default function AppAuthority() {
       <div className="app-page-header">
         <h1>Authority</h1>
         <p>
-          Inspect an agent&apos;s effective authority, delegation tree, and
-          Preflight rules.
+          Inspect an agent&apos;s effective authority, Preflight rules, and
+          delegation tree.
         </p>
       </div>
 
@@ -37,7 +37,7 @@ export default function AppAuthority() {
               Look up
             </button>
           </div>
-          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#5a5856" }}>
+          <p className="app-demo-agent-note">
             Demo agent pre-filled. Look up its authority after creating a
             mandate for it.
           </p>
@@ -56,22 +56,22 @@ export default function AppAuthority() {
         </div>
       </div>
 
-      <div className="app-card" style={{ marginBottom: 24 }}>
-        <h3 style={{ margin: "0 0 16px", fontSize: 16 }}>Delegation tree</h3>
-        <div className="app-empty" style={{ padding: 32 }}>
-          <p style={{ margin: 0, fontSize: 14 }}>
-            Shows the parent-to-child mandate lineage and how authority narrows
-            at each level.
-          </p>
-        </div>
-      </div>
-
       <div className="app-card">
         <h3 style={{ margin: "0 0 16px", fontSize: 16 }}>Preflight rules</h3>
         <div className="app-empty" style={{ padding: 32 }}>
           <p style={{ margin: 0, fontSize: 14 }}>
             Displays balance checks, native-USD reserve floors, and other
             pre-execution constraints that apply to this agent.
+          </p>
+        </div>
+      </div>
+
+      <div className="app-card" style={{ marginTop: 24 }}>
+        <h3 style={{ margin: "0 0 16px", fontSize: 16 }}>Delegation tree</h3>
+        <div className="app-empty" style={{ padding: 32 }}>
+          <p style={{ margin: 0, fontSize: 14 }}>
+            Shows the parent-to-child mandate lineage and how authority narrows
+            at each level.
           </p>
         </div>
       </div>

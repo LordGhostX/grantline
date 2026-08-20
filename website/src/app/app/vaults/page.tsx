@@ -1,482 +1,387 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
+import { useBalance, useConnection } from "wagmi";
+import type { Address } from "viem";
+import { AppModal } from "@/components/app/app-modal";
+import { CopyAddress } from "@/components/app/copy-address";
+import GrantlineMark from "@/components/grantline-mark";
+import { TransactionStatus } from "@/components/app/transaction-status";
+import { addresses, chainId, grantlineAbi } from "@/lib/contracts";
 import {
-  useAccount,
-  useWriteContract,
-  useWaitForTransactionReceipt,
-  useSwitchChain,
-  useBalance,
-} from "wagmi";
-import { parseEther } from "viem";
-import { addresses, grantlineAbi, chainId } from "@/lib/contracts";
+  formatError,
+  formatNativeBalance,
+  parseNativeAmount,
+} from "@/lib/app-utils";
+import { useAppTransaction } from "@/lib/use-app-transaction";
 import { useVaults, type VaultInfo } from "@/lib/use-vaults";
-
-function truncateAddress(addr: string) {
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-}
-
-function formatBalance(wei: bigint) {
-  const eth = Number(wei) / 1e18;
-  if (eth === 0) return "0 OKB";
-  if (eth < 0.001) return "<0.001 OKB";
-  return `${eth.toFixed(4)} OKB`;
-}
-
-function formatError(err: unknown): string {
-  if (!err) return "";
-  if (err instanceof Error) {
-    return "shortMessage" in err ? String(err.shortMessage) : err.message;
-  }
-  return String(err);
-}
 
 function VaultCard({
   vault,
+  onRefetch,
   onFund,
   onWithdraw,
-  onRefetch,
-  switchChain,
 }: {
   vault: VaultInfo;
+  onRefetch: () => Promise<unknown>;
   onFund: (vault: VaultInfo) => void;
   onWithdraw: (vault: VaultInfo) => void;
-  onRefetch: () => void;
-  switchChain: ReturnType<typeof useSwitchChain>["switchChain"];
 }) {
-  const { writeContract, data: txHash, isPending } = useWriteContract();
-  const { isLoading: txLoading } = useWaitForTransactionReceipt({
-    hash: txHash,
-  });
-  const [pauseError, setPauseError] = useState<string | null>(null);
+  const transaction = useAppTransaction();
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const handlePauseToggle = useCallback(async () => {
-    setPauseError(null);
+    setActionError(null);
+
     try {
-      await switchChain({ chainId });
-      const fn = vault.paused ? "unpauseVault" : "pauseVault";
-      writeContract(
-        {
-          address: addresses.grantline,
-          abi: grantlineAbi,
-          functionName: fn,
-          args: [vault.address],
-          chainId,
-        },
-        {
-          onSuccess: () => {
-            setTimeout(() => onRefetch(), 1500);
-          },
-          onError: (err) => {
-            setPauseError(formatError(err));
-          },
-        },
-      );
-    } catch (err) {
-      setPauseError(formatError(err));
+      await transaction.submit({
+        address: addresses.grantline,
+        abi: grantlineAbi,
+        functionName: vault.paused ? "unpauseVault" : "pauseVault",
+        args: [vault.address],
+      });
+      await onRefetch();
+    } catch (error) {
+      setActionError(formatError(error));
     }
-  }, [vault, writeContract, onRefetch, switchChain]);
-
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(vault.address);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [vault.address]);
+  }, [onRefetch, transaction, vault.address, vault.paused]);
 
   return (
-    <div className="app-card">
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: 16,
-        }}
-      >
+    <article className="app-card app-vault-card">
+      <div className="app-card-heading">
         <div>
-          <div style={{ fontSize: 13, color: "#9a9896", marginBottom: 4 }}>
-            Vault #{vault.index}
-          </div>
-          <div
-            className="app-code"
-            style={{ cursor: "pointer" }}
-            title={vault.address}
-            onClick={handleCopy}
-          >
-            {copied ? "Copied!" : truncateAddress(vault.address)}
-          </div>
+          <span className="app-eyebrow">Vault #{vault.index}</span>
+          <CopyAddress address={vault.address} label="Vault address" />
         </div>
         <span
-          className={
-            vault.paused ? "app-tag app-tag-paused" : "app-tag app-tag-active"
-          }
+          className={`app-tag ${vault.paused ? "app-tag-paused" : "app-tag-active"}`}
         >
           {vault.paused ? "Paused" : "Active"}
         </span>
       </div>
 
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 13, color: "#9a9896", marginBottom: 4 }}>
-          Balance
+      <dl className="app-detail-grid app-vault-details">
+        <div>
+          <dt>Native balance</dt>
+          <dd>{formatNativeBalance(vault.nativeBalance)}</dd>
         </div>
-        <div style={{ fontSize: 20, fontWeight: 600 }}>
-          {formatBalance(vault.nativeBalance)}
+        <div>
+          <dt>Controller</dt>
+          <dd>
+            <CopyAddress
+              address={vault.controller}
+              label="Controller address"
+            />
+          </dd>
         </div>
-      </div>
+      </dl>
 
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="app-card-actions">
         <button
           type="button"
           className="app-btn app-btn-primary"
-          style={{ flex: 1 }}
           onClick={() => onFund(vault)}
+          disabled={transaction.isPending}
         >
           Fund
         </button>
         <button
           type="button"
           className="app-btn app-btn-quiet"
-          style={{ flex: 1 }}
           onClick={() => onWithdraw(vault)}
-          disabled={vault.nativeBalance === BigInt(0)}
+          disabled={transaction.isPending || vault.nativeBalance === 0n}
         >
           Withdraw
         </button>
         <button
           type="button"
           className="app-btn app-btn-quiet"
-          style={{ flex: 1 }}
-          disabled={isPending || txLoading}
           onClick={handlePauseToggle}
+          disabled={transaction.isPending}
         >
-          {isPending || txLoading
-            ? "Waiting…"
+          {transaction.isPending
+            ? "Confirming…"
             : vault.paused
               ? "Unpause"
               : "Pause"}
         </button>
       </div>
-      {pauseError && (
-        <div
-          style={{ marginTop: 8, fontSize: 12, color: "var(--deny, #d97878)" }}
-        >
-          {pauseError}
-        </div>
-      )}
-    </div>
+
+      <TransactionStatus
+        error={actionError ?? transaction.error}
+        isPending={transaction.isPending}
+        message="Confirm the Vault change in your wallet."
+      />
+    </article>
   );
 }
 
 export default function AppVaults() {
-  const { address, isConnected } = useAccount();
-  const { vaults, isLoading, refetch } = useVaults();
-  const { writeContract } = useWriteContract();
-  const { switchChain } = useSwitchChain();
-  const { data: walletBalance, refetch: refetchBalance } = useBalance({
-    address,
-  });
+  const { address, isConnected } = useConnection();
+  const { vaults, isLoading, error, refetch } = useVaults();
+  const wallet = useBalance({ address, chainId });
+  const createTransaction = useAppTransaction();
+  const fundTransaction = useAppTransaction();
+  const withdrawTransaction = useAppTransaction();
 
   const [showCreate, setShowCreate] = useState(false);
   const [fundTarget, setFundTarget] = useState<VaultInfo | null>(null);
   const [fundAmount, setFundAmount] = useState("");
   const [withdrawTarget, setWithdrawTarget] = useState<VaultInfo | null>(null);
   const [withdrawAmount, setWithdrawAmount] = useState("");
-
   const [createError, setCreateError] = useState<string | null>(null);
   const [fundError, setFundError] = useState<string | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
+  const resetCreateTransaction = createTransaction.reset;
+
+  const closeCreate = useCallback(() => {
+    if (createTransaction.isPending) return;
+    setShowCreate(false);
+    setCreateError(null);
+    resetCreateTransaction();
+  }, [createTransaction.isPending, resetCreateTransaction]);
+
+  const closeFund = useCallback(() => {
+    if (fundTransaction.isPending) return;
+    setFundTarget(null);
+    setFundAmount("");
+    setFundError(null);
+  }, [fundTransaction.isPending]);
+
+  const closeWithdraw = useCallback(() => {
+    if (withdrawTransaction.isPending) return;
+    setWithdrawTarget(null);
+    setWithdrawAmount("");
+    setWithdrawError(null);
+  }, [withdrawTransaction.isPending]);
+
   const handleCreate = useCallback(async () => {
     setCreateError(null);
+
     try {
-      await switchChain({ chainId });
-      writeContract(
-        {
-          address: addresses.grantline,
-          abi: grantlineAbi,
-          functionName: "createVault",
-          chainId,
-        },
-        {
-          onSuccess: () => {
-            setShowCreate(false);
-            setTimeout(() => refetch(), 1500);
-          },
-          onError: (err) => {
-            setCreateError(formatError(err));
-          },
-        },
-      );
-    } catch (err) {
-      setCreateError(formatError(err));
+      await createTransaction.submit({
+        address: addresses.grantline,
+        abi: grantlineAbi,
+        functionName: "createVault",
+      });
+      closeCreate();
+      await refetch();
+    } catch (error) {
+      setCreateError(formatError(error));
     }
-  }, [writeContract, refetch, switchChain]);
+  }, [closeCreate, createTransaction, refetch]);
 
   const handleFund = useCallback(async () => {
-    if (!fundTarget || !fundAmount) return;
+    if (!fundTarget) return;
     setFundError(null);
+
     try {
-      await switchChain({ chainId });
-      const value = parseEther(fundAmount);
-      writeContract(
-        {
-          address: addresses.grantline,
-          abi: grantlineAbi,
-          functionName: "depositNative",
-          args: [fundTarget.address],
-          value,
-          chainId,
-        },
-        {
-          onSuccess: () => {
-            setFundTarget(null);
-            setFundAmount("");
-            setTimeout(() => {
-              refetch();
-              refetchBalance();
-            }, 1500);
-          },
-          onError: (err) => {
-            setFundError(formatError(err));
-          },
-        },
-      );
-    } catch (err) {
-      setFundError(formatError(err));
+      const value = parseNativeAmount(fundAmount, "Fund amount");
+      if (wallet.data && value > wallet.data.value) {
+        throw new Error("The fund amount is greater than your wallet balance.");
+      }
+
+      await fundTransaction.submit({
+        address: addresses.grantline,
+        abi: grantlineAbi,
+        functionName: "depositNative",
+        args: [fundTarget.address],
+        value,
+      });
+      closeFund();
+      await Promise.all([refetch(), wallet.refetch()]);
+    } catch (error) {
+      setFundError(formatError(error));
     }
-  }, [
-    fundTarget,
-    fundAmount,
-    writeContract,
-    refetch,
-    refetchBalance,
-    switchChain,
-  ]);
+  }, [closeFund, fundAmount, fundTarget, fundTransaction, refetch, wallet]);
 
   const handleWithdraw = useCallback(async () => {
-    if (!withdrawTarget || !withdrawAmount || !address) return;
+    if (!withdrawTarget || !address) return;
     setWithdrawError(null);
+
     try {
-      await switchChain({ chainId });
-      const value = parseEther(withdrawAmount);
-      writeContract(
-        {
-          address: addresses.grantline,
-          abi: grantlineAbi,
-          functionName: "withdrawNative",
-          args: [withdrawTarget.address, address, value],
-          chainId,
-        },
-        {
-          onSuccess: () => {
-            setWithdrawTarget(null);
-            setWithdrawAmount("");
-            setTimeout(() => {
-              refetch();
-              refetchBalance();
-            }, 1500);
-          },
-          onError: (err) => {
-            setWithdrawError(formatError(err));
-          },
-        },
-      );
-    } catch (err) {
-      setWithdrawError(formatError(err));
+      const value = parseNativeAmount(withdrawAmount, "Withdrawal amount");
+      if (value > withdrawTarget.nativeBalance) {
+        throw new Error(
+          "The withdrawal amount is greater than the Vault balance.",
+        );
+      }
+
+      await withdrawTransaction.submit({
+        address: addresses.grantline,
+        abi: grantlineAbi,
+        functionName: "withdrawNative",
+        args: [withdrawTarget.address, address as Address, value],
+      });
+      closeWithdraw();
+      await Promise.all([refetch(), wallet.refetch()]);
+    } catch (error) {
+      setWithdrawError(formatError(error));
     }
   }, [
-    withdrawTarget,
-    withdrawAmount,
     address,
-    writeContract,
+    closeWithdraw,
     refetch,
-    refetchBalance,
-    switchChain,
+    withdrawAmount,
+    withdrawTarget,
+    withdrawTransaction,
+    wallet,
   ]);
+
+  function openFund(vault: VaultInfo) {
+    setFundTarget(vault);
+    setFundAmount("");
+    setFundError(null);
+  }
+
+  function openWithdraw(vault: VaultInfo) {
+    setWithdrawTarget(vault);
+    setWithdrawAmount("");
+    setWithdrawError(null);
+  }
 
   return (
     <>
-      <div className="app-page-header">
-        <h1>Vaults</h1>
-        <p>Create and manage Vault contracts that hold controlled capital.</p>
+      <div className="app-page-header app-page-header-row">
+        <div>
+          <h1>Vaults</h1>
+          <p>
+            Create and manage Vaults that hold capital under Grantline
+            authority.
+          </p>
+        </div>
+        {isConnected && (
+          <button
+            type="button"
+            className="app-btn app-btn-primary"
+            onClick={() => {
+              setCreateError(null);
+              setShowCreate(true);
+            }}
+            disabled={createTransaction.isPending}
+          >
+            Create Vault
+          </button>
+        )}
       </div>
 
-      {isConnected && (
-        <div style={{ marginBottom: 24 }}>
+      {!isConnected && (
+        <div className="app-empty app-card">
+          <GrantlineMark className="app-empty-icon" />
+          <h2>Connect your wallet</h2>
+          <p>Connect a wallet to view and manage your testnet Vaults.</p>
+        </div>
+      )}
+
+      {isConnected && error && (
+        <div className="app-alert app-alert-error" role="alert">
+          {error}
+        </div>
+      )}
+
+      {isConnected && isLoading && (
+        <div className="app-empty app-card">
+          <h2>Loading Vaults…</h2>
+          <p>Reading your Vaults from X Layer Testnet.</p>
+        </div>
+      )}
+
+      {isConnected && !isLoading && !error && vaults.length === 0 && (
+        <div className="app-empty app-card">
+          <GrantlineMark className="app-empty-icon" />
+          <h2>No Vaults yet</h2>
+          <p>
+            Create a Vault to start holding capital under Grantline authority.
+          </p>
           <button
             type="button"
             className="app-btn app-btn-primary"
             onClick={() => setShowCreate(true)}
           >
-            Create Vault
+            Create your first Vault
           </button>
         </div>
       )}
 
-      {!isConnected && (
-        <div className="app-empty">
-          <div className="app-empty-icon">🏦</div>
-          <h3>Connect your wallet</h3>
-          <p>Connect a wallet to view and manage your Vaults.</p>
-        </div>
-      )}
-
-      {isConnected && isLoading && (
-        <div className="app-empty">
-          <h3>Loading vaults…</h3>
-        </div>
-      )}
-
-      {isConnected && !isLoading && vaults.length === 0 && (
-        <div className="app-empty">
-          <div className="app-empty-icon">🏦</div>
-          <h3>No vaults yet</h3>
-          <p>
-            Create a Vault to start holding capital under Grantline authority.
-          </p>
-        </div>
-      )}
-
-      {isConnected && !isLoading && vaults.length > 0 && (
+      {isConnected && !isLoading && !error && vaults.length > 0 && (
         <div className="app-card-grid">
           {[...vaults]
             .sort((a, b) => b.index - a.index)
-            .map((v) => (
+            .map((vault) => (
               <VaultCard
-                key={v.address}
-                vault={v}
-                onFund={setFundTarget}
-                onWithdraw={setWithdrawTarget}
+                key={vault.address}
+                vault={vault}
                 onRefetch={refetch}
-                switchChain={switchChain}
+                onFund={openFund}
+                onWithdraw={openWithdraw}
               />
             ))}
         </div>
       )}
 
-      {/* Create Vault Modal */}
       {showCreate && (
-        <div
-          className="app-modal-backdrop"
-          onClick={() => setShowCreate(false)}
+        <AppModal
+          title="Create Vault"
+          description="This deploys a new testnet Vault under your wallet controller."
+          onClose={closeCreate}
+          closeDisabled={createTransaction.isPending}
         >
-          <div className="app-modal" onClick={(e) => e.stopPropagation()}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                marginBottom: 8,
-              }}
-            >
-              <h3 style={{ margin: 0, fontSize: 16 }}>Create Vault</h3>
-              <button
-                type="button"
-                className="app-modal-close"
-                onClick={() => setShowCreate(false)}
-              >
-                &times;
-              </button>
-            </div>
-            <p style={{ margin: 0, fontSize: 14, color: "#9a9896" }}>
-              This will deploy a new Vault contract under your control.
-            </p>
-            {createError && (
-              <div
-                style={{
-                  marginTop: 12,
-                  fontSize: 12,
-                  color: "var(--deny, #d97878)",
-                }}
-              >
-                {createError}
-              </div>
-            )}
+          <form
+            className="app-modal-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleCreate();
+            }}
+          >
+            <TransactionStatus
+              error={createError ?? createTransaction.error}
+              isPending={createTransaction.isPending}
+              message="Confirm the Vault deployment in your wallet."
+            />
             <div className="app-modal-actions">
               <button
                 type="button"
                 className="app-btn app-btn-quiet"
-                onClick={() => setShowCreate(false)}
+                onClick={closeCreate}
+                disabled={createTransaction.isPending}
               >
                 Cancel
               </button>
               <button
-                type="button"
+                type="submit"
                 className="app-btn app-btn-primary"
-                onClick={handleCreate}
+                disabled={createTransaction.isPending}
               >
-                Create
+                {createTransaction.isPending ? "Confirming…" : "Create Vault"}
               </button>
             </div>
-          </div>
-        </div>
+          </form>
+        </AppModal>
       )}
 
-      {/* Fund Vault Modal */}
       {fundTarget && (
-        <div
-          className="app-modal-backdrop"
-          onClick={() => {
-            setFundTarget(null);
-            setFundAmount("");
-          }}
+        <AppModal
+          title={`Fund Vault #${fundTarget.index}`}
+          description="Send OKB from your wallet into this Vault."
+          onClose={closeFund}
+          closeDisabled={fundTransaction.isPending}
         >
-          <div className="app-modal" onClick={(e) => e.stopPropagation()}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                marginBottom: 8,
-              }}
-            >
-              <h3 style={{ margin: 0, fontSize: 16 }}>
-                Fund Vault #{fundTarget.index}
-              </h3>
-              <button
-                type="button"
-                className="app-modal-close"
-                onClick={() => {
-                  setFundTarget(null);
-                  setFundAmount("");
-                }}
-              >
-                &times;
-              </button>
+          <form
+            className="app-modal-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleFund();
+            }}
+          >
+            <div className="app-balance-row" aria-live="polite">
+              <span>Wallet balance</span>
+              <strong>
+                {wallet.data
+                  ? formatNativeBalance(wallet.data.value)
+                  : "Loading…"}
+              </strong>
             </div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 14,
-                color: "#9a9896",
-                marginBottom: 20,
-              }}
-            >
-              Send OKB to Vault #{fundTarget.index}.
-            </p>
-            {walletBalance && (
-              <div style={{ marginBottom: 16, fontSize: 13, color: "#9a9896" }}>
-                Your balance:{" "}
-                {(
-                  Number(walletBalance.value) /
-                  10 ** walletBalance.decimals
-                ).toFixed(4)}{" "}
-                {walletBalance.symbol}
-              </div>
-            )}
-            {fundError && (
-              <div
-                style={{
-                  marginBottom: 16,
-                  fontSize: 12,
-                  color: "var(--deny, #d97878)",
-                }}
-              >
-                {fundError}
-              </div>
-            )}
             <div className="app-form-group">
               <label className="app-form-label" htmlFor="fund-amount">
                 Amount (OKB)
@@ -484,94 +389,60 @@ export default function AppVaults() {
               <input
                 id="fund-amount"
                 className="app-form-input"
-                type="number"
-                step="0.001"
-                min="0"
-                placeholder="0.0"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="0.1"
                 value={fundAmount}
-                onChange={(e) => setFundAmount(e.target.value)}
+                onChange={(event) => setFundAmount(event.target.value)}
               />
             </div>
+            <TransactionStatus
+              error={fundError ?? fundTransaction.error}
+              isPending={fundTransaction.isPending}
+              message="Confirm the deposit in your wallet."
+            />
             <div className="app-modal-actions">
               <button
                 type="button"
                 className="app-btn app-btn-quiet"
-                onClick={() => {
-                  setFundTarget(null);
-                  setFundAmount("");
-                }}
+                onClick={closeFund}
+                disabled={fundTransaction.isPending}
               >
                 Cancel
               </button>
               <button
-                type="button"
+                type="submit"
                 className="app-btn app-btn-primary"
-                onClick={handleFund}
-                disabled={!fundAmount || Number(fundAmount) <= 0}
+                disabled={fundTransaction.isPending || !fundAmount.trim()}
               >
-                Fund
+                {fundTransaction.isPending ? "Confirming…" : "Fund Vault"}
               </button>
             </div>
-          </div>
-        </div>
+          </form>
+        </AppModal>
       )}
 
-      {/* Withdraw Modal */}
       {withdrawTarget && (
-        <div
-          className="app-modal-backdrop"
-          onClick={() => {
-            setWithdrawTarget(null);
-            setWithdrawAmount("");
-          }}
+        <AppModal
+          title={`Withdraw from Vault #${withdrawTarget.index}`}
+          description="Withdraw OKB from this Vault to your connected wallet."
+          onClose={closeWithdraw}
+          closeDisabled={withdrawTransaction.isPending}
         >
-          <div className="app-modal" onClick={(e) => e.stopPropagation()}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                marginBottom: 8,
-              }}
-            >
-              <h3 style={{ margin: 0, fontSize: 16 }}>
-                Withdraw from Vault #{withdrawTarget.index}
-              </h3>
-              <button
-                type="button"
-                className="app-modal-close"
-                onClick={() => {
-                  setWithdrawTarget(null);
-                  setWithdrawAmount("");
-                }}
-              >
-                &times;
-              </button>
+          <form
+            className="app-modal-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleWithdraw();
+            }}
+          >
+            <div className="app-balance-row" aria-live="polite">
+              <span>Available balance</span>
+              <strong>
+                {formatNativeBalance(withdrawTarget.nativeBalance)}
+              </strong>
             </div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 14,
-                color: "#9a9896",
-                marginBottom: 20,
-              }}
-            >
-              Withdraw OKB from Vault #{withdrawTarget.index} to your wallet.
-            </p>
-            <div style={{ marginBottom: 16, fontSize: 13, color: "#9a9896" }}>
-              Vault balance: {formatBalance(withdrawTarget.nativeBalance)}
-            </div>
-            {withdrawError && (
-              <div
-                style={{
-                  marginBottom: 16,
-                  fontSize: 12,
-                  color: "var(--deny, #d97878)",
-                }}
-              >
-                {withdrawError}
-              </div>
-            )}
             <div className="app-form-group">
               <label className="app-form-label" htmlFor="withdraw-amount">
                 Amount (OKB)
@@ -579,42 +450,40 @@ export default function AppVaults() {
               <input
                 id="withdraw-amount"
                 className="app-form-input"
-                type="number"
-                step="0.001"
-                min="0"
-                max={Number(withdrawTarget.nativeBalance) / 1e18}
-                placeholder="0.0"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="0.1"
                 value={withdrawAmount}
-                onChange={(e) => setWithdrawAmount(e.target.value)}
+                onChange={(event) => setWithdrawAmount(event.target.value)}
               />
             </div>
+            <TransactionStatus
+              error={withdrawError ?? withdrawTransaction.error}
+              isPending={withdrawTransaction.isPending}
+              message="Confirm the withdrawal in your wallet."
+            />
             <div className="app-modal-actions">
               <button
                 type="button"
                 className="app-btn app-btn-quiet"
-                onClick={() => {
-                  setWithdrawTarget(null);
-                  setWithdrawAmount("");
-                }}
+                onClick={closeWithdraw}
+                disabled={withdrawTransaction.isPending}
               >
                 Cancel
               </button>
               <button
-                type="button"
+                type="submit"
                 className="app-btn app-btn-primary"
-                onClick={handleWithdraw}
                 disabled={
-                  !withdrawAmount ||
-                  Number(withdrawAmount) <= 0 ||
-                  Number(withdrawAmount) >
-                    Number(withdrawTarget.nativeBalance) / 1e18
+                  withdrawTransaction.isPending || !withdrawAmount.trim()
                 }
               >
-                Withdraw
+                {withdrawTransaction.isPending ? "Confirming…" : "Withdraw"}
               </button>
             </div>
-          </div>
-        </div>
+          </form>
+        </AppModal>
       )}
     </>
   );

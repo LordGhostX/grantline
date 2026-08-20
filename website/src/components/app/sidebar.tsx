@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { ConnectWallet } from "./connect-wallet";
+import { NetworkStatus } from "./network-status";
 import GrantlineMark from "@/components/grantline-mark";
 import { repositoryUrl } from "@/lib/site-links";
 
@@ -29,6 +30,23 @@ export function Sidebar({ children }: Props) {
 
   const closeMobile = useCallback(() => setMobileOpen(false), []);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMobile();
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [closeMobile, mobileOpen]);
+
   return (
     <div className="app-layout">
       <div
@@ -36,13 +54,10 @@ export function Sidebar({ children }: Props) {
         onClick={closeMobile}
       />
 
-      <aside className="app-sidebar" data-open={mobileOpen}>
+      <aside id="app-sidebar" className="app-sidebar" data-open={mobileOpen}>
         <div className="app-sidebar-top">
           <Link href="/app" className="app-brand" onClick={closeMobile}>
-            <GrantlineMark
-              className="app-brand-mark"
-              style={{ color: "var(--brand, #d0b46c)" }}
-            />
+            <GrantlineMark className="app-brand-mark" />
             <span>Grantline</span>
           </Link>
 
@@ -56,6 +71,7 @@ export function Sidebar({ children }: Props) {
                   key={item.href}
                   href={item.href}
                   className={`app-nav-item${active ? " active" : ""}`}
+                  aria-current={active ? "page" : undefined}
                   onClick={closeMobile}
                 >
                   {item.label}
@@ -69,18 +85,14 @@ export function Sidebar({ children }: Props) {
           <Link
             href="/"
             className={`app-nav-item${pathname === "/" ? " active" : ""}`}
+            aria-current={pathname === "/" ? "page" : undefined}
             onClick={closeMobile}
           >
             Home
           </Link>
-          <a
-            href="/docs"
-            className="app-nav-item"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Docs ↗
-          </a>
+          <Link href="/docs" className="app-nav-item" onClick={closeMobile}>
+            Docs
+          </Link>
           <a
             href={repositoryUrl}
             className="app-nav-item"
@@ -99,6 +111,8 @@ export function Sidebar({ children }: Props) {
             className="app-menu-toggle"
             onClick={() => setMobileOpen(true)}
             aria-label="Open menu"
+            aria-controls="app-sidebar"
+            aria-expanded={mobileOpen}
           >
             <span className="app-menu-icon" aria-hidden="true">
               <span />
@@ -107,10 +121,7 @@ export function Sidebar({ children }: Props) {
             </span>
           </button>
           <div className="app-topbar-right">
-            <div className="app-network">
-              <span className="app-network-dot" />
-              X Layer Testnet
-            </div>
+            <NetworkStatus />
             <ConnectWallet />
           </div>
         </header>

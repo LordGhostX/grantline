@@ -1,13 +1,21 @@
-export const chainId = 1952;
+import type { Address } from "viem";
+import deployment from "../../data/deployments/xlayer-testnet.json";
+
+export const chainId = 1952 as const;
+
+if (deployment.chainId !== chainId) {
+  throw new Error(
+    "The website X Layer deployment manifest has the wrong chain ID",
+  );
+}
 
 export const demoAgent =
-  "0x648ac3f9297d59089b02a6091da6dd76902a785b" as `0x${string}`;
+  "0x648ac3f9297d59089b02a6091da6dd76902a785b" as Address;
 
 export const addresses = {
-  grantline: "0x47595f11570e97acf96fe9f7f9a02dd91488a4a0" as `0x${string}`,
-  mandateRegistry:
-    "0x20cef966b489a8fb467c879af498f2bd8083644c" as `0x${string}`,
-  vaultFactory: "0x85f21601d1a38957d5d4e3fb862a85fdc0fba974" as `0x${string}`,
+  grantline: deployment.grantline.proxy as Address,
+  mandateRegistry: deployment.modules.registry.proxy as Address,
+  vaultFactory: deployment.modules.vaultFactory.proxy as Address,
 } as const;
 
 export const grantlineAbi = [
@@ -189,6 +197,34 @@ export const grantlineAbi = [
     stateMutability: "nonpayable",
     inputs: [{ name: "mandateId", type: "uint256" }],
     outputs: [],
+  },
+  {
+    name: "execute",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "plan",
+        type: "tuple",
+        components: [
+          { name: "mandateId", type: "uint256" },
+          { name: "agent", type: "address" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          {
+            name: "actions",
+            type: "tuple[]",
+            components: [
+              { name: "actionType", type: "uint8" },
+              { name: "version", type: "uint8" },
+              { name: "parameters", type: "bytes" },
+            ],
+          },
+        ],
+      },
+      { name: "signature", type: "bytes" },
+    ],
+    outputs: [{ name: "digest", type: "bytes32" }],
   },
 ] as const;
 

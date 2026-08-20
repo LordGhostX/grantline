@@ -1,15 +1,20 @@
 "use client";
 
-import { type Hex, formatUnits } from "viem";
-import { useAccount, usePublicClient } from "wagmi";
+import type { Address } from "viem";
+import { useConnection, usePublicClient } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
-import { addresses, grantlineAbi, mandateRegistryAbi } from "./contracts";
+import {
+  addresses,
+  chainId,
+  grantlineAbi,
+  mandateRegistryAbi,
+} from "./contracts";
 
 export interface MandateData {
   id: bigint;
-  controller: Hex;
-  vault: Hex;
-  agent: Hex;
+  controller: Address;
+  vault: Address;
+  agent: Address;
   parentMandateId: bigint;
   delegationDepth: number;
   status: number;
@@ -49,24 +54,18 @@ export function getMandateStatusLabel(status: number): MandateStatus {
   }
 }
 
-export function truncateHex(address: Hex): string {
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
+type UseMandatesOptions = {
+  scope?: "controller" | "all";
+  enabled?: boolean;
+};
 
-export function formatOkb(wei: bigint): string {
-  const formatted = formatUnits(wei, 18);
-  const num = parseFloat(formatted);
-  if (num === 0) return "0";
-  if (num < 0.001) return "<0.001";
-  return num.toLocaleString("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 4,
-  });
-}
-
-export function useMandates() {
-  const { address } = useAccount();
-  const publicClient = usePublicClient();
+export function useMandates({
+  scope = "controller",
+  enabled = true,
+}: UseMandatesOptions = {}) {
+  const { address } = useConnection();
+  const publicClient = usePublicClient({ chainId });
+  const controllerScoped = scope === "controller";
 
   const {
     data: mandates,
@@ -74,9 +73,9 @@ export function useMandates() {
     error: queryError,
     refetch,
   } = useQuery({
-    queryKey: ["mandates", address],
+    queryKey: ["mandates", chainId, address, scope],
     queryFn: async (): Promise<MandateData[]> => {
-      if (!publicClient || !address) return [];
+      if (!publicClient || (controllerScoped && !address)) return [];
 
       const count = await publicClient.readContract({
         address: addresses.mandateRegistry,
@@ -100,27 +99,28 @@ export function useMandates() {
         ),
       );
 
-      return results
-        .map((r) => ({
-          id: r[0],
-          controller: r[1],
-          vault: r[2],
-          agent: r[3],
-          parentMandateId: r[4],
-          delegationDepth: r[5],
-          status: r[6],
-          rules: r[7],
-          preflightRules: r[8],
-          validAfter: r[9],
-          validUntil: r[10],
-          createdAt: r[11],
-          revokedAt: r[12],
-        }))
-        .filter(
-          (m) => m.controller.toLowerCase() === address.toLowerCase(),
-        ) as MandateData[];
+      const allMandates = results.map((r) => ({
+        id: r[0],
+        controller: r[1],
+        vault: r[2],
+        agent: r[3],
+        parentMandateId: r[4],
+        delegationDepth: r[5],
+        status: r[6],
+        rules: r[7],
+        preflightRules: r[8],
+        validAfter: r[9],
+        validUntil: r[10],
+        createdAt: r[11],
+        revokedAt: r[12],
+      })) as MandateData[];
+
+      if (!controllerScoped || !address) return allMandates;
+      return allMandates.filter(
+        (mandate) => mandate.controller.toLowerCase() === address.toLowerCase(),
+      );
     },
-    enabled: !!publicClient && !!address,
+    enabled: enabled && !!publicClient && (!controllerScoped || !!address),
     refetchInterval: 10_000,
   });
 
