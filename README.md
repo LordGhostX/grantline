@@ -283,6 +283,8 @@ You can use it to explore the current flow around:
 
 The demo uses testnet contracts. The connected wallet submits transactions and pays gas. The configured demo agent can sign Action Plans through the server-side signing route, but its private key must remain server-only.
 
+You need testnet OKB to pay transaction fees and fund a Vault. Get it from the [X Layer testnet faucet](https://web3.okx.com/xlayer/faucet/xlayerfaucet).
+
 To run the website locally:
 
 ```

@@ -333,6 +333,17 @@
     line-height: 1.55;
 }
 
+.app-page-header-faucet {
+    margin-top: 6px !important;
+    font-size: 13px !important;
+}
+
+.app-page-header-faucet a {
+    color: var(--brand);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
 .app-dashboard-callout {
     display: flex;
     align-items: center;

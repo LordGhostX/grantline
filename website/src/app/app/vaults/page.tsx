@@ -250,6 +250,16 @@ export default function AppVaults() {
             Create and manage Vaults that hold capital under Grantline
             authority.
           </p>
+          <p className="app-page-header-faucet">
+            Need testnet OKB?{" "}
+            <a
+              href="https://web3.okx.com/xlayer/faucet/xlayerfaucet"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Get it from the X Layer faucet.
+            </a>
+          </p>
         </div>
         {isConnected && (
           <button
