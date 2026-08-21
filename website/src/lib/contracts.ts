@@ -220,6 +220,76 @@ export const grantlineAbi = [
     outputs: [],
   },
   {
+    name: "evaluate",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      {
+        name: "plan",
+        type: "tuple",
+        components: [
+          { name: "mandateId", type: "uint256" },
+          { name: "agent", type: "address" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          {
+            name: "actions",
+            type: "tuple[]",
+            components: [
+              { name: "actionType", type: "uint8" },
+              { name: "version", type: "uint8" },
+              { name: "parameters", type: "bytes" },
+            ],
+          },
+        ],
+      },
+      { name: "signature", type: "bytes" },
+    ],
+    outputs: [
+      {
+        name: "result",
+        type: "tuple",
+        components: [
+          { name: "decision", type: "uint8" },
+          { name: "failureCode", type: "uint8" },
+          { name: "failedActionIndex", type: "uint256" },
+          { name: "nativeAmount", type: "uint256" },
+          { name: "nativeUsdValue", type: "uint256" },
+          { name: "nativeBalanceAfter", type: "uint256" },
+          { name: "nativeBalanceUsdValue", type: "uint256" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "submitEscalation",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "plan",
+        type: "tuple",
+        components: [
+          { name: "mandateId", type: "uint256" },
+          { name: "agent", type: "address" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          {
+            name: "actions",
+            type: "tuple[]",
+            components: [
+              { name: "actionType", type: "uint8" },
+              { name: "version", type: "uint8" },
+              { name: "parameters", type: "bytes" },
+            ],
+          },
+        ],
+      },
+      { name: "signature", type: "bytes" },
+    ],
+    outputs: [{ name: "digest", type: "bytes32" }],
+  },
+  {
     name: "execute",
     type: "function",
     stateMutability: "nonpayable",
