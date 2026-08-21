@@ -21,7 +21,6 @@ const appNavItems = [
   { href: "/app/authority", label: "Authority" },
   { href: "/app/execute", label: "Execute" },
   { href: "/app/escalations", label: "Escalations" },
-  { href: "/app/activity", label: "Activity" },
 ];
 
 export function Sidebar({ children }: Props) {
