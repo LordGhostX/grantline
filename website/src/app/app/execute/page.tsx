@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { encodeAbiParameters, zeroAddress } from "viem";
 import { useConnection, useSignTypedData, useSwitchChain } from "wagmi";
 import { TransactionStatus } from "@/components/app/transaction-status";
@@ -31,6 +31,14 @@ const actionTypes = {
   ],
 } as const;
 
+function nextDemoNonce(previous = ""): string {
+  const current = BigInt(Math.floor(Date.now() / 1000));
+  if (!/^\d+$/.test(previous)) return current.toString();
+
+  const previousNonce = BigInt(previous);
+  return (current > previousNonce ? current : previousNonce + 1n).toString();
+}
+
 export default function AppExecute() {
   const { address, chainId: connectedChainId, isConnected } = useConnection();
   const {
@@ -45,10 +53,15 @@ export default function AppExecute() {
   const [mandateId, setMandateId] = useState("");
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("0.001");
-  const [nonce, setNonce] = useState("1");
+  const [nonce, setNonce] = useState("");
   const [deadline, setDeadline] = useState("");
   const [flowError, setFlowError] = useState<unknown>(null);
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setNonce(nextDemoNonce()), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const activeMandates = mandates.filter((mandate) => mandate.status === 0);
   const selectedMandate =
@@ -134,13 +147,17 @@ export default function AppExecute() {
         message: plan,
       });
 
-      const hash = await transaction.submit({
-        address: addresses.grantline,
-        abi: grantlineAbi,
-        functionName: "execute",
-        args: [plan, signature],
-      }, { skipChainSwitch: true });
+      const hash = await transaction.submit(
+        {
+          address: addresses.grantline,
+          abi: grantlineAbi,
+          functionName: "execute",
+          args: [plan, signature],
+        },
+        { skipChainSwitch: true },
+      );
       setTransactionHash(hash);
+      setNonce((currentNonce) => nextDemoNonce(currentNonce));
     } catch (submissionError) {
       setFlowError(submissionError);
     }
@@ -217,159 +234,182 @@ export default function AppExecute() {
                 </p>
               )}
 
-            {mandatesReady &&
-              isConnected &&
-              mandates.length === 0 && (
+              {mandatesReady && isConnected && mandates.length === 0 && (
                 <p className="app-alert app-alert-warning" role="status">
                   Create a Mandate before signing an Action Plan.
                 </p>
               )}
 
-            {mandatesReady &&
-              isConnected &&
-              mandates.length > 0 &&
-              activeMandates.length === 0 && (
-                <p className="app-alert app-alert-warning" role="status">
-                  No active Mandates are available for signing an Action Plan.
-                </p>
-              )}
+              {mandatesReady &&
+                isConnected &&
+                mandates.length > 0 &&
+                activeMandates.length === 0 && (
+                  <p className="app-alert app-alert-warning" role="status">
+                    No active Mandates are available for signing an Action Plan.
+                  </p>
+                )}
 
-            {mandatesReady && isConnected && selectedMandate && !signerMatches && (
-              <>
-                <p className="app-alert app-alert-warning" role="status">
-                  Connect the agent wallet for this Mandate before signing. The
-                  current wallet is {address}.
-                </p>
-                <p className="app-execute-note" role="note">
-                  Mandates created with the connected agent wallet can proceed
-                  as-is; the demo requests the Action Plan signature from that
-                  wallet.
-                  <br />
-                  <strong>Demo agent wallet: {demoAgent}</strong>
-                </p>
-              </>
-            )}
+              {mandatesReady &&
+                isConnected &&
+                selectedMandate &&
+                !signerMatches && (
+                  <>
+                    <p className="app-alert app-alert-warning" role="status">
+                      Connect the agent wallet for this Mandate before signing.
+                      The current wallet is {address}.
+                    </p>
+                    <p className="app-execute-note" role="note">
+                      Mandates created with the connected agent wallet can
+                      proceed as-is; the demo requests the Action Plan signature
+                      from that wallet.
+                      <br />
+                      <strong>Demo agent wallet: {demoAgent}</strong>
+                    </p>
+                  </>
+                )}
 
-            {mandatesReady && (
-              <>
-                {selectedMandate && (
+              {mandatesReady && (
+                <>
+                  {selectedMandate && (
+                    <div className="app-form-group">
+                      <label
+                        className="app-form-label"
+                        htmlFor="transfer-mandate"
+                      >
+                        Mandate
+                      </label>
+                      <select
+                        id="transfer-mandate"
+                        className="app-form-input"
+                        value={selectedMandate.id.toString()}
+                        onChange={(event) => setMandateId(event.target.value)}
+                      >
+                        {activeMandates.map((mandate) => (
+                          <option
+                            key={mandate.id.toString()}
+                            value={mandate.id.toString()}
+                          >
+                            Mandate #{mandate.id.toString()} ·{" "}
+                            {getMandateStatusLabel(mandate.status)} ·{" "}
+                            {mandate.agent}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="app-form-hint">
+                        Agent: {selectedMandate.agent} · Vault:{" "}
+                        {selectedMandate.vault}
+                      </p>
+                    </div>
+                  )}
+
                   <div className="app-form-group">
-                    <label className="app-form-label" htmlFor="transfer-mandate">
-                      Mandate
+                    <label className="app-form-label" htmlFor="transfer-to">
+                      Recipient
                     </label>
-                    <select
-                      id="transfer-mandate"
+                    <input
+                      id="transfer-to"
                       className="app-form-input"
-                      value={selectedMandate.id.toString()}
-                      onChange={(event) => setMandateId(event.target.value)}
+                      placeholder="0x..."
+                      value={recipient}
+                      onChange={(event) => setRecipient(event.target.value)}
+                    />
+                  </div>
+
+                  <div className="app-form-grid">
+                    <div className="app-form-group">
+                      <label
+                        className="app-form-label"
+                        htmlFor="transfer-amount"
+                      >
+                        Amount (OKB)
+                      </label>
+                      <input
+                        id="transfer-amount"
+                        className="app-form-input"
+                        inputMode="decimal"
+                        placeholder="0.001"
+                        value={amount}
+                        onChange={(event) => setAmount(event.target.value)}
+                      />
+                    </div>
+                    <div className="app-form-group">
+                      <label
+                        className="app-form-label"
+                        htmlFor="transfer-nonce"
+                      >
+                        Nonce
+                      </label>
+                      <input
+                        id="transfer-nonce"
+                        className="app-form-input"
+                        inputMode="numeric"
+                        placeholder="Generating…"
+                        aria-describedby="transfer-nonce-hint"
+                        value={nonce}
+                        onChange={(event) => setNonce(event.target.value)}
+                      />
+                      <p id="transfer-nonce-hint" className="app-form-hint">
+                        Generated from the current time and refreshed after each
+                        successful execution. You can change it manually.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="app-form-group">
+                    <label
+                      className="app-form-label"
+                      htmlFor="transfer-deadline"
                     >
-                      {activeMandates.map((mandate) => (
-                        <option
-                          key={mandate.id.toString()}
-                          value={mandate.id.toString()}
-                        >
-                          Mandate #{mandate.id.toString()} ·{" "}
-                          {getMandateStatusLabel(mandate.status)} · {mandate.agent}
-                        </option>
-                      ))}
-                    </select>
+                      Deadline
+                    </label>
+                    <input
+                      id="transfer-deadline"
+                      className="app-form-input"
+                      type="datetime-local"
+                      value={deadline}
+                      onChange={(event) => setDeadline(event.target.value)}
+                    />
                     <p className="app-form-hint">
-                      Agent: {selectedMandate.agent} · Vault:{" "}
-                      {selectedMandate.vault}
+                      The Action Plan expires at this local time. Choose a
+                      future time so the signed plan remains valid while it is
+                      submitted.
                     </p>
                   </div>
-                )}
 
-                <div className="app-form-group">
-                  <label className="app-form-label" htmlFor="transfer-to">
-                    Recipient
-                  </label>
-                  <input
-                    id="transfer-to"
-                    className="app-form-input"
-                    placeholder="0x..."
-                    value={recipient}
-                    onChange={(event) => setRecipient(event.target.value)}
+                  <TransactionStatus
+                    error={error}
+                    isPending={isPending}
+                    message={
+                      switchChain.isPending
+                        ? "Switch to X Layer Testnet in your wallet…"
+                        : signTypedData.isPending
+                          ? "Sign the Action Plan in your wallet…"
+                          : "Confirm the execution transaction in your wallet…"
+                    }
                   />
-                </div>
 
-                <div className="app-form-grid">
-                  <div className="app-form-group">
-                    <label className="app-form-label" htmlFor="transfer-amount">
-                      Amount (OKB)
-                    </label>
-                    <input
-                      id="transfer-amount"
-                      className="app-form-input"
-                      inputMode="decimal"
-                      placeholder="0.001"
-                      value={amount}
-                      onChange={(event) => setAmount(event.target.value)}
-                    />
-                  </div>
-                  <div className="app-form-group">
-                    <label className="app-form-label" htmlFor="transfer-nonce">
-                      Nonce
-                    </label>
-                    <input
-                      id="transfer-nonce"
-                      className="app-form-input"
-                      inputMode="numeric"
-                      placeholder="1"
-                      value={nonce}
-                      onChange={(event) => setNonce(event.target.value)}
-                    />
-                  </div>
-                </div>
+                  {transactionHash && (
+                    <p className="app-alert app-alert-info" role="status">
+                      Action Plan executed. Transaction:{" "}
+                      <span className="app-code">{transactionHash}</span>
+                    </p>
+                  )}
 
-                <div className="app-form-group">
-                  <label className="app-form-label" htmlFor="transfer-deadline">
-                    Deadline
-                  </label>
-                  <input
-                    id="transfer-deadline"
-                    className="app-form-input"
-                    type="datetime-local"
-                    value={deadline}
-                    onChange={(event) => setDeadline(event.target.value)}
-                  />
-                  <p className="app-form-hint">
-                    The Action Plan expires at this local time. Choose a future time
-                    so the signed plan remains valid while it is submitted.
-                  </p>
-                </div>
-
-                <TransactionStatus
-                  error={error}
-                  isPending={isPending}
-                  message={
-                    switchChain.isPending
-                      ? "Switch to X Layer Testnet in your wallet…"
-                      : signTypedData.isPending
-                        ? "Sign the Action Plan in your wallet…"
-                        : "Confirm the execution transaction in your wallet…"
-                  }
-                />
-
-                {transactionHash && (
-                  <p className="app-alert app-alert-info" role="status">
-                    Action Plan executed. Transaction:{" "}
-                    <span className="app-code">{transactionHash}</span>
-                  </p>
-                )}
-
-                <button
-                  type="button"
-                  className="app-btn app-btn-primary"
-                  disabled={
-                    isPending || !selectedMandate || !signerMatches
-                  }
-                  onClick={() => void handleTransfer()}
-                >
-                  {isPending ? "Processing…" : "Sign and execute"}
-                </button>
-              </>
-            )}
+                  <button
+                    type="button"
+                    className="app-btn app-btn-primary"
+                    disabled={
+                      isPending ||
+                      !nonce.trim() ||
+                      !selectedMandate ||
+                      !signerMatches
+                    }
+                    onClick={() => void handleTransfer()}
+                  >
+                    {isPending ? "Processing…" : "Sign and execute"}
+                  </button>
+                </>
+              )}
             </>
           )
         ) : (
