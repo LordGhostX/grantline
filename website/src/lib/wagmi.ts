@@ -1,7 +1,7 @@
 import { createConfig, cookieStorage, createStorage } from "wagmi";
 import { http, fallback } from "viem";
 import { injected } from "wagmi/connectors";
-import { chainId } from "./contracts";
+import { chainId, xLayerTestnetExplorerUrl } from "./contracts";
 
 export const xLayerTestnet = {
   id: chainId,
@@ -13,7 +13,7 @@ export const xLayerTestnet = {
   blockExplorers: {
     default: {
       name: "OKX Explorer",
-      url: "https://web3.okx.com/explorer/x-layer-testnet",
+      url: xLayerTestnetExplorerUrl,
     },
   },
 } as const;

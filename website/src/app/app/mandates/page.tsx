@@ -536,7 +536,7 @@ export default function MandatesPage() {
             <div className="app-form-grid">
               <div className="app-form-group">
                 <label className="app-form-label" htmlFor="mandate-valid-after">
-                  Valid after
+                  Valid after (optional)
                 </label>
                 <input
                   id="mandate-valid-after"
@@ -548,7 +548,7 @@ export default function MandatesPage() {
               </div>
               <div className="app-form-group">
                 <label className="app-form-label" htmlFor="mandate-valid-until">
-                  Valid until
+                  Valid until (optional)
                 </label>
                 <input
                   id="mandate-valid-until"

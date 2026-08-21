@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import { getAddress, isAddress, type Address } from "viem";
 import deployment from "../../data/deployments/xlayer-testnet.json";
 
 export const chainId = 1952 as const;
@@ -9,8 +9,29 @@ if (deployment.chainId !== chainId) {
   );
 }
 
-export const demoAgent =
-  "0x648ac3f9297d59089b02a6091da6dd76902a785b" as Address;
+const configuredDemoAgent = process.env.NEXT_PUBLIC_DEMO_AGENT_ADDRESS;
+
+if (!configuredDemoAgent || !isAddress(configuredDemoAgent)) {
+  throw new Error(
+    "NEXT_PUBLIC_DEMO_AGENT_ADDRESS must be a valid Ethereum address",
+  );
+}
+
+export const demoAgent = getAddress(configuredDemoAgent);
+
+const configuredExplorerUrl =
+  process.env.NEXT_PUBLIC_XLAYER_TESTNET_EXPLORER_URL?.trim();
+
+if (!configuredExplorerUrl || !/^https?:\/\//i.test(configuredExplorerUrl)) {
+  throw new Error(
+    "NEXT_PUBLIC_XLAYER_TESTNET_EXPLORER_URL must be a valid HTTP URL",
+  );
+}
+
+export const xLayerTestnetExplorerUrl = configuredExplorerUrl.replace(
+  /\/+$/,
+  "",
+);
 
 export const addresses = {
   grantline: deployment.grantline.proxy as Address,

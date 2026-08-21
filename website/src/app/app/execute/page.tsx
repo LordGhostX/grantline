@@ -1,35 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { encodeAbiParameters, zeroAddress } from "viem";
+import { encodeAbiParameters, zeroAddress, type Hex } from "viem";
 import { useConnection, useSignTypedData, useSwitchChain } from "wagmi";
 import { TransactionStatus } from "@/components/app/transaction-status";
 import GrantlineMark from "@/components/grantline-mark";
-import { addresses, chainId, demoAgent, grantlineAbi } from "@/lib/contracts";
+import {
+  addresses,
+  chainId,
+  demoAgent,
+  grantlineAbi,
+  xLayerTestnetExplorerUrl,
+} from "@/lib/contracts";
+import { requestDemoAgentSignature } from "@/lib/demo-agent";
 import {
   assertFutureTimestamp,
   parseAddress,
   parseNativeAmount,
 } from "@/lib/app-utils";
+import { actionTypes, type ActionPlan } from "@/lib/action-plan";
 import { useAppTransaction } from "@/lib/use-app-transaction";
 import { getMandateStatusLabel, useMandates } from "@/lib/use-mandates";
 
 type ActionTab = "transfer" | "swap";
-
-const actionTypes = {
-  Action: [
-    { name: "actionType", type: "uint8" },
-    { name: "version", type: "uint8" },
-    { name: "parameters", type: "bytes" },
-  ],
-  ActionPlan: [
-    { name: "mandateId", type: "uint256" },
-    { name: "agent", type: "address" },
-    { name: "nonce", type: "uint256" },
-    { name: "deadline", type: "uint256" },
-    { name: "actions", type: "Action[]" },
-  ],
-} as const;
+type PendingExecution = {
+  plan: ActionPlan;
+  signature: Hex;
+};
 
 function nextDemoNonce(previous = ""): string {
   const current = BigInt(Math.floor(Date.now() / 1000));
@@ -57,34 +54,90 @@ export default function AppExecute() {
   const [deadline, setDeadline] = useState("");
   const [flowError, setFlowError] = useState<unknown>(null);
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
+  const [isDemoSigning, setIsDemoSigning] = useState(false);
+  const [pendingExecution, setPendingExecution] =
+    useState<PendingExecution | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setNonce(nextDemoNonce()), 0);
     return () => window.clearTimeout(timer);
   }, []);
 
-  const activeMandates = mandates.filter((mandate) => mandate.status === 0);
+  const activeMandates = mandates
+    .filter((mandate) => mandate.status === 0)
+    .sort((left, right) => {
+      if (left.id === right.id) return 0;
+      return left.id > right.id ? -1 : 1;
+    });
   const selectedMandate =
     activeMandates.find((mandate) => mandate.id.toString() === mandateId) ??
     activeMandates[0];
   const mandatesReady = !mandatesLoading && !mandatesError;
-  const signerMatches =
+  const usesDemoAgent =
+    Boolean(selectedMandate) &&
+    selectedMandate!.agent.toLowerCase() === demoAgent.toLowerCase();
+  const connectedWalletMatchesAgent =
     Boolean(address && selectedMandate) &&
     address!.toLowerCase() === selectedMandate!.agent.toLowerCase();
+  const canSignActionPlan =
+    Boolean(selectedMandate) && (usesDemoAgent || connectedWalletMatchesAgent);
   const isPending =
-    signTypedData.isPending || switchChain.isPending || transaction.isPending;
+    isDemoSigning ||
+    signTypedData.isPending ||
+    switchChain.isPending ||
+    transaction.isPending;
   const error =
     flowError ?? signTypedData.error ?? switchChain.error ?? transaction.error;
+  const transactionExplorerUrl = transactionHash
+    ? `${xLayerTestnetExplorerUrl}/tx/${transactionHash}`
+    : null;
+
+  async function submitExecution(
+    plan: ActionPlan,
+    signature: Hex,
+    skipChainSwitch: boolean,
+  ) {
+    const hash = await transaction.submit(
+      {
+        address: addresses.grantline,
+        abi: grantlineAbi,
+        functionName: "execute",
+        args: [plan, signature],
+      },
+      { skipChainSwitch },
+    );
+    setTransactionHash(hash);
+    setNonce((currentNonce) => nextDemoNonce(currentNonce));
+    setPendingExecution(null);
+  }
+
+  async function handlePendingExecution() {
+    if (!pendingExecution) return;
+
+    setFlowError(null);
+    try {
+      await submitExecution(
+        pendingExecution.plan,
+        pendingExecution.signature,
+        false,
+      );
+    } catch (submissionError) {
+      setFlowError(submissionError);
+    }
+  }
 
   async function handleTransfer() {
     setFlowError(null);
     setTransactionHash(null);
+    setIsDemoSigning(false);
+    setPendingExecution(null);
     signTypedData.reset();
     switchChain.reset();
+    transaction.reset();
 
     try {
       if (!address) {
-        throw new Error("Connect the agent wallet to sign this Action Plan.");
+        throw new Error("Connect a wallet to submit this Action Plan.");
       }
       if (!selectedMandate) {
         throw new Error(
@@ -96,7 +149,7 @@ export default function AppExecute() {
           `Mandate #${selectedMandate.id.toString()} is ${getMandateStatusLabel(selectedMandate.status).toLowerCase()}.`,
         );
       }
-      if (!signerMatches) {
+      if (!usesDemoAgent && !connectedWalletMatchesAgent) {
         throw new Error(
           `Connect the agent wallet ${selectedMandate.agent} to sign this Action Plan.`,
         );
@@ -108,12 +161,15 @@ export default function AppExecute() {
       if (!/^\d+$/.test(parsedNonce)) {
         throw new Error("Nonce must be a whole number.");
       }
-      const parsedDeadline = new Date(deadline).getTime();
-      if (!deadline || !Number.isFinite(parsedDeadline)) {
-        throw new Error("Deadline must be a valid date.");
+      let deadlineSeconds = 0n;
+      if (deadline) {
+        const parsedDeadline = new Date(deadline).getTime();
+        if (!Number.isFinite(parsedDeadline)) {
+          throw new Error("Deadline must be a valid date.");
+        }
+        deadlineSeconds = BigInt(Math.floor(parsedDeadline / 1000));
+        assertFutureTimestamp(deadlineSeconds, "Deadline");
       }
-      const deadlineSeconds = BigInt(Math.floor(parsedDeadline / 1000));
-      assertFutureTimestamp(deadlineSeconds, "Deadline");
 
       if (connectedChainId !== chainId) {
         await switchChain.mutateAsync({ chainId });
@@ -127,37 +183,40 @@ export default function AppExecute() {
         ],
         [zeroAddress, parsedRecipient, parsedAmount],
       );
-      const plan = {
+      const plan: ActionPlan = {
         mandateId: selectedMandate.id,
         agent: selectedMandate.agent,
         nonce: BigInt(parsedNonce),
         deadline: deadlineSeconds,
         actions: [{ actionType: 0, version: 1, parameters }],
-      } as const;
+      };
 
-      const signature = await signTypedData.mutateAsync({
-        domain: {
-          name: "Grantline",
-          version: "1",
-          chainId,
-          verifyingContract: addresses.grantline,
-        },
-        types: actionTypes,
-        primaryType: "ActionPlan",
-        message: plan,
-      });
+      let signature: Hex;
+      if (usesDemoAgent) {
+        setIsDemoSigning(true);
+        try {
+          signature = await requestDemoAgentSignature(plan);
+        } finally {
+          setIsDemoSigning(false);
+        }
+      } else {
+        signature = await signTypedData.mutateAsync({
+          domain: {
+            name: "Grantline",
+            version: "1",
+            chainId,
+            verifyingContract: addresses.grantline,
+          },
+          types: actionTypes,
+          primaryType: "ActionPlan",
+          message: plan,
+        });
 
-      const hash = await transaction.submit(
-        {
-          address: addresses.grantline,
-          abi: grantlineAbi,
-          functionName: "execute",
-          args: [plan, signature],
-        },
-        { skipChainSwitch: true },
-      );
-      setTransactionHash(hash);
-      setNonce((currentNonce) => nextDemoNonce(currentNonce));
+        setPendingExecution({ plan, signature });
+        return;
+      }
+
+      await submitExecution(plan, signature, true);
     } catch (submissionError) {
       setFlowError(submissionError);
     }
@@ -202,6 +261,7 @@ export default function AppExecute() {
           role="tab"
           aria-selected={tab === "transfer"}
           className={`app-tab${tab === "transfer" ? " active" : ""}`}
+          disabled={Boolean(pendingExecution)}
           onClick={() => setTab("transfer")}
         >
           TRANSFER
@@ -211,6 +271,7 @@ export default function AppExecute() {
           role="tab"
           aria-selected={tab === "swap"}
           className={`app-tab${tab === "swap" ? " active" : ""}`}
+          disabled={Boolean(pendingExecution)}
           onClick={() => setTab("swap")}
         >
           SWAP
@@ -252,18 +313,28 @@ export default function AppExecute() {
               {mandatesReady &&
                 isConnected &&
                 selectedMandate &&
-                !signerMatches && (
+                usesDemoAgent && (
+                  <>
+                    <p className="app-alert app-alert-info" role="status">
+                      Grantline will sign this Action Plan with the demo agent
+                      on the server. Your connected wallet will submit the
+                      execution transaction.
+                    </p>
+                    <p className="app-execute-note" role="note">
+                      Demo agent wallet: <strong>{demoAgent}</strong>
+                    </p>
+                  </>
+                )}
+
+              {mandatesReady &&
+                isConnected &&
+                selectedMandate &&
+                !usesDemoAgent &&
+                !connectedWalletMatchesAgent && (
                   <>
                     <p className="app-alert app-alert-warning" role="status">
                       Connect the agent wallet for this Mandate before signing.
                       The current wallet is {address}.
-                    </p>
-                    <p className="app-execute-note" role="note">
-                      Mandates created with the connected agent wallet can
-                      proceed as-is; the demo requests the Action Plan signature
-                      from that wallet.
-                      <br />
-                      <strong>Demo agent wallet: {demoAgent}</strong>
                     </p>
                   </>
                 )}
@@ -282,7 +353,10 @@ export default function AppExecute() {
                         id="transfer-mandate"
                         className="app-form-input"
                         value={selectedMandate.id.toString()}
-                        onChange={(event) => setMandateId(event.target.value)}
+                        onChange={(event) => {
+                          setPendingExecution(null);
+                          setMandateId(event.target.value);
+                        }}
                       >
                         {activeMandates.map((mandate) => (
                           <option
@@ -311,7 +385,10 @@ export default function AppExecute() {
                       className="app-form-input"
                       placeholder="0x..."
                       value={recipient}
-                      onChange={(event) => setRecipient(event.target.value)}
+                      onChange={(event) => {
+                        setPendingExecution(null);
+                        setRecipient(event.target.value);
+                      }}
                     />
                   </div>
 
@@ -329,7 +406,10 @@ export default function AppExecute() {
                         inputMode="decimal"
                         placeholder="0.001"
                         value={amount}
-                        onChange={(event) => setAmount(event.target.value)}
+                        onChange={(event) => {
+                          setPendingExecution(null);
+                          setAmount(event.target.value);
+                        }}
                       />
                     </div>
                     <div className="app-form-group">
@@ -346,7 +426,10 @@ export default function AppExecute() {
                         placeholder="Generating…"
                         aria-describedby="transfer-nonce-hint"
                         value={nonce}
-                        onChange={(event) => setNonce(event.target.value)}
+                        onChange={(event) => {
+                          setPendingExecution(null);
+                          setNonce(event.target.value);
+                        }}
                       />
                       <p id="transfer-nonce-hint" className="app-form-hint">
                         Generated from the current time and refreshed after each
@@ -360,19 +443,21 @@ export default function AppExecute() {
                       className="app-form-label"
                       htmlFor="transfer-deadline"
                     >
-                      Deadline
+                      Deadline (optional)
                     </label>
                     <input
                       id="transfer-deadline"
                       className="app-form-input"
                       type="datetime-local"
                       value={deadline}
-                      onChange={(event) => setDeadline(event.target.value)}
+                      onChange={(event) => {
+                        setPendingExecution(null);
+                        setDeadline(event.target.value);
+                      }}
                     />
                     <p className="app-form-hint">
-                      The Action Plan expires at this local time. Choose a
-                      future time so the signed plan remains valid while it is
-                      submitted.
+                      Leave blank for no deadline, or choose a future local time
+                      so the signed plan expires after that point.
                     </p>
                   </div>
 
@@ -382,16 +467,37 @@ export default function AppExecute() {
                     message={
                       switchChain.isPending
                         ? "Switch to X Layer Testnet in your wallet…"
-                        : signTypedData.isPending
-                          ? "Sign the Action Plan in your wallet…"
-                          : "Confirm the execution transaction in your wallet…"
+                        : isDemoSigning
+                          ? "Requesting the demo agent signature…"
+                          : signTypedData.isPending
+                            ? "Sign the Action Plan in your wallet…"
+                            : "Confirm the execution transaction in your wallet…"
                     }
                   />
+
+                  {pendingExecution && (
+                    <p className="app-alert app-alert-info" role="status">
+                      Action Plan signed. Click &quot;Confirm execution&quot; to
+                      open your wallet and submit the transaction.
+                    </p>
+                  )}
 
                   {transactionHash && (
                     <p className="app-alert app-alert-info" role="status">
                       Action Plan executed. Transaction:{" "}
-                      <span className="app-code">{transactionHash}</span>
+                      {transactionExplorerUrl ? (
+                        <a
+                          className="app-code"
+                          href={transactionExplorerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label="View transaction on the X Layer Testnet Explorer"
+                        >
+                          {transactionHash}
+                        </a>
+                      ) : (
+                        <span className="app-code">{transactionHash}</span>
+                      )}
                     </p>
                   )}
 
@@ -401,12 +507,22 @@ export default function AppExecute() {
                     disabled={
                       isPending ||
                       !nonce.trim() ||
-                      !selectedMandate ||
-                      !signerMatches
+                      (!pendingExecution &&
+                        (!selectedMandate || !canSignActionPlan))
                     }
-                    onClick={() => void handleTransfer()}
+                    onClick={() =>
+                      void (pendingExecution
+                        ? handlePendingExecution()
+                        : handleTransfer())
+                    }
                   >
-                    {isPending ? "Processing…" : "Sign and execute"}
+                    {isPending
+                      ? "Processing…"
+                      : pendingExecution
+                        ? "Confirm execution"
+                        : usesDemoAgent
+                          ? "Sign and execute"
+                          : "Sign Action Plan"}
                   </button>
                 </>
               )}
