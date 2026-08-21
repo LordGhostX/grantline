@@ -18,7 +18,15 @@ import {
   parseAddress,
   parseNativeAmount,
 } from "@/lib/app-utils";
-import { actionTypes, type ActionPlan } from "@/lib/action-plan";
+import {
+  actionPlanDomain,
+  actionTypes,
+  demoAgentAuthorizationDomain,
+  demoAgentAuthorizationTtlSeconds,
+  demoAgentAuthorizationTypes,
+  hashActionPlan,
+  type ActionPlan,
+} from "@/lib/action-plan";
 import { useAppTransaction } from "@/lib/use-app-transaction";
 import { getMandateStatusLabel, useMandates } from "@/lib/use-mandates";
 
@@ -28,12 +36,35 @@ type PendingExecution = {
   signature: Hex;
 };
 
+const MINIMUM_SIGNING_INTERVAL_MS = 500;
+
+function getPerformanceTimestamp(): number {
+  return performance.now();
+}
+
+async function waitForMinimumSigningInterval(startedAt: number) {
+  const remaining =
+    MINIMUM_SIGNING_INTERVAL_MS - (performance.now() - startedAt);
+  if (remaining <= 0) return;
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, remaining);
+  });
+}
+
 function nextDemoNonce(previous = ""): string {
   const current = BigInt(Math.floor(Date.now() / 1000));
   if (!/^\d+$/.test(previous)) return current.toString();
 
   const previousNonce = BigInt(previous);
   return (current > previousNonce ? current : previousNonce + 1n).toString();
+}
+
+function nextDemoAuthorizationExpiry(): bigint {
+  return (
+    BigInt(Math.floor(Date.now() / 1000)) +
+    BigInt(demoAgentAuthorizationTtlSeconds)
+  );
 }
 
 export default function AppExecute() {
@@ -44,6 +75,7 @@ export default function AppExecute() {
     error: mandatesError,
   } = useMandates({ scope: "all", enabled: isConnected });
   const signTypedData = useSignTypedData();
+  const signControllerAuthorization = useSignTypedData();
   const switchChain = useSwitchChain();
   const transaction = useAppTransaction();
   const [tab, setTab] = useState<ActionTab>("transfer");
@@ -55,6 +87,7 @@ export default function AppExecute() {
   const [flowError, setFlowError] = useState<unknown>(null);
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
   const [isDemoSigning, setIsDemoSigning] = useState(false);
+  const [isPreparingExecution, setIsPreparingExecution] = useState(false);
   const [pendingExecution, setPendingExecution] =
     useState<PendingExecution | null>(null);
 
@@ -79,15 +112,27 @@ export default function AppExecute() {
   const connectedWalletMatchesAgent =
     Boolean(address && selectedMandate) &&
     address!.toLowerCase() === selectedMandate!.agent.toLowerCase();
+  const connectedWalletMatchesController =
+    Boolean(address && selectedMandate) &&
+    address!.toLowerCase() === selectedMandate!.controller.toLowerCase();
   const canSignActionPlan =
-    Boolean(selectedMandate) && (usesDemoAgent || connectedWalletMatchesAgent);
+    Boolean(selectedMandate) &&
+    (usesDemoAgent
+      ? connectedWalletMatchesController
+      : connectedWalletMatchesAgent);
   const isPending =
     isDemoSigning ||
+    isPreparingExecution ||
     signTypedData.isPending ||
+    signControllerAuthorization.isPending ||
     switchChain.isPending ||
     transaction.isPending;
   const error =
-    flowError ?? signTypedData.error ?? switchChain.error ?? transaction.error;
+    flowError ??
+    signControllerAuthorization.error ??
+    signTypedData.error ??
+    switchChain.error ??
+    transaction.error;
   const transactionExplorerUrl = transactionHash
     ? `${xLayerTestnetExplorerUrl}/tx/${transactionHash}`
     : null;
@@ -126,12 +171,19 @@ export default function AppExecute() {
     }
   }
 
+  function clearPendingExecution() {
+    setPendingExecution(null);
+    setFlowError(null);
+  }
+
   async function handleTransfer() {
     setFlowError(null);
     setTransactionHash(null);
     setIsDemoSigning(false);
+    setIsPreparingExecution(false);
     setPendingExecution(null);
     signTypedData.reset();
+    signControllerAuthorization.reset();
     switchChain.reset();
     transaction.reset();
 
@@ -147,6 +199,11 @@ export default function AppExecute() {
       if (selectedMandate.status !== 0) {
         throw new Error(
           `Mandate #${selectedMandate.id.toString()} is ${getMandateStatusLabel(selectedMandate.status).toLowerCase()}.`,
+        );
+      }
+      if (usesDemoAgent && !connectedWalletMatchesController) {
+        throw new Error(
+          `Connect the controller wallet ${selectedMandate.controller} to authorize this Action Plan.`,
         );
       }
       if (!usesDemoAgent && !connectedWalletMatchesAgent) {
@@ -193,30 +250,51 @@ export default function AppExecute() {
 
       let signature: Hex;
       if (usesDemoAgent) {
+        const authorization = {
+          mandateId: plan.mandateId,
+          agent: plan.agent,
+          actionDigest: hashActionPlan(plan),
+          expiresAt: nextDemoAuthorizationExpiry(),
+        };
+        const controllerSignature =
+          await signControllerAuthorization.mutateAsync({
+            domain: demoAgentAuthorizationDomain,
+            types: demoAgentAuthorizationTypes,
+            primaryType: "DemoAgentAuthorization",
+            message: authorization,
+          });
+
         setIsDemoSigning(true);
         try {
-          signature = await requestDemoAgentSignature(plan);
+          signature = await requestDemoAgentSignature(plan, {
+            ...authorization,
+            signature: controllerSignature,
+          });
         } finally {
           setIsDemoSigning(false);
         }
       } else {
         signature = await signTypedData.mutateAsync({
-          domain: {
-            name: "Grantline",
-            version: "1",
-            chainId,
-            verifyingContract: addresses.grantline,
-          },
+          domain: actionPlanDomain,
           types: actionTypes,
           primaryType: "ActionPlan",
           message: plan,
         });
 
+        const executionDelayStartedAt = getPerformanceTimestamp();
         setPendingExecution({ plan, signature });
-        return;
+        setIsPreparingExecution(true);
+        try {
+          await waitForMinimumSigningInterval(executionDelayStartedAt);
+          await submitExecution(plan, signature, true);
+        } finally {
+          setIsPreparingExecution(false);
+        }
       }
 
-      await submitExecution(plan, signature, true);
+      if (usesDemoAgent) {
+        await submitExecution(plan, signature, true);
+      }
     } catch (submissionError) {
       setFlowError(submissionError);
     }
@@ -235,7 +313,10 @@ export default function AppExecute() {
         <div className="app-empty app-card">
           <GrantlineMark className="app-empty-icon" />
           <h2>Connect your wallet</h2>
-          <p>Connect the agent wallet to sign and execute an Action Plan.</p>
+          <p>
+            Connect the controller wallet for demo Mandates or the agent wallet
+            for standard Mandates.
+          </p>
         </div>
       </>
     );
@@ -261,8 +342,11 @@ export default function AppExecute() {
           role="tab"
           aria-selected={tab === "transfer"}
           className={`app-tab${tab === "transfer" ? " active" : ""}`}
-          disabled={Boolean(pendingExecution)}
-          onClick={() => setTab("transfer")}
+          disabled={isPending}
+          onClick={() => {
+            clearPendingExecution();
+            setTab("transfer");
+          }}
         >
           TRANSFER
         </button>
@@ -271,8 +355,11 @@ export default function AppExecute() {
           role="tab"
           aria-selected={tab === "swap"}
           className={`app-tab${tab === "swap" ? " active" : ""}`}
-          disabled={Boolean(pendingExecution)}
-          onClick={() => setTab("swap")}
+          disabled={isPending}
+          onClick={() => {
+            clearPendingExecution();
+            setTab("swap");
+          }}
         >
           SWAP
         </button>
@@ -316,14 +403,26 @@ export default function AppExecute() {
                 usesDemoAgent && (
                   <>
                     <p className="app-alert app-alert-info" role="status">
-                      Grantline will sign this Action Plan with the demo agent
-                      on the server. Your connected wallet will submit the
-                      execution transaction.
+                      Your connected controller wallet will authorize this
+                      Action Plan. Grantline will sign it with the demo agent on
+                      the server, then your wallet will submit the execution
+                      transaction.
                     </p>
                     <p className="app-execute-note" role="note">
                       Demo agent wallet: <strong>{demoAgent}</strong>
                     </p>
                   </>
+                )}
+
+              {mandatesReady &&
+                isConnected &&
+                selectedMandate &&
+                usesDemoAgent &&
+                !connectedWalletMatchesController && (
+                  <p className="app-alert app-alert-warning" role="status">
+                    Connect the controller wallet for this Mandate before
+                    authorizing. The current wallet is {address}.
+                  </p>
                 )}
 
               {mandatesReady &&
@@ -353,8 +452,9 @@ export default function AppExecute() {
                         id="transfer-mandate"
                         className="app-form-input"
                         value={selectedMandate.id.toString()}
+                        disabled={isPending}
                         onChange={(event) => {
-                          setPendingExecution(null);
+                          clearPendingExecution();
                           setMandateId(event.target.value);
                         }}
                       >
@@ -385,8 +485,9 @@ export default function AppExecute() {
                       className="app-form-input"
                       placeholder="0x..."
                       value={recipient}
+                      disabled={isPending}
                       onChange={(event) => {
-                        setPendingExecution(null);
+                        clearPendingExecution();
                         setRecipient(event.target.value);
                       }}
                     />
@@ -406,8 +507,9 @@ export default function AppExecute() {
                         inputMode="decimal"
                         placeholder="0.001"
                         value={amount}
+                        disabled={isPending}
                         onChange={(event) => {
-                          setPendingExecution(null);
+                          clearPendingExecution();
                           setAmount(event.target.value);
                         }}
                       />
@@ -426,8 +528,9 @@ export default function AppExecute() {
                         placeholder="Generating…"
                         aria-describedby="transfer-nonce-hint"
                         value={nonce}
+                        disabled={isPending}
                         onChange={(event) => {
-                          setPendingExecution(null);
+                          clearPendingExecution();
                           setNonce(event.target.value);
                         }}
                       />
@@ -450,8 +553,9 @@ export default function AppExecute() {
                       className="app-form-input"
                       type="datetime-local"
                       value={deadline}
+                      disabled={isPending}
                       onChange={(event) => {
-                        setPendingExecution(null);
+                        clearPendingExecution();
                         setDeadline(event.target.value);
                       }}
                     />
@@ -467,18 +571,22 @@ export default function AppExecute() {
                     message={
                       switchChain.isPending
                         ? "Switch to X Layer Testnet in your wallet…"
-                        : isDemoSigning
-                          ? "Requesting the demo agent signature…"
-                          : signTypedData.isPending
-                            ? "Sign the Action Plan in your wallet…"
-                            : "Confirm the execution transaction in your wallet…"
+                        : signControllerAuthorization.isPending
+                          ? "Authorize the Action Plan in your wallet…"
+                          : isDemoSigning
+                            ? "Requesting the demo agent signature…"
+                            : isPreparingExecution
+                              ? "Preparing the execution transaction…"
+                              : signTypedData.isPending
+                                ? "Sign the Action Plan in your wallet…"
+                                : "Confirm the execution transaction in your wallet…"
                     }
                   />
 
-                  {pendingExecution && (
+                  {pendingExecution && flowError && !isPending && (
                     <p className="app-alert app-alert-info" role="status">
-                      Action Plan signed. Click &quot;Confirm execution&quot; to
-                      open your wallet and submit the transaction.
+                      Action Plan signed. Retry execution to open your wallet
+                      and submit the transaction again.
                     </p>
                   )}
 
@@ -503,7 +611,7 @@ export default function AppExecute() {
 
                   <button
                     type="button"
-                    className="app-btn app-btn-primary"
+                    className="app-btn app-btn-primary app-execute-submit"
                     disabled={
                       isPending ||
                       !nonce.trim() ||
@@ -518,11 +626,9 @@ export default function AppExecute() {
                   >
                     {isPending
                       ? "Processing…"
-                      : pendingExecution
-                        ? "Confirm execution"
-                        : usesDemoAgent
-                          ? "Sign and execute"
-                          : "Sign Action Plan"}
+                      : pendingExecution && flowError
+                        ? "Retry execution"
+                        : "Sign and execute"}
                   </button>
                 </>
               )}

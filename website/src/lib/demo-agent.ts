@@ -1,7 +1,11 @@
 "use client";
 
 import { isHex, type Hex } from "viem";
-import { serializeActionPlan, type ActionPlan } from "./action-plan";
+import {
+  serializeActionPlan,
+  type ActionPlan,
+  type DemoAgentAuthorization,
+} from "./action-plan";
 
 type DemoAgentSignatureResponse = {
   signature?: unknown;
@@ -10,11 +14,19 @@ type DemoAgentSignatureResponse = {
 
 export async function requestDemoAgentSignature(
   plan: ActionPlan,
+  authorization: DemoAgentAuthorization & { signature: Hex },
 ): Promise<Hex> {
   const response = await fetch("/api/demo-agent/sign", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ plan: serializeActionPlan(plan) }),
+    body: JSON.stringify({
+      plan: serializeActionPlan(plan),
+      controllerAuthorization: {
+        actionDigest: authorization.actionDigest,
+        expiresAt: authorization.expiresAt.toString(),
+        signature: authorization.signature,
+      },
+    }),
   });
 
   let payload: DemoAgentSignatureResponse = {};

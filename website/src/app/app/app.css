@@ -558,6 +558,10 @@
     background: #dfc581;
 }
 
+.app-execute-submit {
+    width: 150px;
+}
+
 .app-btn-quiet {
     border-color: var(--border);
     background: transparent;

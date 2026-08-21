@@ -1,4 +1,12 @@
-import type { Address, Hex } from "viem";
+import { hashTypedData, type Address, type Hex } from "viem";
+import { addresses, chainId } from "./contracts";
+
+export const actionPlanDomain = {
+  name: "Grantline",
+  version: "1",
+  chainId,
+  verifyingContract: addresses.grantline,
+} as const;
 
 export const actionTypes = {
   Action: [
@@ -15,6 +23,25 @@ export const actionTypes = {
   ],
 } as const;
 
+export const demoAgentAuthorizationDomain = {
+  name: "Grantline Demo Agent Authorization",
+  version: "1",
+  chainId,
+  verifyingContract: addresses.grantline,
+} as const;
+
+export const demoAgentAuthorizationTypes = {
+  DemoAgentAuthorization: [
+    { name: "mandateId", type: "uint256" },
+    { name: "agent", type: "address" },
+    { name: "actionDigest", type: "bytes32" },
+    { name: "expiresAt", type: "uint256" },
+  ],
+} as const;
+
+export const demoAgentAuthorizationTtlSeconds = 5 * 60;
+export const demoAgentAuthorizationMaxTtlSeconds = 10 * 60;
+
 export type ActionPlanAction = {
   actionType: number;
   version: number;
@@ -27,6 +54,13 @@ export type ActionPlan = {
   nonce: bigint;
   deadline: bigint;
   actions: readonly ActionPlanAction[];
+};
+
+export type DemoAgentAuthorization = {
+  mandateId: bigint;
+  agent: Address;
+  actionDigest: Hex;
+  expiresAt: bigint;
 };
 
 export type SerializedActionPlan = {
@@ -45,4 +79,13 @@ export function serializeActionPlan(plan: ActionPlan): SerializedActionPlan {
     deadline: plan.deadline.toString(),
     actions: plan.actions,
   };
+}
+
+export function hashActionPlan(plan: ActionPlan): Hex {
+  return hashTypedData({
+    domain: actionPlanDomain,
+    types: actionTypes,
+    primaryType: "ActionPlan",
+    message: plan,
+  });
 }

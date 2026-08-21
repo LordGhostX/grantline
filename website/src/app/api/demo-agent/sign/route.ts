@@ -9,7 +9,15 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { actionTypes, type ActionPlan } from "@/lib/action-plan";
+import {
+  actionPlanDomain,
+  actionTypes,
+  demoAgentAuthorizationDomain,
+  demoAgentAuthorizationMaxTtlSeconds,
+  demoAgentAuthorizationTypes,
+  hashActionPlan,
+  type ActionPlan,
+} from "@/lib/action-plan";
 import { addresses, chainId, demoAgent, grantlineAbi } from "@/lib/contracts";
 
 export const runtime = "nodejs";
@@ -88,6 +96,40 @@ function parsePlan(value: unknown): ActionPlan {
   };
 }
 
+type ControllerAuthorization = {
+  actionDigest: Hex;
+  expiresAt: bigint;
+  signature: Hex;
+};
+
+function parseControllerAuthorization(value: unknown): ControllerAuthorization {
+  if (!isRecord(value)) {
+    throw new Error("The request must contain controller authorization.");
+  }
+
+  if (
+    typeof value.actionDigest !== "string" ||
+    !isHex(value.actionDigest) ||
+    value.actionDigest.length !== 66
+  ) {
+    throw new Error("Controller authorization digest must be a bytes32 value.");
+  }
+
+  if (
+    typeof value.signature !== "string" ||
+    !isHex(value.signature) ||
+    ![130, 132].includes(value.signature.length)
+  ) {
+    throw new Error("Controller authorization signature is invalid.");
+  }
+
+  return {
+    actionDigest: value.actionDigest,
+    expiresAt: parseUint(value.expiresAt, "authorization expiry"),
+    signature: value.signature,
+  };
+}
+
 function getPublicClient() {
   const rpcUrls = process.env.NEXT_PUBLIC_X_LAYER_RPCS?.split(",")
     .map((url) => url.trim())
@@ -110,6 +152,18 @@ function getPublicClient() {
   });
 }
 
+function readMandate(
+  publicClient: ReturnType<typeof getPublicClient>,
+  mandateId: bigint,
+) {
+  return publicClient.readContract({
+    address: addresses.grantline,
+    abi: grantlineAbi,
+    functionName: "getMandate",
+    args: [mandateId],
+  });
+}
+
 export async function POST(request: Request) {
   let body: unknown;
   try {
@@ -118,8 +172,15 @@ export async function POST(request: Request) {
     return errorResponse("Request body must be valid JSON.", 400);
   }
 
-  if (!isRecord(body) || !("plan" in body)) {
-    return errorResponse("Request must contain a plan.", 400);
+  if (
+    !isRecord(body) ||
+    !("plan" in body) ||
+    !("controllerAuthorization" in body)
+  ) {
+    return errorResponse(
+      "Request must contain a plan and controller authorization.",
+      400,
+    );
   }
 
   let plan: ActionPlan;
@@ -132,10 +193,95 @@ export async function POST(request: Request) {
     );
   }
 
+  let controllerAuthorization: ControllerAuthorization;
+  try {
+    controllerAuthorization = parseControllerAuthorization(
+      body.controllerAuthorization,
+    );
+  } catch (error) {
+    return errorResponse(
+      error instanceof Error
+        ? error.message
+        : "Controller authorization is invalid.",
+      400,
+    );
+  }
+
   if (plan.agent.toLowerCase() !== demoAgent.toLowerCase()) {
     return errorResponse(
       "This signing route only supports the demo agent.",
       400,
+    );
+  }
+
+  const actionDigest = hashActionPlan(plan);
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  const maximumExpiry = now + BigInt(demoAgentAuthorizationMaxTtlSeconds);
+
+  if (
+    controllerAuthorization.actionDigest.toLowerCase() !==
+    actionDigest.toLowerCase()
+  ) {
+    return errorResponse(
+      "Controller authorization does not match this Action Plan.",
+      401,
+    );
+  }
+  if (controllerAuthorization.expiresAt <= now) {
+    return errorResponse("Controller authorization has expired.", 401);
+  }
+  if (controllerAuthorization.expiresAt > maximumExpiry) {
+    return errorResponse(
+      "Controller authorization expiry is too far ahead.",
+      401,
+    );
+  }
+
+  let mandate: Awaited<ReturnType<typeof readMandate>>;
+  let publicClient: ReturnType<typeof getPublicClient>;
+  try {
+    publicClient = getPublicClient();
+    mandate = await readMandate(publicClient, plan.mandateId);
+
+    if (mandate[3].toLowerCase() !== demoAgent.toLowerCase()) {
+      return errorResponse("This Mandate does not use the demo agent.", 409);
+    }
+    if (Number(mandate[6]) !== 0) {
+      return errorResponse("This Mandate is not active.", 409);
+    }
+  } catch {
+    return errorResponse(
+      "Unable to verify the Mandate on X Layer Testnet.",
+      503,
+    );
+  }
+
+  let controllerAuthorized = false;
+  try {
+    controllerAuthorized = await publicClient.verifyTypedData({
+      address: mandate[1],
+      domain: demoAgentAuthorizationDomain,
+      types: demoAgentAuthorizationTypes,
+      primaryType: "DemoAgentAuthorization",
+      message: {
+        mandateId: plan.mandateId,
+        agent: plan.agent,
+        actionDigest,
+        expiresAt: controllerAuthorization.expiresAt,
+      },
+      signature: controllerAuthorization.signature,
+    });
+  } catch {
+    return errorResponse(
+      "Unable to verify controller authorization on X Layer Testnet.",
+      503,
+    );
+  }
+
+  if (!controllerAuthorized) {
+    return errorResponse(
+      "Controller authorization does not match this Mandate.",
+      401,
     );
   }
 
@@ -162,34 +308,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const mandate = await getPublicClient().readContract({
-      address: addresses.grantline,
-      abi: grantlineAbi,
-      functionName: "getMandate",
-      args: [plan.mandateId],
-    });
-
-    if (mandate[3].toLowerCase() !== demoAgent.toLowerCase()) {
-      return errorResponse("This Mandate does not use the demo agent.", 409);
-    }
-    if (Number(mandate[6]) !== 0) {
-      return errorResponse("This Mandate is not active.", 409);
-    }
-  } catch {
-    return errorResponse(
-      "Unable to verify the Mandate on X Layer Testnet.",
-      503,
-    );
-  }
-
-  try {
     const signature = await account.signTypedData({
-      domain: {
-        name: "Grantline",
-        version: "1",
-        chainId,
-        verifyingContract: addresses.grantline,
-      },
+      domain: actionPlanDomain,
       types: actionTypes,
       primaryType: "ActionPlan",
       message: plan,
