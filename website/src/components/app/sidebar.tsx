@@ -90,8 +90,14 @@ export function Sidebar({ children }: Props) {
           >
             Home
           </Link>
-          <Link href="/docs" className="app-nav-item" onClick={closeMobile}>
-            Docs
+          <Link
+            href="/docs"
+            className="app-nav-item"
+            target="_blank"
+            rel="noreferrer"
+            onClick={closeMobile}
+          >
+            Docs ↗
           </Link>
           <a
             href={repositoryUrl}

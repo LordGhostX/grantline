@@ -383,6 +383,7 @@ contract TestnetIntegration is ScriptBase {
         _require(Vault(payable(state.secondVault)).authority() == state.executor, "second Vault authority mismatch");
         _require(!Vault(payable(state.vault)).paused(), "first Vault is unexpectedly paused");
         _require(!Vault(payable(state.secondVault)).paused(), "second Vault is unexpectedly paused");
+        _assertVaultIndexes(state);
         return state;
     }
 
@@ -418,7 +419,16 @@ contract TestnetIntegration is ScriptBase {
         _require(address(state.vault).balance == DEPOSIT_AMOUNT, "first Vault native deposit mismatch");
         _require(address(state.secondVault).balance == SECOND_VAULT_DEPOSIT, "second Vault native deposit mismatch");
         _require(IntegrationToken(state.token).balanceOf(state.vault) == TOKEN_DEPOSIT, "token deposit mismatch");
-        _require(hub.getMandate(state.rootMandate).agent == state.agent, "root agent mismatch");
+        MandateRegistry registry = MandateRegistry(state.registry);
+        GrantlineTypes.Mandate memory root = registry.getMandate(state.rootMandate);
+        _require(root.agent == state.agent, "root agent mismatch");
+        _require(root.createdBy == state.owner, "root mandate creator mismatch");
+        _require(registry.vaultMandateCount(state.vault) == 1, "root Vault Mandate index count mismatch");
+        _require(registry.vaultMandateAt(state.vault, 0) == state.rootMandate, "root Vault Mandate index mismatch");
+        _require(registry.creatorMandateCount(state.owner) == 1, "root creator Mandate index count mismatch");
+        _require(registry.creatorMandateAt(state.owner, 0) == state.rootMandate, "root creator Mandate index mismatch");
+        _require(registry.agentMandateCount(state.agent) == 1, "root agent Mandate index count mismatch");
+        _require(registry.agentMandateAt(state.agent, 0) == state.rootMandate, "root agent Mandate index mismatch");
         return state;
     }
 
@@ -588,6 +598,7 @@ contract TestnetIntegration is ScriptBase {
         vm.stopBroadcast();
         _require(hub.escalationStatus(state.rootEscalation) == 1, "escalation was not pending");
         _require(hub.getEscalation(state.rootEscalation).submittedBy == state.agent, "escalation submitter mismatch");
+        _assertEscalationIndexes(state, state.rootEscalation, state.agent, 1);
 
         integrationVm.prank(state.agent);
         integrationVm.expectRevert();
@@ -617,6 +628,7 @@ contract TestnetIntegration is ScriptBase {
             MandateRegistry(state.registry).nonceUsed(state.rootMandate, state.agent, ROOT_ESCALATION_NONCE),
             "escalated nonce not consumed"
         );
+        _assertEscalationIndexes(state, state.rootEscalation, state.agent, 1);
         return state;
     }
 
@@ -684,6 +696,7 @@ contract TestnetIntegration is ScriptBase {
         state.childMandate =
             hub.createChildMandate(state.rootMandate, state.delegatedAgent, childRules, childPreflight, 0, 0);
         vm.stopBroadcast();
+        _assertMandateIndexes(state, state.childMandate, state.agent, state.delegatedAgent, 2);
 
         vm.startBroadcast(state.agentKey);
         hub.updateMandate(state.childMandate, childRules, childPreflight, 0, 0);
@@ -706,6 +719,7 @@ contract TestnetIntegration is ScriptBase {
         state.grandchildMandate =
             hub.createChildMandate(state.childMandate, state.agent, grandchildRules, childPreflight, 0, 0);
         vm.stopBroadcast();
+        _assertMandateIndexes(state, state.grandchildMandate, state.delegatedAgent, state.agent, 3);
 
         ActionTypes.ActionPlan memory grandchildPlan = _nativePlan(
             state.grandchildMandate,
@@ -776,6 +790,7 @@ contract TestnetIntegration is ScriptBase {
         hub.executeEscalated(state.childEscalation);
         vm.stopBroadcast();
         _require(hub.escalationStatus(state.childEscalation) == 4, "child escalation was not executed");
+        _assertEscalationIndexes(state, state.childEscalation, state.delegatedAgent, 2);
 
         ActionTypes.ActionPlan memory pendingPlan = _nativePlan(
             state.rootMandate, state.agent, ROOT_REVOKED_ESCALATION_NONCE, 0.0005 ether, PENDING_RECIPIENT, 0
@@ -787,6 +802,7 @@ contract TestnetIntegration is ScriptBase {
         state.deniedEscalation = hub.submitEscalation(pendingPlan, pendingSignature);
         vm.stopBroadcast();
         _require(hub.escalationStatus(state.deniedEscalation) == 1, "revocation fixture was not pending");
+        _assertEscalationIndexes(state, state.deniedEscalation, state.agent, 3);
         return state;
     }
 
@@ -825,6 +841,10 @@ contract TestnetIntegration is ScriptBase {
         vm.startBroadcast(state.ownerKey);
         hub.revokeMandate(expiryMandate);
         vm.stopBroadcast();
+        _require(
+            MandateRegistry(state.registry).vaultMandateCount(state.vault) == 5,
+            "validity Mandates were not retained in the Vault index"
+        );
         return state;
     }
 
@@ -856,6 +876,7 @@ contract TestnetIntegration is ScriptBase {
         bytes32 reservationDigest = hub.submitEscalation(reservationPlan, reservationSignature);
         vm.stopBroadcast();
         _require(hub.escalationStatus(reservationDigest) == 1, "reservation escalation was not pending");
+        _assertEscalationIndexes(state, reservationDigest, state.agent, 4);
         (bool reserved, bytes32 reservedReservation) =
             hub.getNonceState(state.rootMandate, ROOT_RESERVATION_NONCE);
         _require(!reserved, "reserved nonce appears used");
@@ -908,6 +929,16 @@ contract TestnetIntegration is ScriptBase {
         state.thirdVault = hub.createVault();
         GrantlineAdmin(state.admin).setVaultController(state.thirdVault, state.agent);
         vm.stopBroadcast();
+
+        _require(hub.vaultCount() == 3, "Grantline Vault index count mismatch after upgrade fixture");
+        _require(
+            VaultFactory(state.vaultFactory).vaultCount() == 3,
+            "factory Vault index count mismatch after upgrade fixture"
+        );
+        _require(hub.controllerVaultCount(state.owner) == 1, "owner Vault index changed after reassignment");
+        _require(hub.controllerVaultAt(state.owner, 0) == state.vault, "owner Vault index points to the wrong Vault");
+        _require(hub.controllerVaultCount(state.agent) == 1, "new controller Vault index count mismatch");
+        _require(hub.controllerVaultAt(state.agent, 0) == state.thirdVault, "new controller Vault index mismatch");
 
         Grantline.VaultView memory thirdView = hub.getVault(state.thirdVault);
         _require(firstBefore.implementation == state.initialVaultImplementation, "first Vault changed with template");
@@ -998,6 +1029,7 @@ contract TestnetIntegration is ScriptBase {
                 == state.deniedEscalation,
             "denied escalation reservation was released"
         );
+        _assertEscalationIndexes(state, state.deniedEscalation, state.agent, 4);
 
         GrantlineTypes.EvaluationResult memory evaluation = hub.evaluate(pendingPlan, pendingSignature);
         _require(evaluation.decision == 2, "revoked root plan was not DENY");
@@ -1072,6 +1104,120 @@ contract TestnetIntegration is ScriptBase {
         snapshot.modules[3] = DeploymentManifest.ModuleSnapshot(state.executor, state.executorImplementation);
         snapshot.modules[4] = DeploymentManifest.ModuleSnapshot(state.vaultFactory, state.vaultFactoryImplementation);
         return DeploymentManifest.build(snapshot);
+    }
+
+    function _assertVaultIndexes(State memory state) private view {
+        Grantline hub = Grantline(state.hub);
+        VaultFactory factory = VaultFactory(state.vaultFactory);
+        _require(hub.vaultCount() == 2, "Grantline Vault index count mismatch");
+        _require(factory.vaultCount() == 2, "factory Vault index count mismatch");
+        _require(hub.isRegisteredVault(state.vault), "first Vault was not registered");
+        _require(hub.isRegisteredVault(state.secondVault), "second Vault was not registered");
+        _require(hub.controllerVaultCount(state.owner) == 1, "owner Vault index count mismatch");
+        _require(hub.controllerVaultAt(state.owner, 0) == state.vault, "owner Vault index mismatch");
+        _require(hub.controllerVaultCount(state.delegatedAgent) == 1, "delegated controller Vault index count mismatch");
+        _require(
+            hub.controllerVaultAt(state.delegatedAgent, 0) == state.secondVault,
+            "delegated controller Vault index mismatch"
+        );
+    }
+
+    function _assertMandateIndexes(
+        State memory state,
+        uint256 mandateId,
+        address creator,
+        address agent,
+        uint256 expectedVaultCount
+    ) private view {
+        MandateRegistry registry = MandateRegistry(state.registry);
+        GrantlineTypes.Mandate memory mandate = registry.getMandate(mandateId);
+        _require(mandate.createdBy == creator, "Mandate creator read mismatch");
+        _require(mandate.agent == agent, "Mandate agent read mismatch");
+        _require(registry.vaultMandateCount(state.vault) == expectedVaultCount, "Vault Mandate index count mismatch");
+        _require(_containsMandate(registry, state.vault, mandateId), "Vault Mandate index missing record");
+        _require(_containsCreatorMandate(registry, creator, mandateId), "creator Mandate index missing record");
+        _require(_containsAgentMandate(registry, agent, mandateId), "agent Mandate index missing record");
+    }
+
+    function _assertEscalationIndexes(State memory state, bytes32 digest, address agent, uint256 expectedCount)
+        private
+        view
+    {
+        EscalationManager manager = EscalationManager(state.escalationManager);
+        _require(manager.escalationCount() == expectedCount, "global Escalation index count mismatch");
+        _require(manager.vaultEscalationCount(state.vault) == expectedCount, "Vault Escalation index count mismatch");
+        _require(_containsEscalation(manager, digest), "global Escalation index missing record");
+        _require(_containsVaultEscalation(manager, state.vault, digest), "Vault Escalation index missing record");
+        _require(manager.agentEscalationCount(agent) >= 1, "agent Escalation index is empty");
+        _require(_containsAgentEscalation(manager, agent, digest), "agent Escalation index missing record");
+    }
+
+    function _containsMandate(MandateRegistry registry, address vault, uint256 mandateId)
+        private
+        view
+        returns (bool)
+    {
+        uint256 count = registry.vaultMandateCount(vault);
+        for (uint256 index; index < count; index++) {
+            if (registry.vaultMandateAt(vault, index) == mandateId) return true;
+        }
+        return false;
+    }
+
+    function _containsCreatorMandate(MandateRegistry registry, address creator, uint256 mandateId)
+        private
+        view
+        returns (bool)
+    {
+        uint256 count = registry.creatorMandateCount(creator);
+        for (uint256 index; index < count; index++) {
+            if (registry.creatorMandateAt(creator, index) == mandateId) return true;
+        }
+        return false;
+    }
+
+    function _containsAgentMandate(MandateRegistry registry, address agent, uint256 mandateId)
+        private
+        view
+        returns (bool)
+    {
+        uint256 count = registry.agentMandateCount(agent);
+        for (uint256 index; index < count; index++) {
+            if (registry.agentMandateAt(agent, index) == mandateId) return true;
+        }
+        return false;
+    }
+
+    function _containsEscalation(EscalationManager manager, bytes32 digest) private view returns (bool) {
+        uint256 count = manager.escalationCount();
+        for (uint256 index; index < count; index++) {
+            if (manager.escalationAt(index) == digest) return true;
+        }
+        return false;
+    }
+
+    function _containsVaultEscalation(EscalationManager manager, address vault, bytes32 digest)
+        private
+        view
+        returns (bool)
+    {
+        uint256 count = manager.vaultEscalationCount(vault);
+        for (uint256 index; index < count; index++) {
+            if (manager.vaultEscalationAt(vault, index) == digest) return true;
+        }
+        return false;
+    }
+
+    function _containsAgentEscalation(EscalationManager manager, address agent, bytes32 digest)
+        private
+        view
+        returns (bool)
+    {
+        uint256 count = manager.agentEscalationCount(agent);
+        for (uint256 index; index < count; index++) {
+            if (manager.agentEscalationAt(agent, index) == digest) return true;
+        }
+        return false;
     }
 
     function _nativePlan(

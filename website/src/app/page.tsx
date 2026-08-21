@@ -556,7 +556,12 @@ export default function Home() {
                       ↗
                     </span>
                   </Link>
-                  <Link href="/app" className="proof-link">
+                  <Link
+                    href="/app"
+                    className="proof-link"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     <strong>Try the demo</strong>
                     <span>Try it now on X Layer testnet.</span>
                     <span className="link-arrow" aria-hidden="true">

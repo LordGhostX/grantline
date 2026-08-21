@@ -2,14 +2,14 @@
   "network": "xlayer-testnet",
   "chainId": 1952,
   "grantline": {
-    "proxy": "0x47595f11570e97acf96fe9f7f9a02dd91488a4a0",
-    "implementation": "0x337038d2e2a70ca7933b79782f6b50ef239ad74c",
+    "proxy": "0x77324b24a9290da85217b0d22925c5d9034b2062",
+    "implementation": "0x928ebe5c560283c685f208890971cab53c026e01",
     "proxyCodeHash": "0x597787365047f794692c5a45feb61a306e1af9530eeff51124a094c57ef0cbf6",
-    "implementationCodeHash": "0x1fa866ffad434fd36d98b66fe18bb2431bb9d36d5ee79475441425673ff78f1e",
+    "implementationCodeHash": "0x8fb346934f45de084133e9c9d2aeb6ef2e60eec02219610edf6f9a1068b40b0b",
     "protocolAdmin": "0x64fe1ad6c591615dd3f0fc640c92ef75365a023d"
   },
   "admin": {
-    "address": "0x6f0d722438d600dc14ea36de675b0cd785c08616"
+    "address": "0x5e7465087a6590a0902fe6f2cb4f286d35f26627"
   },
   "nativeAsset": {
     "wrappedNative": "0x0000000000000000000000000000000000000000",
@@ -29,44 +29,44 @@
   },
   "modules": {
     "registry": {
-      "proxy": "0x20cef966b489a8fb467c879af498f2bd8083644c",
-      "implementation": "0xe38426826801dc302130fa3903e64d70d5349c40",
+      "proxy": "0x5603cdaefb0a8554fb2362efc5883ce679e407f0",
+      "implementation": "0x902376e0f5a973830f9e8639ce8c0ca9b20a3071",
       "proxyCodeHash": "0x597787365047f794692c5a45feb61a306e1af9530eeff51124a094c57ef0cbf6",
-      "implementationCodeHash": "0x8f732d1184068c377d5faa747c1c6acbc3d6b5a155929eb09696db466a8f00f1",
+      "implementationCodeHash": "0xc70d7e18480c157c0cceaaa44c6d4eaac2256fccc2e03b0c80cfe8f42a14269c",
       "version": 1
     },
     "evaluator": {
-      "proxy": "0x1d780a08efe0848ea8a0fe712bc5667531fb3710",
-      "implementation": "0x22ed47ccb4e9943db89e2e2e19c92cb2fcbfae7c",
+      "proxy": "0x4b89916f69909c67d60b7b8146edd501911024ce",
+      "implementation": "0xda8a471d09e6e8a627a10b0f99c54ce1476b2a5f",
       "proxyCodeHash": "0x597787365047f794692c5a45feb61a306e1af9530eeff51124a094c57ef0cbf6",
-      "implementationCodeHash": "0x83c7bedaa883a1d7c842551009277b91ee076abc46e6ff48110429c15fe3a5f6",
+      "implementationCodeHash": "0x24ca45e54e8a17fa0414d7fd9495d7cbad03e09b5633aa3193a95411be014bf4",
       "version": 1
     },
     "escalationManager": {
-      "proxy": "0x0b666451dde27b5aa62e64fee4ddaff4df96bb7d",
-      "implementation": "0x0a07b9fede616094e19081d3c60bb5c67cf8720f",
+      "proxy": "0xaaa3f7086e28e97adbca1c5bfc3261827cba3058",
+      "implementation": "0x6f259ac45ae50829c5dc10e3ff7b2f01971ac1e5",
       "proxyCodeHash": "0x597787365047f794692c5a45feb61a306e1af9530eeff51124a094c57ef0cbf6",
-      "implementationCodeHash": "0x1d6c0d929fed6586909c2451262a2daeff79bdbba7270029c42fc4fdb6b323d4",
+      "implementationCodeHash": "0x74e82041d2b811bdf5e385f964612dbac7afd4bde5aaeb2e00ad59e9e57683fb",
       "version": 1
     },
     "executor": {
-      "proxy": "0x1c1a39319371dfa70c01a827caa129a767f2c711",
-      "implementation": "0x8172663595e344bd94c7d597f39e5a8ae10b714f",
+      "proxy": "0x12ff6bab7696987048f91cf54f21ff81ff4c8310",
+      "implementation": "0x08c1be93ff9f181d9d2e24eaff507e99c9a6e8f9",
       "proxyCodeHash": "0x597787365047f794692c5a45feb61a306e1af9530eeff51124a094c57ef0cbf6",
-      "implementationCodeHash": "0x7db2d72e91514d443d4c488adee237b0e09e71862a3adf34da03a1fdf0aa7f32",
+      "implementationCodeHash": "0xe4e746f37214d720bce027255d4c003971faf2767e217a51add3dc88c53a8fff",
       "version": 1
     },
     "vaultFactory": {
-      "proxy": "0x85f21601d1a38957d5d4e3fb862a85fdc0fba974",
-      "implementation": "0x4ca2eec0eecde02f70e093b3561f2acfa6590a25",
+      "proxy": "0xe4cd291d8ce89ebd6f3ee468b0ed15b01fd60495",
+      "implementation": "0x3a8b25a13de56311046138122272b4a62ae99785",
       "proxyCodeHash": "0x597787365047f794692c5a45feb61a306e1af9530eeff51124a094c57ef0cbf6",
-      "implementationCodeHash": "0x1c00b383604f56ffdec42a3b876d99367c27b3b712ce41558e180c8654a2ffd1",
+      "implementationCodeHash": "0x508098e8d6f3063ffd082468a67a5796bd23c5a0c0b8fed53e5289979fcd0ff5",
       "version": 1
     }
   },
   "vaultImplementation": {
-    "address": "0x33f52b51aeef21cc4430772c9a4df605237328a2",
-    "codeHash": "0xc6c34937139efd3241ff0836cf362e6a58854c327730674732e5d9c5901f70a3",
+    "address": "0x7d2aaa9f61aec7c880b1aac7694fff651ab91121",
+    "codeHash": "0xdc5d20316db701a7ede5bc9344a2dfab845479047dc63fb7027e7d59bc6a783f",
     "version": 1
   }
 }
