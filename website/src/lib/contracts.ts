@@ -218,6 +218,69 @@ export const grantlineAbi = [
     ],
   },
   {
+    name: "getLineage",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "mandateId", type: "uint256" }],
+    outputs: [{ name: "lineage", type: "uint256[]" }],
+  },
+  {
+    name: "getEffectiveRules",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "mandateId", type: "uint256" }],
+    outputs: [
+      {
+        name: "rules",
+        type: "tuple",
+        components: [
+          { name: "canDelegate", type: "bool" },
+          { name: "minNativeAmount", type: "uint256" },
+          { name: "maxNativeAmount", type: "uint256" },
+          { name: "escalateNativeAmount", type: "bool" },
+          { name: "minNativeUsd", type: "uint256" },
+          { name: "maxNativeUsd", type: "uint256" },
+          { name: "escalateNativeUsd", type: "bool" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "getEffectivePreflightRules",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "mandateId", type: "uint256" }],
+    outputs: [
+      {
+        name: "preflightRules",
+        type: "tuple",
+        components: [
+          { name: "minNativeBalance", type: "uint256" },
+          { name: "escalateNativeBalance", type: "bool" },
+          { name: "minNativeUsdBalance", type: "uint256" },
+          { name: "escalateNativeUsdBalance", type: "bool" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "getEffectiveValidityWindow",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "mandateId", type: "uint256" }],
+    outputs: [
+      { name: "validAfter", type: "uint64" },
+      { name: "validUntil", type: "uint64" },
+    ],
+  },
+  {
+    name: "isLineageActive",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "mandateId", type: "uint256" }],
+    outputs: [{ name: "active", type: "bool" }],
+  },
+  {
     name: "pauseMandate",
     type: "function",
     stateMutability: "nonpayable",

@@ -10,6 +10,23 @@ import {
   mandateRegistryAbi,
 } from "./contracts";
 
+export interface MandateRules {
+  canDelegate: boolean;
+  minNativeAmount: bigint;
+  maxNativeAmount: bigint;
+  escalateNativeAmount: boolean;
+  minNativeUsd: bigint;
+  maxNativeUsd: bigint;
+  escalateNativeUsd: boolean;
+}
+
+export interface PreflightRules {
+  minNativeBalance: bigint;
+  escalateNativeBalance: boolean;
+  minNativeUsdBalance: bigint;
+  escalateNativeUsdBalance: boolean;
+}
+
 export interface MandateData {
   id: bigint;
   controller: Address;
@@ -19,21 +36,8 @@ export interface MandateData {
   parentMandateId: bigint;
   delegationDepth: number;
   status: number;
-  rules: {
-    canDelegate: boolean;
-    minNativeAmount: bigint;
-    maxNativeAmount: bigint;
-    escalateNativeAmount: boolean;
-    minNativeUsd: bigint;
-    maxNativeUsd: bigint;
-    escalateNativeUsd: boolean;
-  };
-  preflightRules: {
-    minNativeBalance: bigint;
-    escalateNativeBalance: boolean;
-    minNativeUsdBalance: bigint;
-    escalateNativeUsdBalance: boolean;
-  };
+  rules: MandateRules;
+  preflightRules: PreflightRules;
   validAfter: bigint;
   validUntil: bigint;
   createdAt: bigint;
