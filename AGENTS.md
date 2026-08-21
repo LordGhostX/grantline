@@ -10,6 +10,7 @@ This file is the project-wide working memory for future agents and contributors.
 
 ```text
 .
+├── README.md                  # Public project overview and contributor entry point
 ├── AGENTS.md                 # Project-wide working memory
 ├── BRIEF.md                  # Product brief
 ├── plans/                    # Local, ignored planning documents
@@ -94,7 +95,7 @@ Sponsored submission remains deferred because the integration evidence uses the 
 | 2026-08-17 | Record the post-factorisation runtime and test count.                                                             | After factoring the atomic admin-handover verification into a shared module check, the Grantline runtime is 22,727 bytes against the 24,576-byte EIP-170 limit, leaving 1,849 bytes of headroom; the local suite has 181 passing tests.                                                                                                                                                                                                                  |
 | 2026-08-17 | Record the atomic module-handover architecture.                                                                   | `Grantline.setAdminController` transfers and accepts module ownership and the factory's future-Vault upgrade authority between non-upgradeable coordinators, while existing Vault upgrade authorities remain a separate old-coordinator batch migration. Atomic admin handover is implemented for a future fresh deployment while the current X Layer stack remains unchanged.                                                                           |
 | 2026-08-21 | Add fresh-deployment scoped record indexes for the demo.                                                          | Grantline now enumerates Vaults by current controller, MandateRegistry indexes Mandates by Vault, creator, and agent, and EscalationManager retains global, Vault, and agent digest indexes while preserving `submittedBy`; the website consumes these scopes and shows historical Escalations. The tracked X Layer deployment remains unchanged until the fresh stack is deployed.                                                                      |
-| 2026-08-21 | Deploy and exercise the indexed-read stack on X Layer testnet.                                                     | A fresh chain-1952 deployment was written to the contracts manifest, copied into the website, verified against runtime hashes and wiring, and completed the expanded single-pass integration flow; the flow now asserts scoped Vault, Mandate, and Escalation history across reassignment, execution, denial, upgrades, and cleanup. |
+| 2026-08-21 | Deploy and exercise the indexed-read stack on X Layer testnet.                                                    | A fresh chain-1952 deployment was written to the contracts manifest, copied into the website, verified against runtime hashes and wiring, and completed the expanded single-pass integration flow; the flow now asserts scoped Vault, Mandate, and Escalation history across reassignment, execution, denial, upgrades, and cleanup.                                                                                                                     |
 
 ## Working-memory rules
 
