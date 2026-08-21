@@ -25,6 +25,58 @@ MANAGER="$(jq -r '.modules.escalationManager.proxy' "$MANIFEST")"
 
 Use the manifest values for every lookup. Set `VAULT` to the actual Vault address from a `VaultCreated` event or your own records; the manifest does not track individual Vault addresses.
 
+## Scoped onchain reads
+
+The fresh contract architecture exposes direct indexes for the records a controller or agent needs to inspect. These views return addresses, Mandate IDs, or escalation digests; hydrate each result with `getVault`, `getMandate`, or `getEscalation` when the full record is needed.
+
+Read the Vaults currently controlled by an address through Grantline:
+
+```sh
+CONTROLLER=0x...
+
+cast call "$GRANTLINE" \
+  "controllerVaultCount(address)(uint256)" \
+  "$CONTROLLER" \
+  --rpc-url "$RPC"
+
+cast call "$GRANTLINE" \
+  "controllerVaultAt(address,uint256)(address)" \
+  "$CONTROLLER" \
+  0 \
+  --rpc-url "$RPC"
+```
+
+Read Mandates through the registry by Vault, creator, or authorised agent:
+
+```sh
+cast call "$REGISTRY" "vaultMandateCount(address)(uint256)" "$VAULT" --rpc-url "$RPC"
+cast call "$REGISTRY" "vaultMandateAt(address,uint256)(uint256)" "$VAULT" 0 --rpc-url "$RPC"
+
+cast call "$REGISTRY" "creatorMandateCount(address)(uint256)" "$CONTROLLER" --rpc-url "$RPC"
+cast call "$REGISTRY" "creatorMandateAt(address,uint256)(uint256)" "$CONTROLLER" 0 --rpc-url "$RPC"
+
+cast call "$REGISTRY" "agentMandateCount(address)(uint256)" "$AGENT" --rpc-url "$RPC"
+cast call "$REGISTRY" "agentMandateAt(address,uint256)(uint256)" "$AGENT" 0 --rpc-url "$RPC"
+```
+
+For Escalations, use the manager's global, Vault, or agent index and then load each digest:
+
+```sh
+cast call "$MANAGER" "escalationCount()(uint256)" --rpc-url "$RPC"
+cast call "$MANAGER" "escalationAt(uint256)(bytes32)" 0 --rpc-url "$RPC"
+
+cast call "$MANAGER" "vaultEscalationCount(address)(uint256)" "$VAULT" --rpc-url "$RPC"
+cast call "$MANAGER" "vaultEscalationAt(address,uint256)(bytes32)" "$VAULT" 0 --rpc-url "$RPC"
+
+cast call "$MANAGER" "agentEscalationCount(address)(uint256)" "$AGENT" --rpc-url "$RPC"
+cast call "$MANAGER" "agentEscalationAt(address,uint256)(bytes32)" "$AGENT" 0 --rpc-url "$RPC"
+
+DIGEST=0x...
+cast call "$MANAGER" "getEscalation(bytes32)" "$DIGEST" --rpc-url "$RPC"
+```
+
+Escalation indexes retain records in their submitted history, including `PENDING`, `APPROVED`, `DENIED`, and `EXECUTED` statuses. The contract returns the stored order; an application can sort active records before finalized records for presentation. `submittedBy` remains part of each Escalation record, but it is not a separate index.
+
 ## Successful execution
 
 Given a transaction hash from a successful normal execution:

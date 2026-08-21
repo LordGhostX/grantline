@@ -41,10 +41,10 @@ When those tools are introduced, their package, authentication, and response des
 
 ## Indexing and Decision Receipts
 
-The current contracts emit committed events from the registry, escalation manager, Vault, and executor. Integrators can inspect those events and transaction receipts directly using [Events](/docs/reference/events) and the [inspecting evidence guide](/docs/guides/inspecting-evidence).
+The current contracts emit committed events from the registry, escalation manager, Vault, and executor, and expose scoped onchain indexes for Vaults, Mandates, and Escalations. Integrators can inspect those records and transaction receipts directly using [Events](/docs/reference/events) and the [inspecting evidence guide](/docs/guides/inspecting-evidence).
 
-An offchain indexer could organise that evidence by Mandate, authority lineage, nonce, and action digest. A Decision Receipt could then present the proposal, authority, decision path, controller approval, transaction, and execution outcome in one human-readable view.
+An offchain indexer could organise that evidence across deployments by Mandate, authority lineage, nonce, and action digest. A Decision Receipt could then present the proposal, authority, decision path, controller approval, transaction, and execution outcome in one human-readable view.
 
 The future receipt is better understood as an evidence bundle than as a renamed activity log. It may connect the Action Plan and `actionDigest` with Mandate lineage, the effective rules used, Preflight results, Guardian evidence, controller approval, transaction status, and downstream failure details. A Mandate revision or effective-policy commitment may help make that explanation reproducible, but neither has a defined canonical construction today.
 
-The distinction between an authorisation decision and an execution outcome must remain visible. An `ALLOW` result can lead to a reverted transaction, an approved Escalation can remain unexecuted, and a read-only `DENY` does not create a committed event. Indexing and Decision Receipts are deferred until the supporting service and data model exist.
+The distinction between an authorisation decision and an execution outcome must remain visible. An `ALLOW` result can lead to a reverted transaction, an approved Escalation can remain unexecuted, and a read-only `DENY` does not create a committed event. Contract-side indexes are current; cross-record offchain indexing and Decision Receipts remain deferred until the supporting service and data model exist.

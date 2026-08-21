@@ -33,7 +33,8 @@ export function useVaults() {
       const count = await publicClient.readContract({
         address: addresses.grantline,
         abi: grantlineAbi,
-        functionName: "vaultCount",
+        functionName: "controllerVaultCount",
+        args: [connectedAddress],
       });
 
       if (count === BigInt(0)) return [];
@@ -43,8 +44,8 @@ export function useVaults() {
           publicClient.readContract({
             address: addresses.grantline,
             abi: grantlineAbi,
-            functionName: "vaultAt",
-            args: [BigInt(i)],
+            functionName: "controllerVaultAt",
+            args: [connectedAddress, BigInt(i)],
           }),
         ),
       );
@@ -60,21 +61,17 @@ export function useVaults() {
         ),
       );
 
-      return views
-        .map((v, i) => ({
-          address: v[0],
-          index: i + 1,
-          controller: v[1],
-          owner: v[2],
-          authority: v[3],
-          implementation: v[4],
-          version: Number(v[5]),
-          nativeBalance: v[6],
-          paused: v[7],
-        }))
-        .filter(
-          (v) => v.controller.toLowerCase() === connectedAddress.toLowerCase(),
-        );
+      return views.map((v, i) => ({
+        address: v[0],
+        index: i + 1,
+        controller: v[1],
+        owner: v[2],
+        authority: v[3],
+        implementation: v[4],
+        version: Number(v[5]),
+        nativeBalance: v[6],
+        paused: v[7],
+      }));
     },
     enabled: !!publicClient && !!connectedAddress,
     refetchInterval: 10_000,

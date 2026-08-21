@@ -136,6 +136,18 @@ interface IRegistry is IModule {
 
     function getMandate(uint256 mandateId) external view returns (GrantlineTypes.Mandate memory);
 
+    function vaultMandateCount(address vault) external view returns (uint256);
+
+    function vaultMandateAt(address vault, uint256 index) external view returns (uint256);
+
+    function creatorMandateCount(address creator) external view returns (uint256);
+
+    function creatorMandateAt(address creator, uint256 index) external view returns (uint256);
+
+    function agentMandateCount(address agent) external view returns (uint256);
+
+    function agentMandateAt(address agent, uint256 index) external view returns (uint256);
+
     function getLineage(uint256 mandateId) external view returns (uint256[] memory);
 
     function getEffectiveRules(uint256 mandateId) external view returns (GrantlineTypes.MandateRules memory);
@@ -203,6 +215,18 @@ interface IEscalationManager is IModule {
     function markExecuted(bytes32 digest) external;
 
     function getEscalation(bytes32 digest) external view returns (GrantlineTypes.Escalation memory);
+
+    function escalationCount() external view returns (uint256);
+
+    function escalationAt(uint256 index) external view returns (bytes32);
+
+    function vaultEscalationCount(address vault) external view returns (uint256);
+
+    function vaultEscalationAt(address vault, uint256 index) external view returns (bytes32);
+
+    function agentEscalationCount(address agent) external view returns (uint256);
+
+    function agentEscalationAt(address agent, uint256 index) external view returns (bytes32);
 }
 
 interface IExecutor is IModule {

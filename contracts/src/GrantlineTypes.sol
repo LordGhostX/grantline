@@ -31,6 +31,7 @@ library GrantlineTypes {
         uint256 id;
         address vault;
         address agent;
+        address createdBy;
         uint256 parentMandateId;
         uint8 delegationDepth;
         MandateStatus status;
@@ -47,6 +48,7 @@ library GrantlineTypes {
         address controller;
         address vault;
         address agent;
+        address createdBy;
         uint256 parentMandateId;
         uint8 delegationDepth;
         MandateStatus status;

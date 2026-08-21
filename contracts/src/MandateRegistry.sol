@@ -91,6 +91,9 @@ contract MandateRegistry is Initializable, GrantlineModuleAccess, UUPSUpgradeabl
 
     mapping(address => bool) public isRegisteredVault;
     mapping(uint256 => GrantlineTypes.Mandate) private _mandates;
+    mapping(address => uint256[]) private _mandatesByVault;
+    mapping(address => uint256[]) private _mandatesByCreator;
+    mapping(address => uint256[]) private _mandatesByAgent;
     mapping(uint256 => mapping(address => mapping(uint256 => bool))) public override nonceUsed;
     mapping(uint256 => mapping(address => mapping(uint256 => bytes32))) public override reservedDigest;
     uint256 public override mandateCount;
@@ -156,6 +159,7 @@ contract MandateRegistry is Initializable, GrantlineModuleAccess, UUPSUpgradeabl
             id: mandateId,
             vault: vault,
             agent: agent,
+            createdBy: actor,
             parentMandateId: 0,
             delegationDepth: 0,
             status: GrantlineTypes.MandateStatus.ACTIVE,
@@ -166,6 +170,7 @@ contract MandateRegistry is Initializable, GrantlineModuleAccess, UUPSUpgradeabl
             createdAt: createdAt,
             revokedAt: 0
         });
+        _indexMandate(mandateId, vault, actor, agent);
 
         emit MandateCreated(
             mandateId, vault, agent, 0, 0, rules, preflightRules, validAfter, validUntil, actor, createdAt
@@ -218,6 +223,7 @@ contract MandateRegistry is Initializable, GrantlineModuleAccess, UUPSUpgradeabl
             id: mandateId,
             vault: parent.vault,
             agent: childAgent,
+            createdBy: actor,
             parentMandateId: parentMandateId,
             delegationDepth: childDepth,
             status: GrantlineTypes.MandateStatus.ACTIVE,
@@ -228,6 +234,7 @@ contract MandateRegistry is Initializable, GrantlineModuleAccess, UUPSUpgradeabl
             createdAt: createdAt,
             revokedAt: 0
         });
+        _indexMandate(mandateId, parent.vault, actor, childAgent);
 
         emit MandateCreated(
             mandateId,
@@ -379,6 +386,30 @@ contract MandateRegistry is Initializable, GrantlineModuleAccess, UUPSUpgradeabl
 
     function getMandate(uint256 mandateId) external view override returns (GrantlineTypes.Mandate memory) {
         return _requireMandateExists(mandateId);
+    }
+
+    function vaultMandateCount(address vault) external view override returns (uint256) {
+        return _mandatesByVault[vault].length;
+    }
+
+    function vaultMandateAt(address vault, uint256 index) external view override returns (uint256) {
+        return _mandatesByVault[vault][index];
+    }
+
+    function creatorMandateCount(address creator) external view override returns (uint256) {
+        return _mandatesByCreator[creator].length;
+    }
+
+    function creatorMandateAt(address creator, uint256 index) external view override returns (uint256) {
+        return _mandatesByCreator[creator][index];
+    }
+
+    function agentMandateCount(address agent) external view override returns (uint256) {
+        return _mandatesByAgent[agent].length;
+    }
+
+    function agentMandateAt(address agent, uint256 index) external view override returns (uint256) {
+        return _mandatesByAgent[agent][index];
     }
 
     function getLineage(uint256 mandateId) external view override returns (uint256[] memory lineage) {
@@ -708,6 +739,12 @@ contract MandateRegistry is Initializable, GrantlineModuleAccess, UUPSUpgradeabl
         if (msg.sender != IGrantlineContext(_grantline).moduleAddress(ESCALATION_MANAGER_MODULE)) {
             revert NotEscalationManager(msg.sender);
         }
+    }
+
+    function _indexMandate(uint256 mandateId, address vault, address creator, address agent) private {
+        _mandatesByVault[vault].push(mandateId);
+        _mandatesByCreator[creator].push(mandateId);
+        _mandatesByAgent[agent].push(mandateId);
     }
 
     function _authorizeUpgrade(address) internal override onlyAdminController {}

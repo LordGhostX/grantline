@@ -103,6 +103,8 @@ contract Grantline is
     mapping(bytes32 => address) private _modules;
     mapping(ActionTypes.SwapAdapterId => address) private _swapAdapters;
     mapping(address => VaultRecord) private _vaultRecords;
+    mapping(address => address[]) private _vaultsByController;
+    mapping(address => mapping(address => uint256)) private _controllerVaultIndex;
     address[] private _vaults;
     bool public configured;
     address public override adminController;
@@ -226,6 +228,7 @@ contract Grantline is
         _vaultRecords[vault] =
             VaultRecord({controller: controller, implementation: implementation, version: vaultVersion});
         _vaults.push(vault);
+        _addVaultToController(controller, vault);
         emit VaultCreated(
             vault, controller, IVault(vault).owner(), IVault(vault).authority(), implementation, vaultVersion
         );
@@ -392,6 +395,7 @@ contract Grantline is
             controller: controllerOf(mandate.vault),
             vault: mandate.vault,
             agent: mandate.agent,
+            createdBy: mandate.createdBy,
             parentMandateId: mandate.parentMandateId,
             delegationDepth: mandate.delegationDepth,
             status: mandate.status,
@@ -455,6 +459,14 @@ contract Grantline is
         return _vaults[index];
     }
 
+    function controllerVaultCount(address controller) external view returns (uint256) {
+        return _vaultsByController[controller].length;
+    }
+
+    function controllerVaultAt(address controller, uint256 index) external view returns (address) {
+        return _vaultsByController[controller][index];
+    }
+
     function isRegisteredVault(address vault) external view returns (bool) {
         return _vaultRecords[vault].controller != address(0);
     }
@@ -494,6 +506,10 @@ contract Grantline is
         if (_vaultRecords[vault].controller == address(0)) revert VaultNotRegistered(vault);
         if (newController == address(0)) revert InvalidController();
         address previousController = _vaultRecords[vault].controller;
+        if (previousController != newController) {
+            _removeVaultFromController(previousController, vault);
+            _addVaultToController(newController, vault);
+        }
         _vaultRecords[vault].controller = newController;
         emit VaultControllerUpdated(vault, previousController, newController);
     }
@@ -539,6 +555,24 @@ contract Grantline is
 
     function _onlyAdminController() private view {
         if (msg.sender != adminController) revert NotAdminController(msg.sender);
+    }
+
+    function _addVaultToController(address controller, address vault) private {
+        _vaultsByController[controller].push(vault);
+        _controllerVaultIndex[controller][vault] = _vaultsByController[controller].length;
+    }
+
+    function _removeVaultFromController(address controller, address vault) private {
+        uint256 position = _controllerVaultIndex[controller][vault];
+        uint256 lastPosition = _vaultsByController[controller].length;
+        address lastVault = _vaultsByController[controller][lastPosition - 1];
+
+        if (position != lastPosition) {
+            _vaultsByController[controller][position - 1] = lastVault;
+            _controllerVaultIndex[controller][lastVault] = position;
+        }
+        _vaultsByController[controller].pop();
+        delete _controllerVaultIndex[controller][vault];
     }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {

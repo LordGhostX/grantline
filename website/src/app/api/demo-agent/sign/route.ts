@@ -246,7 +246,7 @@ export async function POST(request: Request) {
     if (mandate[3].toLowerCase() !== demoAgent.toLowerCase()) {
       return errorResponse("This Mandate does not use the demo agent.", 409);
     }
-    if (Number(mandate[6]) !== 0) {
+    if (Number(mandate[7]) !== 0) {
       return errorResponse("This Mandate is not active.", 409);
     }
   } catch {

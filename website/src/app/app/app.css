@@ -463,6 +463,18 @@
     flex: 1;
 }
 
+.app-escalation-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
 .app-stats {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -36,6 +36,7 @@ export const xLayerTestnetExplorerUrl = configuredExplorerUrl.replace(
 export const addresses = {
   grantline: deployment.grantline.proxy as Address,
   mandateRegistry: deployment.modules.registry.proxy as Address,
+  escalationManager: deployment.modules.escalationManager.proxy as Address,
   vaultFactory: deployment.modules.vaultFactory.proxy as Address,
 } as const;
 
@@ -59,6 +60,23 @@ export const grantlineAbi = [
     type: "function",
     stateMutability: "view",
     inputs: [{ name: "index", type: "uint256" }],
+    outputs: [{ type: "address" }],
+  },
+  {
+    name: "controllerVaultCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "controller", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "controllerVaultAt",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "controller", type: "address" },
+      { name: "index", type: "uint256" },
+    ],
     outputs: [{ type: "address" }],
   },
   {
@@ -166,6 +184,7 @@ export const grantlineAbi = [
       { name: "controller", type: "address" },
       { name: "vault", type: "address" },
       { name: "agent", type: "address" },
+      { name: "createdBy", type: "address" },
       { name: "parentMandateId", type: "uint256" },
       { name: "delegationDepth", type: "uint8" },
       { name: "status", type: "uint8" },
@@ -290,6 +309,27 @@ export const grantlineAbi = [
     outputs: [{ name: "digest", type: "bytes32" }],
   },
   {
+    name: "approveEscalation",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "digest", type: "bytes32" }],
+    outputs: [],
+  },
+  {
+    name: "denyEscalation",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "digest", type: "bytes32" }],
+    outputs: [],
+  },
+  {
+    name: "executeEscalated",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "digest", type: "bytes32" }],
+    outputs: [],
+  },
+  {
     name: "execute",
     type: "function",
     stateMutability: "nonpayable",
@@ -336,5 +376,138 @@ export const mandateRegistryAbi = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "vaultMandateCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "vault", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "vaultMandateAt",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "vault", type: "address" },
+      { name: "index", type: "uint256" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "creatorMandateCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "creator", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "creatorMandateAt",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "creator", type: "address" },
+      { name: "index", type: "uint256" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "agentMandateCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "agent", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "agentMandateAt",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "agent", type: "address" },
+      { name: "index", type: "uint256" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
+
+export const escalationManagerAbi = [
+  {
+    name: "escalationCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "escalationAt",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "index", type: "uint256" }],
+    outputs: [{ type: "bytes32" }],
+  },
+  {
+    name: "vaultEscalationCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "vault", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "vaultEscalationAt",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "vault", type: "address" },
+      { name: "index", type: "uint256" },
+    ],
+    outputs: [{ type: "bytes32" }],
+  },
+  {
+    name: "agentEscalationCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "agent", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "agentEscalationAt",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "agent", type: "address" },
+      { name: "index", type: "uint256" },
+    ],
+    outputs: [{ type: "bytes32" }],
+  },
+  {
+    name: "getEscalation",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "digest", type: "bytes32" }],
+    outputs: [
+      {
+        name: "plan",
+        type: "tuple",
+        components: [
+          { name: "mandateId", type: "uint256" },
+          { name: "agent", type: "address" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          {
+            name: "actions",
+            type: "tuple[]",
+            components: [
+              { name: "actionType", type: "uint8" },
+              { name: "version", type: "uint8" },
+              { name: "parameters", type: "bytes" },
+            ],
+          },
+        ],
+      },
+      { name: "signature", type: "bytes" },
+      { name: "submittedBy", type: "address" },
+      { name: "status", type: "uint8" },
+      { name: "submittedAt", type: "uint64" },
+    ],
   },
 ] as const;

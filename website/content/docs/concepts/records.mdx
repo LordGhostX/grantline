@@ -23,6 +23,8 @@ Every authority lifecycle change produces a committed event:
 
 These events accumulate over time. An observer can reconstruct what authority existed, when it changed, and when it stopped being usable.
 
+The current contracts also expose scoped onchain indexes for Vaults, Mandates, and Escalations. A controller can enumerate its current Vaults, then read the Mandates attached to those Vaults; agents and creators can use their corresponding Mandate indexes, while Escalation indexes retain records across pending, approved, denied, and executed states. These views make direct contract inspection possible without scanning every record or relying on an offchain service.
+
 ## Decisions and failed paths
 
 A read-only evaluation can return `DENY` without creating a state change. A submitted execution can also fail before completion, so the absence of a successful execution record does not mean no proposal was evaluated.
@@ -31,6 +33,6 @@ Records distinguish an authorisation result from an execution outcome. A failed 
 
 ## Decision Receipts
 
-Future indexing could assemble the proposal, authority lineage, checks, approval, transaction, and outcome into a human-readable Decision Receipt. That receipt would be an evidence bundle built from committed contract data and indexed context, not an event emitted by the current contracts. Grantline does not currently run that indexer or publish those receipts.
+Future offchain indexing could assemble the proposal, authority lineage, checks, approval, transaction, and outcome into a human-readable Decision Receipt. That receipt would be an evidence bundle built from committed contract data, contract-side indexes, and indexed transaction context, not an event emitted by the current contracts. Grantline does not currently run that offchain indexer or publish those receipts.
 
 See [Decisions](/docs/concepts/decisions) for the distinction between authorisation and execution.

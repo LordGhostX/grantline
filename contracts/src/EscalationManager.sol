@@ -61,6 +61,9 @@ contract EscalationManager is Initializable, GrantlineModuleAccess, UUPSUpgradea
     address public override evaluator;
     address public override registry;
     mapping(bytes32 => GrantlineTypes.Escalation) private _escalations;
+    bytes32[] private _escalationDigests;
+    mapping(address => bytes32[]) private _escalationsByVault;
+    mapping(address => bytes32[]) private _escalationsByAgent;
 
     constructor() {
         _disableInitializers();
@@ -103,6 +106,7 @@ contract EscalationManager is Initializable, GrantlineModuleAccess, UUPSUpgradea
         if (_escalations[digest].status != uint8(Status.NONE)) {
             revert EscalationAlreadyExists(digest);
         }
+        GrantlineTypes.Mandate memory mandate = IRegistry(registry).getMandate(plan.mandateId);
 
         GrantlineTypes.Escalation storage escalation = _escalations[digest];
         escalation.status = uint8(Status.PENDING);
@@ -119,6 +123,9 @@ contract EscalationManager is Initializable, GrantlineModuleAccess, UUPSUpgradea
             escalation.plan.actions[index].parameters = plan.actions[index].parameters;
         }
         escalation.signature = signature;
+        _escalationDigests.push(digest);
+        _escalationsByVault[mandate.vault].push(digest);
+        _escalationsByAgent[plan.agent].push(digest);
 
         emit EscalationSubmitted(
             digest,
@@ -190,6 +197,30 @@ contract EscalationManager is Initializable, GrantlineModuleAccess, UUPSUpgradea
         if (escalation.status == uint8(Status.NONE)) {
             revert EscalationNotFound(digest);
         }
+    }
+
+    function escalationCount() external view override returns (uint256) {
+        return _escalationDigests.length;
+    }
+
+    function escalationAt(uint256 index) external view override returns (bytes32) {
+        return _escalationDigests[index];
+    }
+
+    function vaultEscalationCount(address vault) external view override returns (uint256) {
+        return _escalationsByVault[vault].length;
+    }
+
+    function vaultEscalationAt(address vault, uint256 index) external view override returns (bytes32) {
+        return _escalationsByVault[vault][index];
+    }
+
+    function agentEscalationCount(address agent) external view override returns (uint256) {
+        return _escalationsByAgent[agent].length;
+    }
+
+    function agentEscalationAt(address agent, uint256 index) external view override returns (bytes32) {
+        return _escalationsByAgent[agent][index];
     }
 
     function _pending(bytes32 digest) private view returns (GrantlineTypes.Escalation storage escalation) {

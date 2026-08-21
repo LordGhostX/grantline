@@ -13,8 +13,8 @@ This file is the project-wide working memory for future agents and contributors.
 ├── AGENTS.md                 # Project-wide working memory
 ├── BRIEF.md                  # Product brief
 ├── plans/                    # Local, ignored planning documents
-├── website/                  # Next.js landing page and Fumadocs documentation
-│   └── AGENTS.md              # Website-local working memory
+├── website/                  # Next.js landing page, demo, and Fumadocs documentation
+│   └── AGENTS.md             # Website-local working memory
 └── contracts/                # Foundry workspace and future Grantline contracts
     ├── AGENTS.md
     ├── foundry.toml
@@ -93,6 +93,7 @@ Sponsored submission remains deferred because the integration evidence uses the 
 | 2026-08-17 | Supersede the earlier ownership-handover notes with the live-pointer handoff.                                     | Grantline is 21,487 bytes with 3,089 bytes of headroom, the suite has 177 passing tests, and admin replacement now changes a validated live pointer instead of transferring module or Vault upgrade ownership. The tracked X Layer deployment remains unchanged because this is a fresh-deployment ABI change.                                                                                                                                           |
 | 2026-08-17 | Record the post-factorisation runtime and test count.                                                             | After factoring the atomic admin-handover verification into a shared module check, the Grantline runtime is 22,727 bytes against the 24,576-byte EIP-170 limit, leaving 1,849 bytes of headroom; the local suite has 181 passing tests.                                                                                                                                                                                                                  |
 | 2026-08-17 | Record the atomic module-handover architecture.                                                                   | `Grantline.setAdminController` transfers and accepts module ownership and the factory's future-Vault upgrade authority between non-upgradeable coordinators, while existing Vault upgrade authorities remain a separate old-coordinator batch migration. Atomic admin handover is implemented for a future fresh deployment while the current X Layer stack remains unchanged.                                                                           |
+| 2026-08-21 | Add fresh-deployment scoped record indexes for the demo.                                                          | Grantline now enumerates Vaults by current controller, MandateRegistry indexes Mandates by Vault, creator, and agent, and EscalationManager retains global, Vault, and agent digest indexes while preserving `submittedBy`; the website consumes these scopes and shows historical Escalations. The tracked X Layer deployment remains unchanged until the fresh stack is deployed.                                                                      |
 
 ## Working-memory rules
 

@@ -15,6 +15,7 @@ export interface MandateData {
   controller: Address;
   vault: Address;
   agent: Address;
+  createdBy: Address;
   parentMandateId: bigint;
   delegationDepth: number;
   status: number;
@@ -55,7 +56,7 @@ export function getMandateStatusLabel(status: number): MandateStatus {
 }
 
 type UseMandatesOptions = {
-  scope?: "controller" | "all";
+  scope?: "controller" | "creator" | "agent" | "all";
   enabled?: boolean;
 };
 
@@ -65,7 +66,7 @@ export function useMandates({
 }: UseMandatesOptions = {}) {
   const { address } = useConnection();
   const publicClient = usePublicClient({ chainId });
-  const controllerScoped = scope === "controller";
+  const addressScoped = scope !== "all";
 
   const {
     data: mandates,
@@ -75,18 +76,76 @@ export function useMandates({
   } = useQuery({
     queryKey: ["mandates", chainId, address, scope],
     queryFn: async (): Promise<MandateData[]> => {
-      if (!publicClient || (controllerScoped && !address)) return [];
+      if (!publicClient || (addressScoped && !address)) return [];
 
-      const count = await publicClient.readContract({
-        address: addresses.mandateRegistry,
-        abi: mandateRegistryAbi,
-        functionName: "mandateCount",
-      });
+      let ids: bigint[];
+      if (scope === "all") {
+        const count = await publicClient.readContract({
+          address: addresses.mandateRegistry,
+          abi: mandateRegistryAbi,
+          functionName: "mandateCount",
+        });
+        ids = Array.from({ length: Number(count) }, (_, i) => BigInt(i + 1));
+      } else if (scope === "creator" || scope === "agent") {
+        const count = await publicClient.readContract({
+          address: addresses.mandateRegistry,
+          abi: mandateRegistryAbi,
+          functionName:
+            scope === "creator" ? "creatorMandateCount" : "agentMandateCount",
+          args: [address!],
+        });
+        ids = await Promise.all(
+          Array.from({ length: Number(count) }, (_, i) =>
+            publicClient.readContract({
+              address: addresses.mandateRegistry,
+              abi: mandateRegistryAbi,
+              functionName:
+                scope === "creator" ? "creatorMandateAt" : "agentMandateAt",
+              args: [address!, BigInt(i)],
+            }),
+          ),
+        );
+      } else {
+        const vaultCount = await publicClient.readContract({
+          address: addresses.grantline,
+          abi: grantlineAbi,
+          functionName: "controllerVaultCount",
+          args: [address!],
+        });
+        const vaults = await Promise.all(
+          Array.from({ length: Number(vaultCount) }, (_, i) =>
+            publicClient.readContract({
+              address: addresses.grantline,
+              abi: grantlineAbi,
+              functionName: "controllerVaultAt",
+              args: [address!, BigInt(i)],
+            }),
+          ),
+        );
+        const mandateIds = await Promise.all(
+          vaults.map(async (vault) => {
+            const count = await publicClient.readContract({
+              address: addresses.mandateRegistry,
+              abi: mandateRegistryAbi,
+              functionName: "vaultMandateCount",
+              args: [vault],
+            });
+            return Promise.all(
+              Array.from({ length: Number(count) }, (_, i) =>
+                publicClient.readContract({
+                  address: addresses.mandateRegistry,
+                  abi: mandateRegistryAbi,
+                  functionName: "vaultMandateAt",
+                  args: [vault, BigInt(i)],
+                }),
+              ),
+            );
+          }),
+        );
+        ids = mandateIds.flat();
+      }
 
-      if (count === 0n) return [];
-
-      const total = Number(count);
-      const ids = Array.from({ length: total }, (_, i) => BigInt(i + 1));
+      if (ids.length === 0) return [];
 
       const results = await Promise.all(
         ids.map((id) =>
@@ -104,23 +163,21 @@ export function useMandates({
         controller: r[1],
         vault: r[2],
         agent: r[3],
-        parentMandateId: r[4],
-        delegationDepth: r[5],
-        status: r[6],
-        rules: r[7],
-        preflightRules: r[8],
-        validAfter: r[9],
-        validUntil: r[10],
-        createdAt: r[11],
-        revokedAt: r[12],
+        createdBy: r[4],
+        parentMandateId: r[5],
+        delegationDepth: r[6],
+        status: r[7],
+        rules: r[8],
+        preflightRules: r[9],
+        validAfter: r[10],
+        validUntil: r[11],
+        createdAt: r[12],
+        revokedAt: r[13],
       })) as MandateData[];
 
-      if (!controllerScoped || !address) return allMandates;
-      return allMandates.filter(
-        (mandate) => mandate.controller.toLowerCase() === address.toLowerCase(),
-      );
+      return allMandates;
     },
-    enabled: enabled && !!publicClient && (!controllerScoped || !!address),
+    enabled: enabled && !!publicClient && (!addressScoped || !!address),
     refetchInterval: 10_000,
   });
 

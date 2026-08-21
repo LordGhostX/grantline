@@ -147,12 +147,48 @@ cast logs --rpc-url "$RPC" --address "$REGISTRY" \
 MANDATE_ID=1
 
 cast call "$GRANTLINE" \
-  "getMandate(uint256)((uint256,address,address,address,uint256,uint8,uint8,(bool,uint256,uint256,bool,uint256,uint256,bool),(uint256,bool,uint256,bool),uint64,uint64,uint64,uint64))" \
+  "getMandate(uint256)((uint256,address,address,address,address,uint256,uint8,uint8,(bool,uint256,uint256,bool,uint256,uint256,bool),(uint256,bool,uint256,bool),uint64,uint64,uint64,uint64))" \
   "$MANDATE_ID" \
   --rpc-url "$RPC"
 ```
 
-The returned MandateView includes the controller, Vault, agent, parent ID, delegation depth, status, rules, Preflight rules, validAfter, validUntil, createdAt, and revokedAt.
+The returned MandateView includes the controller, Vault, agent, creator, parent ID, delegation depth, status, rules, Preflight rules, validAfter, validUntil, createdAt, and revokedAt.
+
+## Read records by scope
+
+The contracts expose direct onchain indexes for the records used by a controller or agent. These reads avoid scanning every Vault or Mandate and return addresses or IDs that can be hydrated with the full views above.
+
+Read the Vaults currently controlled by an address through the Grantline facade:
+
+```sh
+CONTROLLER=0x...
+
+cast call "$GRANTLINE" \
+  "controllerVaultCount(address)(uint256)" \
+  "$CONTROLLER" \
+  --rpc-url "$RPC"
+
+cast call "$GRANTLINE" \
+  "controllerVaultAt(address,uint256)(address)" \
+  "$CONTROLLER" \
+  0 \
+  --rpc-url "$RPC"
+```
+
+Read Mandates attached to a Vault, created by an address, or assigned to an agent through the registry:
+
+```sh
+cast call "$REGISTRY" "vaultMandateCount(address)(uint256)" "$VAULT" --rpc-url "$RPC"
+cast call "$REGISTRY" "vaultMandateAt(address,uint256)(uint256)" "$VAULT" 0 --rpc-url "$RPC"
+
+cast call "$REGISTRY" "creatorMandateCount(address)(uint256)" "$CONTROLLER" --rpc-url "$RPC"
+cast call "$REGISTRY" "creatorMandateAt(address,uint256)(uint256)" "$CONTROLLER" 0 --rpc-url "$RPC"
+
+cast call "$REGISTRY" "agentMandateCount(address)(uint256)" "$AGENT" --rpc-url "$RPC"
+cast call "$REGISTRY" "agentMandateAt(address,uint256)(uint256)" "$AGENT" 0 --rpc-url "$RPC"
+```
+
+For a root Mandate, `creator` is the controller that created it. For a delegated Mandate, `creator` is the parent agent that created the child, while the agent index identifies the account authorised to sign Action Plans.
 
 ## Check effective authority
 
