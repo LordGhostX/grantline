@@ -1,6 +1,7 @@
 {
   "name": "grantline-contract-tools",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
     "lint:solhint": "cd .. && solhint 'src/**/*.sol' --config security/.solhint.json --ignore-path security/.solhintignore --quiet"
   },
