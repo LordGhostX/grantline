@@ -386,7 +386,11 @@ export default function MandatesPage() {
       {!isLoading && !error && mandates.length > 0 && (
         <div className="app-card-grid">
           {[...mandates]
-            .sort((a, b) => Number(b.id - a.id))
+            .sort((a, b) => {
+              if (a.status !== b.status) return a.status - b.status;
+              if (a.id === b.id) return 0;
+              return a.id > b.id ? -1 : 1;
+            })
             .map((mandate) => (
               <MandateCard
                 key={mandate.id.toString()}

@@ -307,7 +307,10 @@ export default function AppVaults() {
       {isConnected && !isLoading && !error && vaults.length > 0 && (
         <div className="app-card-grid">
           {[...vaults]
-            .sort((a, b) => b.index - a.index)
+            .sort((a, b) => {
+              if (a.paused !== b.paused) return a.paused ? 1 : -1;
+              return b.index - a.index;
+            })
             .map((vault) => (
               <VaultCard
                 key={vault.address}
