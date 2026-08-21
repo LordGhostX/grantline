@@ -6,13 +6,132 @@ import { CopyAddress } from "@/components/app/copy-address";
 import GrantlineMark from "@/components/grantline-mark";
 import { TransactionStatus } from "@/components/app/transaction-status";
 import { addresses, grantlineAbi } from "@/lib/contracts";
-import { formatDate, formatError } from "@/lib/app-utils";
+import { decodeAction, type DecodedAction } from "@/lib/action-plan";
+import { formatDate, formatError, formatNative } from "@/lib/app-utils";
 import {
   getEscalationStatusLabel,
   type EscalationData,
   useEscalations,
 } from "@/lib/use-escalations";
 import { useAppTransaction } from "@/lib/use-app-transaction";
+import { zeroAddress, type Address } from "viem";
+
+function ActionAsset({ asset }: { asset: Address }) {
+  if (asset.toLowerCase() === zeroAddress) {
+    return <>OKB (native)</>;
+  }
+
+  return <CopyAddress address={asset} label="Token address" />;
+}
+
+function ActionAssetAmount({
+  amount,
+  asset,
+}: {
+  amount: bigint;
+  asset: Address;
+}) {
+  if (asset.toLowerCase() === zeroAddress) {
+    return <>{formatNative(amount)} OKB</>;
+  }
+
+  return (
+    <>
+      {amount.toString()} token units of <ActionAsset asset={asset} />
+    </>
+  );
+}
+
+function swapAdapterLabel(adapterId: number): string {
+  return adapterId === 1 ? "Uniswap V3 (#1)" : `Adapter #${adapterId}`;
+}
+
+function SwapRoute({
+  action,
+}: {
+  action: Extract<DecodedAction, { kind: "swap" }>;
+}) {
+  return (
+    <div className="app-escalation-route">
+      <span className="app-escalation-route-label">
+        Route · {swapAdapterLabel(action.adapterId)}
+      </span>
+      <ol>
+        {action.hops.map((hop, index) => (
+          <li
+            key={`${hop.pool}-${hop.tokenIn}-${hop.tokenOut}-${index}`}
+            className="app-escalation-route-step"
+          >
+            <span className="app-escalation-route-index">{index + 1}.</span>
+            <span>
+              <ActionAsset asset={hop.tokenIn} />
+              <span className="app-escalation-route-arrow" aria-hidden="true">
+                →
+              </span>
+              <ActionAsset asset={hop.tokenOut} /> {" via "}
+              <CopyAddress address={hop.pool} label="Pool address" />
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function EscalationActionSummary({
+  action,
+  index,
+}: {
+  action: EscalationData["plan"]["actions"][number];
+  index: number;
+}) {
+  const decoded = decodeAction(action);
+
+  return (
+    <li className="app-escalation-action">
+      <div className="app-escalation-action-line">
+        <span className="app-escalation-action-index">{index + 1}.</span>
+        {decoded.kind === "transfer" && (
+          <span>
+            Transfer{" "}
+            <ActionAssetAmount amount={decoded.amount} asset={decoded.asset} />{" "}
+            to{" "}
+            <CopyAddress
+              address={decoded.recipient}
+              label="Recipient address"
+            />
+          </span>
+        )}
+        {decoded.kind === "swap" && (
+          <span>
+            Swap{" "}
+            <ActionAssetAmount
+              amount={decoded.amountIn}
+              asset={decoded.tokenIn}
+            />{" "}
+            for at least{" "}
+            <ActionAssetAmount
+              amount={decoded.minAmountOut}
+              asset={decoded.tokenOut}
+            />
+          </span>
+        )}
+        {decoded.kind === "unknown" && (
+          <span>
+            Action type {decoded.actionType}, version {decoded.version};
+            parameters could not be decoded.
+          </span>
+        )}
+      </div>
+      {decoded.kind === "swap" && <SwapRoute action={decoded} />}
+      {decoded.kind === "unknown" && (
+        <code className="app-escalation-raw-parameters">
+          {decoded.parameters}
+        </code>
+      )}
+    </li>
+  );
+}
 
 function statusClass(status: number): string {
   if (status === 1) return "app-tag-paused";
@@ -32,6 +151,7 @@ function EscalationCard({
   const label = getEscalationStatusLabel(escalation.status);
   const isPending = escalation.status === 1;
   const isApproved = escalation.status === 2;
+  const hasActions = isPending || isApproved;
 
   const submitAction = useCallback(
     async (
@@ -86,22 +206,29 @@ function EscalationCard({
             />
           </dd>
         </div>
-        <div>
-          <dt>Nonce</dt>
-          <dd>{escalation.plan.nonce.toString()}</dd>
-        </div>
-        <div>
-          <dt>Actions</dt>
-          <dd>{escalation.plan.actions.length}</dd>
-        </div>
       </dl>
 
-      <div className="app-escalation-meta">
+      <div className="app-escalation-actions">
+        <h3>Action plan</h3>
+        <ol>
+          {escalation.plan.actions.map((action, index) => (
+            <EscalationActionSummary
+              key={`${action.actionType}-${action.version}-${index}`}
+              action={action}
+              index={index}
+            />
+          ))}
+        </ol>
+      </div>
+
+      <div
+        className={`app-escalation-meta${hasActions ? "" : " app-escalation-meta-final"}`}
+      >
         <span>Submitted</span>
         <span>{formatDate(escalation.submittedAt)}</span>
       </div>
 
-      {(isPending || isApproved) && (
+      {hasActions && (
         <div className="app-card-actions">
           {isPending && (
             <>
@@ -154,7 +281,8 @@ export default function AppEscalations() {
       <div className="app-page-header">
         <h1>Escalations</h1>
         <p>
-          Proposals that exceeded their authority and await controller review.
+          Action Plans that exceeded their authority, awaiting review or showing
+          their final outcome.
         </p>
       </div>
 

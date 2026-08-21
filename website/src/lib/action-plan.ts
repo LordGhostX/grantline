@@ -1,4 +1,9 @@
-import { hashTypedData, type Address, type Hex } from "viem";
+import {
+  decodeAbiParameters,
+  hashTypedData,
+  type Address,
+  type Hex,
+} from "viem";
 import { addresses, chainId } from "./contracts";
 
 export const actionPlanDomain = {
@@ -47,6 +52,110 @@ export type ActionPlanAction = {
   version: number;
   parameters: Hex;
 };
+
+export type DecodedAction =
+  | {
+      kind: "transfer";
+      asset: Address;
+      recipient: Address;
+      amount: bigint;
+    }
+  | {
+      kind: "swap";
+      adapterId: number;
+      tokenIn: Address;
+      amountIn: bigint;
+      tokenOut: Address;
+      minAmountOut: bigint;
+      hops: readonly {
+        pool: Address;
+        tokenIn: Address;
+        tokenOut: Address;
+      }[];
+    }
+  | {
+      kind: "unknown";
+      actionType: number;
+      version: number;
+      parameters: Hex;
+    };
+
+const transferParameters = [
+  {
+    type: "tuple",
+    components: [
+      { name: "asset", type: "address" },
+      { name: "recipient", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+  },
+] as const;
+
+const swapParameters = [
+  {
+    type: "tuple",
+    components: [
+      { name: "swapAdapterId", type: "uint8" },
+      { name: "tokenIn", type: "address" },
+      { name: "amountIn", type: "uint256" },
+      { name: "tokenOut", type: "address" },
+      { name: "minAmountOut", type: "uint256" },
+      {
+        name: "hops",
+        type: "tuple[]",
+        components: [
+          { name: "pool", type: "address" },
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+        ],
+      },
+    ],
+  },
+] as const;
+
+export function decodeAction(action: ActionPlanAction): DecodedAction {
+  try {
+    if (action.actionType === 0) {
+      const [transfer] = decodeAbiParameters(
+        transferParameters,
+        action.parameters,
+      );
+      return {
+        kind: "transfer",
+        asset: transfer.asset,
+        recipient: transfer.recipient,
+        amount: transfer.amount,
+      };
+    }
+
+    if (action.actionType === 1) {
+      const [swap] = decodeAbiParameters(swapParameters, action.parameters);
+      return {
+        kind: "swap",
+        adapterId: swap.swapAdapterId,
+        tokenIn: swap.tokenIn,
+        amountIn: swap.amountIn,
+        tokenOut: swap.tokenOut,
+        minAmountOut: swap.minAmountOut,
+        hops: swap.hops.map((hop) => ({
+          pool: hop.pool,
+          tokenIn: hop.tokenIn,
+          tokenOut: hop.tokenOut,
+        })),
+      };
+    }
+  } catch {
+    // Preserve the action metadata when a future or malformed payload cannot
+    // be decoded, so the reviewer still knows what was submitted.
+  }
+
+  return {
+    kind: "unknown",
+    actionType: action.actionType,
+    version: action.version,
+    parameters: action.parameters,
+  };
+}
 
 export type ActionPlan = {
   mandateId: bigint;

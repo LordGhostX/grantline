@@ -469,10 +469,107 @@
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 20px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border-subtle);
+    padding-top: 0;
     color: var(--text-secondary);
     font-size: 13px;
+}
+
+.app-escalation-meta-final {
+    margin-bottom: 0;
+}
+
+.app-escalation-actions {
+    margin-bottom: 20px;
+    padding: 16px 0;
+    border-top: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.app-escalation-actions h3 {
+    margin: 0 0 10px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+}
+
+.app-escalation-actions ol {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.app-escalation-action {
+    display: grid;
+    gap: 8px;
+    align-items: flex-start;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.app-escalation-action-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.app-escalation-route {
+    display: grid;
+    gap: 8px;
+    margin-left: 20px;
+    padding-left: 12px;
+    border-left: 1px solid var(--border-subtle);
+}
+
+.app-escalation-route-label {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.app-escalation-route ol {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.app-escalation-route-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+}
+
+.app-escalation-route-index {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+}
+
+.app-escalation-route-arrow {
+    margin: 0 6px;
+    color: var(--text-secondary);
+}
+
+.app-escalation-raw-parameters {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 8px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.app-escalation-action-index {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
 }
 
 .app-stats {

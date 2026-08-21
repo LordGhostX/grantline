@@ -486,28 +486,34 @@ export const escalationManagerAbi = [
     inputs: [{ name: "digest", type: "bytes32" }],
     outputs: [
       {
-        name: "plan",
+        name: "escalation",
         type: "tuple",
         components: [
-          { name: "mandateId", type: "uint256" },
-          { name: "agent", type: "address" },
-          { name: "nonce", type: "uint256" },
-          { name: "deadline", type: "uint256" },
           {
-            name: "actions",
-            type: "tuple[]",
+            name: "plan",
+            type: "tuple",
             components: [
-              { name: "actionType", type: "uint8" },
-              { name: "version", type: "uint8" },
-              { name: "parameters", type: "bytes" },
+              { name: "mandateId", type: "uint256" },
+              { name: "agent", type: "address" },
+              { name: "nonce", type: "uint256" },
+              { name: "deadline", type: "uint256" },
+              {
+                name: "actions",
+                type: "tuple[]",
+                components: [
+                  { name: "actionType", type: "uint8" },
+                  { name: "version", type: "uint8" },
+                  { name: "parameters", type: "bytes" },
+                ],
+              },
             ],
           },
+          { name: "signature", type: "bytes" },
+          { name: "submittedBy", type: "address" },
+          { name: "status", type: "uint8" },
+          { name: "submittedAt", type: "uint64" },
         ],
       },
-      { name: "signature", type: "bytes" },
-      { name: "submittedBy", type: "address" },
-      { name: "status", type: "uint8" },
-      { name: "submittedAt", type: "uint64" },
     ],
   },
 ] as const;

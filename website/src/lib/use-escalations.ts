@@ -164,27 +164,27 @@ export function useEscalations({
             address: addresses.grantline,
             abi: grantlineAbi,
             functionName: "getMandate",
-            args: [record[0].mandateId],
+            args: [record.plan.mandateId],
           });
 
           return {
             digest,
             vault: mandate[2],
             plan: {
-              mandateId: record[0].mandateId,
-              agent: record[0].agent,
-              nonce: record[0].nonce,
-              deadline: record[0].deadline,
-              actions: record[0].actions.map((action) => ({
+              mandateId: record.plan.mandateId,
+              agent: record.plan.agent,
+              nonce: record.plan.nonce,
+              deadline: record.plan.deadline,
+              actions: record.plan.actions.map((action) => ({
                 actionType: action.actionType,
                 version: action.version,
                 parameters: action.parameters,
               })),
             },
-            signature: record[1],
-            submittedBy: record[2],
-            status: record[3],
-            submittedAt: record[4],
+            signature: record.signature,
+            submittedBy: record.submittedBy,
+            status: record.status,
+            submittedAt: record.submittedAt,
           } as EscalationData;
         }),
       );
